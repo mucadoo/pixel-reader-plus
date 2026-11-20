@@ -76,12 +76,12 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 
 ## Settings
 
-Press **X**. Up and down move between rows. Left and right change the selected row. **B** closes settings. The choices are saved.
+Press **X**. The book stays behind the menu. Each row has the name on the left and the choice on the right. Up and down move. Left and right change the choice. **B** closes settings. The choices are saved.
 
-- **Theme.** `spruce` is the dark theme with cream text. The others are night contrast, light contrast, sepia, and vampire.
+- **Theme.** The menu shows Spruce, Night, Light, Sepia, and Vampire. Spruce is the dark theme with cream text.
 - **Font size.** Body text, from 18 to 40. Titles scale with it.
 - **Font.** The fonts shipped in `resources/fonts`, including DejaVu Sans, DejaVu Serif, and Merriweather. Merriweather uses its bold file for bold text. The other fonts use a synthetic bold.
-- **Shoulder keymap.** `LR` uses L1 and R1 to turn pages. `L2R2` uses L2 and R2 instead.
+- **Shoulders.** `L1 / R1` uses L1 and R1 to turn pages. `L2 / R2` uses L2 and R2 instead.
 - **Progress.** `Book` or `Chapter`. The percentage, and the page count in Page mode, both follow that choice.
 - **Reading.** `Scroll` shows the percentage. `Page` shows a real page count that moves one number at a time.
 - **Controls.** Press **A** to open the same shortcut guide that **Start** opens while reading.

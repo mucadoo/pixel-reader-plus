@@ -35,7 +35,8 @@ inline const char *controls_guide_text()
         "Book or Chapter chooses the whole book or the current chapter, for both modes.\n"
         "\n"
         "Settings\n"
-        "Up and down change the row. Left and right change the value.\n"
+        "The name is on the left and the choice is on the right. The book stays behind the menu.\n"
+        "Up and down change the row. Left and right change the choice.\n"
         "Reading switches Scroll and Page.\n"
         "Controls, then A, opens this guide.\n"
         "B closes settings.\n";

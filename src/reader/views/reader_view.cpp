@@ -100,10 +100,12 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state)
         }
     });
     toc_select_menu->set_close_on_select();
+    toc_select_menu->set_title("Chapters");
 
     // select current toc item
     if (current_toc_index < toc.size())
     {
+        toc_select_menu->set_marker(current_toc_index);
         toc_select_menu->set_cursor_pos(current_toc_index);
     }
 
@@ -256,6 +258,8 @@ static void open_word_actions(ReaderViewState &state)
         marked ? "Remove highlight" : "Highlight"
     };
     auto menu = std::make_shared<SelectionMenu>(entries, state.sys_styling);
+    menu->set_title(lookup.empty() ? std::string("Word") : lookup);
+    menu->set_compact(true);
     menu->set_close_on_select();
     menu->set_on_selection([&state, lookup](uint32_t index) {
         if (index == 0)

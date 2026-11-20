@@ -52,6 +52,8 @@ public:
     int page_count(int lines_per_page) const;
     int page_of_line(int line, int lines_per_page) const;
     int first_line_of_page(int page, int lines_per_page) const;
+    // If line is a blank sitting just before a chapter, return that chapter's first line.
+    int line_for_navigation(int line, int lines_per_page) const;
 };
 
 #endif

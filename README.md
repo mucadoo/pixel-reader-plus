@@ -22,8 +22,8 @@ These are the printed buttons on the Flip.
 | A | Show or hide the progress line. |
 | B | Close the book and return to the file list. |
 | X | Settings. |
-| Y | Select a word. Commas, periods, and quotes are left outside the selection. |
-| Select | Chapter list. Press Select again to close it. |
+| Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
+| Select | Chapter list, opened on the chapter you are reading. Press Select again to close it. |
 | Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
@@ -37,13 +37,13 @@ The progress line shows the chapter name and how far you are.
 
 ## Word lookup and highlights
 
-Press **Y** on a page. A cursor sits on one word. A comma, period, quote, or similar mark attached to that word is not part of the selection.
+Press **Y** on a page. A cursor sits on a word near the middle of the page, and a bar along the bottom names the buttons. A comma, period, quote, or similar mark attached to that word is not part of the selection.
 
 | Button | While words are selected |
 | --- | --- |
 | D-pad | Move the cursor. Hold to repeat. Left at the start of the page, or right at the end, turns the page. Until you extend, each move is still one word. |
 | Start | Keep the first word and add every word you move through. Press Start again to stop extending. The next move returns to one word. |
-| A | Open **Look up** and **Highlight**. Look up uses the word at the cursor. Highlight covers the whole selection. If that stretch is already highlighted, the second row is **Remove highlight**. |
+| A | Open a small menu over the page, with **Look up** and **Highlight**. Look up uses the word at the cursor. Highlight covers the whole selection. If that stretch is already highlighted, the second row is **Remove highlight**. **B** returns to the word. |
 | B or Y | Leave word selection. The shoulders still turn the page. |
 
 **Look up** opens the definition full screen. Up and down scroll a long definition. Any other button closes it.
@@ -72,7 +72,7 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 
 ## Chapters
 
-**Select** opens the chapter list from the book's table of contents. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. A book with no table of contents shows an empty list. There is no separate next-chapter button.
+**Select** opens the chapter list from the book's table of contents, on the chapter you are reading. A mark stays on that chapter while you move. The corner shows which row is selected. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. A book with no table of contents does not open the list. There is no separate next-chapter button.
 
 ## Settings
 

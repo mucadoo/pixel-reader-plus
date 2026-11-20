@@ -223,6 +223,20 @@ void PageIndex::ensure_pages(int page_size) const
     int i = 0;
     while (i < n)
     {
+        // A chapter break can leave blank separator lines in front of the title.
+        // If the previous page is already full they would open the new page, and
+        // if it still has room they stay behind. Skip them so every chapter
+        // starts on its first line of content.
+        int content = i;
+        while (content < n && slots[content].blank)
+        {
+            ++content;
+        }
+        if (content > i && content < n && slots[content].hard_break)
+        {
+            i = content;
+        }
+
         page_starts.push_back(i);
         bool page_has_content = false;
         int used = 0;
@@ -280,6 +294,44 @@ int PageIndex::page_of_line(int line, int lines_per_page) const
         return 0;
     }
     return static_cast<int>(it_page - page_starts.begin()) - 1;
+}
+
+int PageIndex::line_for_navigation(int line, int page_size) const
+{
+    ensure_pages(page_size);
+    if (slots.empty())
+    {
+        return 0;
+    }
+    if (line < 0)
+    {
+        line = 0;
+    }
+    if (line >= static_cast<int>(slots.size()))
+    {
+        line = static_cast<int>(slots.size()) - 1;
+    }
+    if (!slots[line].blank)
+    {
+        return line;
+    }
+
+    int next = line;
+    while (next < static_cast<int>(slots.size()) && slots[next].blank)
+    {
+        ++next;
+    }
+    if (next >= static_cast<int>(slots.size()))
+    {
+        return line;
+    }
+
+    bool starts_page = first_line_of_page(page_of_line(next, page_size), page_size) == next;
+    if (slots[next].hard_break || (starts_page && slots[next].group > 1))
+    {
+        return next;
+    }
+    return line;
 }
 
 int PageIndex::first_line_of_page(int page, int lines_per_page) const

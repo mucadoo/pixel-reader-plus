@@ -17,9 +17,12 @@ class SelectionMenu: public View
     bool needs_render = true;
 
     std::vector<std::string> entries;
+    std::string title;
     uint32_t cursor_pos = 0;
     uint32_t scroll_pos = 0;
+    int marker_pos = -1;
     bool close_on_select = false;
+    bool compact = false;
 
     SystemStyling &styling;
     const uint32_t styling_sub_id;
@@ -52,6 +55,11 @@ public:
     // Define fallback keypress handler
     void set_default_on_keypress(std::function<void(SDLKey, SelectionMenu &)> callback);
     void set_close_on_select();
+    void set_title(std::string title);
+    // A short menu drawn over the screen behind it.
+    void set_compact(bool compact);
+    // Row that stays marked after the cursor moves, such as the chapter being read.
+    void set_marker(uint32_t index);
 
     void set_cursor_pos(const std::string &entry);
     void set_cursor_pos(uint32_t pos);
@@ -60,6 +68,7 @@ public:
 
     bool render(SDL_Surface *dest_surface, bool force_render) override;
     bool is_done() override;
+    bool is_modal() override;
     void on_keypress(SDLKey key) override;
     void on_keyheld(SDLKey key, uint32_t held_time_ms) override;
 };

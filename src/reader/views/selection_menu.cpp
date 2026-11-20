@@ -7,13 +7,49 @@
 #include "reader/system_styling.h"
 #include "util/sdl_utils.h"
 
+#include <algorithm>
+#include <cstdio>
+
 uint32_t SelectionMenu::num_display_lines() const
 {
-    return SCREEN_HEIGHT / line_height;
+    if (compact)
+    {
+        int count = static_cast<int>(entries.size());
+        if (count < 1)
+        {
+            count = 1;
+        }
+        if (count > 6)
+        {
+            count = 6;
+        }
+        return static_cast<uint32_t>(count);
+    }
+    int reserved = title.empty() ? 0 : line_height * 2;
+    int lines = (static_cast<int>(SCREEN_HEIGHT) - reserved) / std::max(1, line_height);
+    if (lines < 1)
+    {
+        lines = 1;
+    }
+    return static_cast<uint32_t>(lines);
 }
 
 uint32_t SelectionMenu::excess_pxl_y() const
 {
+    if (compact)
+    {
+        return 0;
+    }
+    if (!title.empty())
+    {
+        int usable = static_cast<int>(SCREEN_HEIGHT) - line_height * 2;
+        int extra = usable - static_cast<int>(num_display_lines()) * line_height;
+        if (extra < 0)
+        {
+            extra = 0;
+        }
+        return static_cast<uint32_t>(extra);
+    }
     return SCREEN_HEIGHT - num_display_lines() * line_height;
 }
 
@@ -77,6 +113,24 @@ void SelectionMenu::set_close_on_select()
     close_on_select = true;
 }
 
+void SelectionMenu::set_title(std::string new_title)
+{
+    title = std::move(new_title);
+    needs_render = true;
+}
+
+void SelectionMenu::set_compact(bool enabled)
+{
+    compact = enabled;
+    needs_render = true;
+}
+
+void SelectionMenu::set_marker(uint32_t index)
+{
+    marker_pos = static_cast<int>(index);
+    needs_render = true;
+}
+
 void SelectionMenu::set_cursor_pos(const std::string &entry)
 {
     for (uint32_t i = 0; i < entries.size(); ++i)
@@ -120,6 +174,69 @@ void SelectionMenu::close()
     _is_done = true;
 }
 
+namespace
+{
+
+SDL_Color quiet_text(const ColorTheme &theme)
+{
+    return SDL_Color {
+        static_cast<Uint8>((theme.main_text.r * 2 + theme.background.r) / 3),
+        static_cast<Uint8>((theme.main_text.g * 2 + theme.background.g) / 3),
+        static_cast<Uint8>((theme.main_text.b * 2 + theme.background.b) / 3),
+        0
+    };
+}
+
+surface_unique_ptr shade(TTF_Font *font, const std::string &text, SDL_Color fg, SDL_Color bg)
+{
+    if (!font || text.empty())
+    {
+        return nullptr;
+    }
+    return surface_unique_ptr { TTF_RenderUTF8_Shaded(font, text.c_str(), fg, bg) };
+}
+
+void blit_crop(SDL_Surface *src, SDL_Surface *dest, int x, int y, int max_w)
+{
+    if (!src || max_w <= 0)
+    {
+        return;
+    }
+    SDL_Rect src_rect = {0, 0, static_cast<Uint16>(src->w), static_cast<Uint16>(src->h)};
+    if (src_rect.w > max_w)
+    {
+        src_rect.w = static_cast<Uint16>(max_w);
+    }
+    SDL_Rect dst = {static_cast<Sint16>(x), static_cast<Sint16>(y), 0, 0};
+    SDL_BlitSurface(src, &src_rect, dest, &dst);
+}
+
+int text_width(TTF_Font *font, const std::string &text)
+{
+    int w = 0;
+    int h = 0;
+    if (font && !text.empty())
+    {
+        TTF_SizeUTF8(font, text.c_str(), &w, &h);
+    }
+    return w;
+}
+
+void dim_screen(SDL_Surface *dest)
+{
+    surface_unique_ptr mask { SDL_CreateRGBSurface(SDL_SWSURFACE, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0, 0, 0, 0) };
+    if (!mask)
+    {
+        return;
+    }
+    SDL_SetAlpha(mask.get(), SDL_SRCALPHA, 140);
+    SDL_Rect rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_FillRect(mask.get(), &rect, SDL_MapRGB(mask->format, 0, 0, 0));
+    SDL_BlitSurface(mask.get(), nullptr, dest, &rect);
+}
+
+}
+
 bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
 {
     if (!needs_render && !force_render)
@@ -129,26 +246,147 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
     needs_render = false;
 
     TTF_Font *loaded_font = styling.get_loaded_font();
-
-    const SDL_PixelFormat *pixel_format = dest_surface->format;
-
     const auto &theme = styling.get_loaded_color_theme();
     const SDL_Color &fg_color = theme.main_text;
     const SDL_Color &bg_color = theme.background;
     const SDL_Color &hl_bg_color = theme.highlight_background;
     const SDL_Color &hl_text_color = theme.highlight_text;
+    SDL_Color quiet = quiet_text(theme);
 
-    uint32_t rect_bg_color = SDL_MapRGB(pixel_format, bg_color.r, bg_color.g, bg_color.b);
-    uint32_t rect_highlight_color = SDL_MapRGB(pixel_format, hl_bg_color.r, hl_bg_color.g, hl_bg_color.b);
+    uint32_t rect_bg_color = SDL_MapRGB(dest_surface->format, bg_color.r, bg_color.g, bg_color.b);
+    uint32_t rect_highlight_color = SDL_MapRGB(dest_surface->format, hl_bg_color.r, hl_bg_color.g, hl_bg_color.b);
+    uint32_t rect_fg_color = SDL_MapRGB(dest_surface->format, fg_color.r, fg_color.g, fg_color.b);
+    uint32_t rect_hl_text_color = SDL_MapRGB(dest_surface->format, hl_text_color.r, hl_text_color.g, hl_text_color.b);
+    uint32_t rect_quiet_color = SDL_MapRGB(dest_surface->format, quiet.r, quiet.g, quiet.b);
 
-    Sint16 x = line_padding;
-    Sint16 y = excess_pxl_y() / 2;
+    if (compact)
+    {
+        dim_screen(dest_surface);
 
-    // Clear screen
-    SDL_Rect rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-    SDL_FillRect(dest_surface, &rect, rect_bg_color);
+        const int pad = 18;
+        uint32_t shown = num_display_lines();
+        int title_h = title.empty() ? 0 : line_height + 8;
+        int footer_h = line_height;
+        int panel_h = pad + title_h + static_cast<int>(shown) * line_height + 8 + footer_h + pad;
 
-    // Draw lines
+        int content_w = text_width(loaded_font, title);
+        for (uint32_t i = 0; i < shown; ++i)
+        {
+            uint32_t global_i = i + scroll_pos;
+            if (global_i >= entries.size())
+            {
+                break;
+            }
+            content_w = std::max(content_w, text_width(loaded_font, entries[global_i]));
+        }
+        content_w = std::max(content_w, text_width(loaded_font, "A  Choose") + text_width(loaded_font, "B  Back") + 24);
+        int panel_w = std::min(static_cast<int>(SCREEN_WIDTH) - 36, std::max(220, content_w + pad * 2 + 16));
+        int panel_x = (static_cast<int>(SCREEN_WIDTH) - panel_w) / 2;
+        int panel_y = (static_cast<int>(SCREEN_HEIGHT) - panel_h) / 2;
+        if (panel_y < 8)
+        {
+            panel_y = 8;
+        }
+
+        SDL_Rect frame = {
+            static_cast<Sint16>(panel_x),
+            static_cast<Sint16>(panel_y),
+            static_cast<Uint16>(panel_w),
+            static_cast<Uint16>(panel_h)
+        };
+        SDL_FillRect(dest_surface, &frame, rect_fg_color);
+        frame.x += 1;
+        frame.y += 1;
+        frame.w -= 2;
+        frame.h -= 2;
+        SDL_FillRect(dest_surface, &frame, rect_bg_color);
+
+        int y = panel_y + pad;
+        if (!title.empty())
+        {
+            auto heading = shade(loaded_font, title, fg_color, bg_color);
+            blit_crop(heading.get(), dest_surface, panel_x + pad, y + std::max(0, (line_height - (heading ? heading->h : 0)) / 2), panel_w - pad * 2);
+            y += title_h;
+        }
+
+        for (uint32_t i = 0; i < shown; ++i)
+        {
+            uint32_t global_i = i + scroll_pos;
+            if (global_i >= entries.size())
+            {
+                break;
+            }
+            bool is_highlighted = global_i == cursor_pos;
+            if (is_highlighted)
+            {
+                SDL_Rect row = {
+                    static_cast<Sint16>(panel_x + 8),
+                    static_cast<Sint16>(y),
+                    static_cast<Uint16>(panel_w - 16),
+                    static_cast<Uint16>(line_height)
+                };
+                SDL_FillRect(dest_surface, &row, rect_highlight_color);
+            }
+            auto message = shade(
+                loaded_font,
+                entries[global_i],
+                is_highlighted ? hl_text_color : fg_color,
+                is_highlighted ? hl_bg_color : bg_color
+            );
+            int text_y = y + line_padding / 2;
+            blit_crop(message.get(), dest_surface, panel_x + pad, text_y, panel_w - pad * 2);
+            y += line_height;
+        }
+
+        int footer_y = panel_y + panel_h - pad - footer_h;
+        auto choose = shade(loaded_font, "A  Choose", quiet, bg_color);
+        auto back = shade(loaded_font, "B  Back", quiet, bg_color);
+        int hint_y = footer_y + std::max(0, (footer_h - (choose ? choose->h : 0)) / 2);
+        blit_crop(choose.get(), dest_surface, panel_x + pad, hint_y, panel_w / 2);
+        if (back)
+        {
+            blit_crop(back.get(), dest_surface, panel_x + panel_w - pad - back->w, hint_y, back->w);
+        }
+        return true;
+    }
+
+    SDL_Rect screen = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_FillRect(dest_surface, &screen, rect_bg_color);
+
+    bool chrome = !title.empty();
+    if (chrome)
+    {
+        auto heading = shade(loaded_font, title, fg_color, bg_color);
+        blit_crop(
+            heading.get(),
+            dest_surface,
+            14,
+            std::max(0, (line_height - (heading ? heading->h : 0)) / 2),
+            SCREEN_WIDTH / 2
+        );
+        if (!entries.empty())
+        {
+            char count[32];
+            std::snprintf(count, sizeof(count), "%u / %u", cursor_pos + 1, static_cast<unsigned>(entries.size()));
+            auto count_surface = shade(loaded_font, count, quiet, bg_color);
+            if (count_surface)
+            {
+                blit_crop(
+                    count_surface.get(),
+                    dest_surface,
+                    static_cast<int>(SCREEN_WIDTH) - 14 - count_surface->w,
+                    std::max(0, (line_height - count_surface->h) / 2),
+                    count_surface->w
+                );
+            }
+        }
+        SDL_Rect rule = {0, static_cast<Sint16>(line_height - 1), SCREEN_WIDTH, 1};
+        SDL_FillRect(dest_surface, &rule, rect_quiet_color);
+    }
+
+    Sint16 x = chrome ? 16 : line_padding;
+    Sint16 y = chrome ? static_cast<Sint16>(line_height + excess_pxl_y() / 2) : static_cast<Sint16>(excess_pxl_y() / 2);
+
     uint32_t num_lines = num_display_lines();
     for (uint32_t i = 0; i < num_lines; ++i)
     {
@@ -158,37 +396,63 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
             break;
         }
 
-        const auto &entry = entries[global_i];
-
-        bool is_highlighted = (global_i == cursor_pos);
-
-        // Draw hightlight
+        bool is_highlighted = global_i == cursor_pos;
+        int inset = chrome ? 8 : 0;
         if (is_highlighted)
         {
-            SDL_Rect rect = {0, y, SCREEN_WIDTH, (Uint16)(line_height)};
-            SDL_FillRect(dest_surface, &rect, rect_highlight_color);
+            SDL_Rect row = {
+                static_cast<Sint16>(inset),
+                y,
+                static_cast<Uint16>(SCREEN_WIDTH - inset * 2),
+                static_cast<Uint16>(line_height)
+            };
+            SDL_FillRect(dest_surface, &row, rect_highlight_color);
         }
 
-        // Draw text
+        if (chrome && marker_pos == static_cast<int>(global_i))
         {
-            SDL_Rect rectMessage = {
-                x,
-                static_cast<Sint16>(y + line_padding / 2),
-                0, 0
-            };
-            auto message = surface_unique_ptr { TTF_RenderUTF8_Shaded(
-                loaded_font,
-                entry.c_str(),
-                is_highlighted ? hl_text_color : fg_color,
-                is_highlighted ? hl_bg_color : bg_color
-            ) };
-            SDL_BlitSurface(message.get(), NULL, dest_surface, &rectMessage);
+            SDL_Rect mark = {8, y, 4, static_cast<Uint16>(line_height)};
+            SDL_FillRect(dest_surface, &mark, is_highlighted ? rect_hl_text_color : rect_fg_color);
         }
+
+        auto message = shade(
+            loaded_font,
+            entries[global_i],
+            is_highlighted ? hl_text_color : fg_color,
+            is_highlighted ? hl_bg_color : bg_color
+        );
+        blit_crop(
+            message.get(),
+            dest_surface,
+            x,
+            y + line_padding / 2,
+            static_cast<int>(SCREEN_WIDTH) - x - 12
+        );
 
         y += line_height;
     }
 
+    if (chrome)
+    {
+        int footer_y = static_cast<int>(SCREEN_HEIGHT) - line_height;
+        SDL_Rect rule = {0, static_cast<Sint16>(footer_y), SCREEN_WIDTH, 1};
+        SDL_FillRect(dest_surface, &rule, rect_quiet_color);
+        auto open = shade(loaded_font, "A  Open", quiet, bg_color);
+        auto close = shade(loaded_font, "B  Close", quiet, bg_color);
+        int hint_y = footer_y + std::max(0, (line_height - (open ? open->h : 0)) / 2);
+        blit_crop(open.get(), dest_surface, 14, hint_y, SCREEN_WIDTH / 2);
+        if (close)
+        {
+            blit_crop(close.get(), dest_surface, static_cast<int>(SCREEN_WIDTH) - 14 - close->w, hint_y, close->w);
+        }
+    }
+
     return true;
+}
+
+bool SelectionMenu::is_modal()
+{
+    return compact;
 }
 
 bool SelectionMenu::is_done()

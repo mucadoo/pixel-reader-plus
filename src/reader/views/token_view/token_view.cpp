@@ -296,7 +296,11 @@ static void layout_visible_words(TokenViewState &state)
                 {
                     text_h = std::max(text_h, piece.h);
                 }
-                int text_y = line_y + std::max(0, (box_h - text_h) / 2);
+                // A larger chapter title used to sit in the middle of its taller slot,
+                // so those pages started lower than a normal chapter. Keep the top aligned.
+                int text_y = line_y + (text_line->slot_span > 1
+                    ? line_padding / 2
+                    : std::max(0, (box_h - text_h) / 2));
 
                 TokenViewState::VisibleText visual;
                 visual.present = true;
@@ -368,6 +372,88 @@ static void draw_text_line(
     auto font_for = [&](int style, float scale) {
         return state.font_for(scale, text_line->pre, style);
     };
+    auto whitespace_only = [](const std::string &text) {
+        for (unsigned char c : text)
+        {
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto piece_background = [&](const DrawnPiece &piece) {
+        SDL_Color bg = theme.background;
+        int left = piece.x + visual.origin;
+        int right = left + piece.w;
+        DocAddr range_begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
+        DocAddr range_end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
+        for (const LayoutWord &word : visual.layout.words)
+        {
+            if (word.x >= right || word.x + word.w <= left)
+            {
+                continue;
+            }
+            bool selected = state.selecting && state.has_selection && word.begin >= range_begin && word.begin < range_end;
+            if (selected)
+            {
+                return theme.highlight_background;
+            }
+            if (highlights_cover(state.highlights, word.begin))
+            {
+                bg = marker;
+            }
+        }
+        return bg;
+    };
+
+    bool uniform = true;
+    bool marked = false;
+    const DrawnPiece *sample = nullptr;
+    for (const DrawnPiece &piece : visual.layout.pieces)
+    {
+        if (piece.text.empty() || whitespace_only(piece.text))
+        {
+            continue;
+        }
+        if (!sample)
+        {
+            sample = &piece;
+        }
+        else if (piece.style != sample->style || piece.scale != sample->scale)
+        {
+            uniform = false;
+        }
+        if (piece_background(piece).r != theme.background.r
+            || piece_background(piece).g != theme.background.g
+            || piece_background(piece).b != theme.background.b)
+        {
+            marked = true;
+        }
+    }
+
+    // One shaded string for a plain line. Blended text, once per word, is what stalls a page turn.
+    if (uniform && !marked && sample && !text_line->text.empty())
+    {
+        TTF_Font *font = font_for(sample->style, sample->scale);
+        if (font)
+        {
+            SDL_Surface *surface = TTF_RenderUTF8_Shaded(font, text_line->text.c_str(), theme.main_text, theme.background);
+            if (surface)
+            {
+                SDL_Rect dest = {
+                    static_cast<Sint16>(visual.origin),
+                    static_cast<Sint16>(visual.text_y),
+                    0,
+                    0
+                };
+                SDL_BlitSurface(surface, nullptr, dest_surface, &dest);
+                SDL_FreeSurface(surface);
+            }
+        }
+        return;
+    }
+
     int max_ascent = 0;
     for (const DrawnPiece &piece : visual.layout.pieces)
     {
@@ -375,7 +461,7 @@ static void draw_text_line(
     }
     for (const DrawnPiece &piece : visual.layout.pieces)
     {
-        if (piece.text.empty() || piece.w <= 0)
+        if (piece.text.empty() || piece.w <= 0 || whitespace_only(piece.text))
         {
             continue;
         }
@@ -384,7 +470,12 @@ static void draw_text_line(
         {
             continue;
         }
-        SDL_Surface *surface = TTF_RenderUTF8_Blended(run_font, piece.text.c_str(), theme.main_text);
+        SDL_Color bg = piece_background(piece);
+        bool on_selection = bg.r == theme.highlight_background.r
+            && bg.g == theme.highlight_background.g
+            && bg.b == theme.highlight_background.b;
+        SDL_Color fg = on_selection ? theme.highlight_text : theme.main_text;
+        SDL_Surface *surface = TTF_RenderUTF8_Shaded(run_font, piece.text.c_str(), fg, bg);
         if (!surface)
         {
             continue;
@@ -398,6 +489,62 @@ static void draw_text_line(
         };
         SDL_BlitSurface(surface, nullptr, dest_surface, &dest);
         SDL_FreeSurface(surface);
+    }
+}
+
+static SDL_Color selection_hint_color(const ColorTheme &theme)
+{
+    return SDL_Color {
+        static_cast<Uint8>((theme.main_text.r * 2 + theme.background.r) / 3),
+        static_cast<Uint8>((theme.main_text.g * 2 + theme.background.g) / 3),
+        static_cast<Uint8>((theme.main_text.b * 2 + theme.background.b) / 3),
+        0
+    };
+}
+
+static void draw_selection_hint(
+    SDL_Surface *dest,
+    TTF_Font *font,
+    const ColorTheme &theme,
+    bool extending,
+    int y,
+    int band_h
+)
+{
+    if (!font || band_h <= 0)
+    {
+        return;
+    }
+    SDL_Rect band = {0, static_cast<Sint16>(y), SCREEN_WIDTH, static_cast<Uint16>(band_h)};
+    SDL_FillRect(
+        dest,
+        &band,
+        SDL_MapRGB(dest->format, theme.background.r, theme.background.g, theme.background.b)
+    );
+    SDL_Color quiet = selection_hint_color(theme);
+    SDL_Rect rule = {0, static_cast<Sint16>(y), SCREEN_WIDTH, 1};
+    SDL_FillRect(dest, &rule, SDL_MapRGB(dest->format, quiet.r, quiet.g, quiet.b));
+
+    auto label = [&](const char *text) {
+        return surface_unique_ptr { TTF_RenderUTF8_Shaded(font, text, quiet, theme.background) };
+    };
+    auto left = label("A  Actions");
+    auto middle = label(extending ? "Adding words" : "Start  Extend");
+    auto right = label("B  Cancel");
+    if (!left || !right)
+    {
+        return;
+    }
+    int text_y = y + std::max(0, (band_h - left->h) / 2);
+    const int pad = 10;
+    SDL_Rect dest_rect = {static_cast<Sint16>(pad), static_cast<Sint16>(text_y), 0, 0};
+    SDL_BlitSurface(left.get(), nullptr, dest, &dest_rect);
+    dest_rect.x = static_cast<Sint16>(SCREEN_WIDTH - pad - right->w);
+    SDL_BlitSurface(right.get(), nullptr, dest, &dest_rect);
+    if (middle && left->w + right->w + middle->w + pad * 4 < static_cast<int>(SCREEN_WIDTH))
+    {
+        dest_rect.x = static_cast<Sint16>((SCREEN_WIDTH - middle->w) / 2);
+        SDL_BlitSurface(middle.get(), nullptr, dest, &dest_rect);
     }
 }
 
@@ -512,7 +659,14 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         line_y += line_height;
     }
 
-    if (state->token_view_styling.get_show_title_bar())
+    if (state->selecting)
+    {
+        int band_y = state->token_view_styling.get_show_title_bar()
+            ? padding_y + state->num_text_display_lines() * line_height
+            : static_cast<int>(SCREEN_HEIGHT) - line_height;
+        draw_selection_hint(dest_surface, font, theme, state->extending, band_y, line_height);
+    }
+    else if (state->token_view_styling.get_show_title_bar())
     {
         // Recompute for short book case
         line_y = padding_y + state->num_text_display_lines() * line_height;
@@ -997,7 +1151,8 @@ bool TokenView::align_to_page(bool chapter)
     }
     int size = std::max(1, state->num_text_display_lines());
     int line = absolute_line(*state);
-    int start = state->page_index.first_line_of_page(state->page_index.page_of_line(line, size), size);
+    int content = state->page_index.line_for_navigation(line, size);
+    int start = state->page_index.first_line_of_page(state->page_index.page_of_line(content, size), size);
     if (line == start)
     {
         return false;
@@ -1018,7 +1173,7 @@ void TokenView::turn_page(int direction)
         return;
     }
     int size = std::max(1, state->num_text_display_lines());
-    int line = absolute_line(*state);
+    int line = state->page_index.line_for_navigation(absolute_line(*state), size);
     int pages = state->page_index.page_count(size);
     if (pages <= 0)
     {
@@ -1059,7 +1214,32 @@ void TokenView::start_word_select()
     }
     state->selecting = true;
     state->extending = false;
-    assign_focus(*state, state->page_words[0]);
+    int mid_line = std::max(0, visible_text_lines(*state) / 2);
+    int mid_x = static_cast<int>(SCREEN_WIDTH) / 2;
+    int best = 0;
+    int best_line = 100000;
+    int best_x = 100000;
+    for (int i = 0; i < static_cast<int>(state->page_words.size()); ++i)
+    {
+        const LayoutWord &word = state->page_words[i];
+        int line_distance = word.line_index - mid_line;
+        if (line_distance < 0)
+        {
+            line_distance = -line_distance;
+        }
+        int x_distance = word.x + word.w / 2 - mid_x;
+        if (x_distance < 0)
+        {
+            x_distance = -x_distance;
+        }
+        if (line_distance < best_line || (line_distance == best_line && x_distance < best_x))
+        {
+            best_line = line_distance;
+            best_x = x_distance;
+            best = i;
+        }
+    }
+    assign_focus(*state, state->page_words[best]);
 }
 
 void TokenView::cancel_word_select()

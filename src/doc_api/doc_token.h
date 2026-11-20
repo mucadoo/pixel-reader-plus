@@ -14,6 +14,8 @@ struct StyleSpan
     uint32_t end = 0;
     bool bold = false;
     bool italic = false;
+    // 0 inherits the line size. Otherwise this is the size relative to the user's font (1 = body).
+    float scale = 0;
 };
 
 enum class TokenType
@@ -38,6 +40,13 @@ struct DocToken
     int header_level = 0;
     bool pre = false;
     bool quote = false;
+    // Size relative to the user's font. 1 is body text. Set from the book's stylesheet.
+    float font_scale = 1.f;
+    bool scale_set = false;
+    bool centered = false;
+    bool center_set = false;
+    bool bold = false;
+    bool italic = false;
 
 protected:
     std::string common_to_string(std::string data) const;

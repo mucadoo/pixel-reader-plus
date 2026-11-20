@@ -1,16 +1,20 @@
 #include "./xhtml_parser.h"
 
+#include "./book_style.h"
 #include "./epub_doc_addr.h"
 #include "./libxml_iter.h"
 #include "./xhtml_string_util.h"
 #include "./util/str_utils.h"
+#include "util/zip_utils.h"
 
 #include "doc_api/token_addressing.h"
 
 #include <libxml/parser.h>
 
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <set>
 #include <unordered_map>
@@ -129,6 +133,13 @@ struct Node
     bool italic = false;
     bool quote = false;
     int header_level = 0;
+    float scale = 1.f;
+    float block_scale = 1.f;
+    bool block_scale_set = false;
+    bool block_bold = false;
+    bool block_italic = false;
+    bool center = false;
+    bool center_set = false;
 
     Node(Type type, DocAddr address, xmlNodePtr node, std::string text, int list_depth)
         : type(type)
@@ -190,6 +201,14 @@ class NodeProcessor
     int italic_depth = 0;
     int quote_depth = 0;
     std::vector<int> header_levels;
+    const Stylesheet &stylesheet;
+
+    struct Frame
+    {
+        BookStyle self;
+        BookStyle block;
+    };
+    std::vector<Frame> frames{Frame{}};
 
     DocAddr current_address;
 
@@ -211,19 +230,107 @@ class NodeProcessor
         attach_pending_ids(current_address);
         nodes.emplace_back(type, current_address, node, std::move(text), list_depth);
         Node &emitted = nodes.back();
-        emitted.bold = bold_depth > 0;
-        emitted.italic = italic_depth > 0;
+        const Frame &frame = frames.back();
+        emitted.bold = frame.self.bold || bold_depth > 0;
+        emitted.italic = frame.self.italic || italic_depth > 0;
         emitted.quote = quote_depth > 0;
         emitted.header_level = header_levels.empty() ? 0 : header_levels.back();
+        emitted.scale = frame.self.scale;
+        emitted.block_scale = frame.block.scale;
+        emitted.block_scale_set = frame.block.scale_set;
+        emitted.block_bold = frame.block.bold;
+        emitted.block_italic = frame.block.italic;
+        emitted.center = frame.block.center;
+        emitted.center_set = frame.block.center_set;
         DEBUG_LOG("[node: " << nodes.back().to_string() << "]");
     }
 
 public:
     NodeProcessor(
         DocAddr current_address,
-        std::unordered_map<std::string, DocAddr> &id_to_addr
-    ) : current_address(current_address), id_to_addr(id_to_addr)
+        std::unordered_map<std::string, DocAddr> &id_to_addr,
+        const Stylesheet &stylesheet,
+        BookStyle root = {}
+    ) : stylesheet(stylesheet), current_address(current_address), id_to_addr(id_to_addr)
     {
+        frames[0].self = root;
+        frames[0].block = root;
+    }
+
+    static std::vector<std::string> class_list(xmlNodePtr node)
+    {
+        std::vector<std::string> out;
+        xmlChar *cls = xmlGetProp(node, BAD_CAST "class");
+        if (!cls)
+        {
+            return out;
+        }
+        std::string text((const char *)cls);
+        xmlFree(cls);
+        std::string cur;
+        for (char c : text)
+        {
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+            {
+                if (!cur.empty())
+                {
+                    out.push_back(cur);
+                    cur.clear();
+                }
+            }
+            else
+            {
+                cur.push_back(c);
+            }
+        }
+        if (!cur.empty())
+        {
+            out.push_back(cur);
+        }
+        return out;
+    }
+
+    void push_style(xmlNodePtr node)
+    {
+        Frame next = frames.back();
+        std::string tag = node->name ? (const char *)node->name : "";
+        next.self = stylesheet.apply(next.self, tag, class_list(node));
+        if (tag == "b" || tag == "strong")
+        {
+            next.self.bold = true;
+        }
+        else if (tag == "i" || tag == "em" || tag == "cite")
+        {
+            next.self.italic = true;
+        }
+        else if (tag.size() == 2 && tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6')
+        {
+            int level = tag[1] - '0';
+            next.self.bold = true;
+            if (!next.self.scale_set)
+            {
+                next.self.scale = level == 1 ? 1.5f : level == 2 ? 1.25f : 1.15f;
+                next.self.scale_set = true;
+            }
+            if (!next.self.center_set && level <= 2)
+            {
+                next.self.center = true;
+                next.self.center_set = true;
+            }
+        }
+        if (element_is_blocking(node->name) && tag != "br")
+        {
+            next.block = next.self;
+        }
+        frames.push_back(next);
+    }
+
+    void pop_style()
+    {
+        if (frames.size() > 1)
+        {
+            frames.pop_back();
+        }
     }
 
     void on_text_node(xmlNodePtr node, int node_depth)
@@ -264,6 +371,7 @@ public:
     void on_enter_element_node(xmlNodePtr node, int node_depth)
     {
         DEBUG_LOG("<node name=\"" << node->name << "\">");
+        push_style(node);
 
         // Look for id
         {
@@ -423,6 +531,7 @@ public:
                 if (italic_depth > 0) --italic_depth;
             }
         }
+        pop_style();
     }
 
     const std::vector<Node> &get_nodes() const
@@ -463,7 +572,8 @@ void append_styled_piece(
     std::vector<StyleSpan> &spans,
     std::string piece,
     bool bold,
-    bool italic
+    bool italic,
+    float scale
 )
 {
     if (result.empty())
@@ -480,17 +590,19 @@ void append_styled_piece(
 
     uint32_t start = static_cast<uint32_t>(result.size());
     result.append(piece);
-    if ((bold || italic) && result.size() > start)
+    if ((bold || italic || scale > 0.2f) && result.size() > start)
     {
         StyleSpan span;
         span.start = start;
         span.end = static_cast<uint32_t>(result.size());
         span.bold = bold;
         span.italic = italic;
+        span.scale = scale;
         if (!spans.empty()
             && spans.back().end == span.start
             && spans.back().bold == span.bold
-            && spans.back().italic == span.italic)
+            && spans.back().italic == span.italic
+            && std::fabs(spans.back().scale - span.scale) < 0.02f)
         {
             spans.back().end = span.end;
         }
@@ -513,12 +625,20 @@ void compact_styled(
     spans_out.clear();
     for (uint32_t j = begin; j < begin + count; ++j)
     {
+        float scale = 0;
+        if (std::fabs(nodes[j].scale - nodes[j].block_scale) > 0.03f)
+        {
+            scale = nodes[j].scale;
+        }
+        bool bold = nodes[j].bold && !nodes[j].block_bold;
+        bool italic = nodes[j].italic && !nodes[j].block_italic;
         append_styled_piece(
             text_out,
             spans_out,
             compact_whitespace(nodes[j].text.c_str()),
-            nodes[j].bold,
-            nodes[j].italic
+            bold,
+            italic,
+            scale
         );
     }
 
@@ -601,6 +721,12 @@ void generate_doc_tokens(
                         }
                         token->spans = std::move(spans);
                         token->quote = head.quote;
+                        token->font_scale = head.block_scale > 0.2f ? head.block_scale : 1.f;
+                        token->scale_set = head.block_scale_set;
+                        token->centered = head.center;
+                        token->center_set = head.center_set;
+                        token->bold = head.block_bold;
+                        token->italic = head.block_italic;
                         tokens_out.push_back(std::move(token));
 
                         separator_allowed = true;
@@ -621,6 +747,10 @@ void generate_doc_tokens(
                     {
                         auto token = std::make_unique<TextDocToken>(address, text);
                         token->pre = true;
+                        token->font_scale = head.block_scale > 0.2f ? head.block_scale : 1.f;
+                        token->scale_set = head.block_scale_set;
+                        token->bold = head.block_bold;
+                        token->italic = head.block_italic;
                         tokens_out.push_back(std::move(token));
                         separator_allowed = true;
                     }
@@ -633,9 +763,14 @@ void generate_doc_tokens(
                     if (!img_path) img_path = xmlGetProp(node, BAD_CAST "src");
                     if (img_path)
                     {
+                        std::string rel((const char *)img_path);
+                        std::string base = base_path.generic_string();
+                        std::string combined = (!rel.empty() && (rel[0] == '/' || rel[0] == '\\'))
+                            ? rel
+                            : (base.empty() ? rel : base + "/" + rel);
                         tokens_out.push_back(std::make_unique<ImageDocToken>(
                             address,
-                            (base_path / (const char*)img_path).lexically_normal()
+                            normalize_zip_path(combined)
                         ));
                     }
                     else
@@ -668,7 +803,7 @@ void generate_doc_tokens(
 
 } // namespace
 
-bool parse_xhtml_tokens(const char *xml_str, std::filesystem::path file_path, uint32_t chapter_number, std::vector<std::unique_ptr<DocToken>> &tokens_out, std::unordered_map<std::string, DocAddr> &id_to_addr_out)
+bool parse_xhtml_tokens(const char *xml_str, std::filesystem::path file_path, uint32_t chapter_number, std::vector<std::unique_ptr<DocToken>> &tokens_out, std::unordered_map<std::string, DocAddr> &id_to_addr_out, EpubResourceLoader load_resource)
 {
     xmlDocPtr doc = xmlReadMemory(xml_str, strlen(xml_str), nullptr, nullptr, XML_PARSE_NOERROR | XML_PARSE_NOWARNING | XML_PARSE_RECOVER);
     if (doc == nullptr)
@@ -677,14 +812,98 @@ bool parse_xhtml_tokens(const char *xml_str, std::filesystem::path file_path, ui
         return false;
     }
 
-    xmlNodePtr node = xmlDocGetRootElement(doc);
+    xmlNodePtr root = xmlDocGetRootElement(doc);
+    xmlNodePtr html = elem_first_child(elem_first_by_name(root, BAD_CAST "html"));
 
-    node = elem_first_child(elem_first_by_name(node, BAD_CAST "html"));
-    node = elem_first_child(elem_first_by_name(node, BAD_CAST "body"));
+    Stylesheet stylesheet;
+    if (load_resource)
+    {
+        xmlNodePtr head = elem_first_by_name(html, BAD_CAST "head");
+        for (xmlNodePtr child = elem_first_child(head); child; child = child->next)
+        {
+            if (child->type != XML_ELEMENT_NODE || !child->name)
+            {
+                continue;
+            }
+            if (xmlStrEqual(child->name, BAD_CAST "link"))
+            {
+                xmlChar *rel = xmlGetProp(child, BAD_CAST "rel");
+                xmlChar *href = xmlGetProp(child, BAD_CAST "href");
+                bool is_style = rel && xmlStrcasestr(rel, BAD_CAST "stylesheet");
+                if (is_style && href)
+                {
+                    std::string base = file_path.parent_path().generic_string();
+                    std::string rel_href((const char *)href);
+                    std::string combined = (!rel_href.empty() && (rel_href[0] == '/' || rel_href[0] == '\\'))
+                        ? rel_href
+                        : (base.empty() ? rel_href : base + "/" + rel_href);
+                    auto css = load_resource(normalize_zip_path(combined));
+                    if (!css.empty())
+                    {
+                        stylesheet.parse(std::string(css.data(), css.size()));
+                    }
+                }
+                if (rel) xmlFree(rel);
+                if (href) xmlFree(href);
+            }
+            else if (xmlStrEqual(child->name, BAD_CAST "style"))
+            {
+                std::string css;
+                for (xmlNodePtr text = child->children; text; text = text->next)
+                {
+                    if (text->type == XML_TEXT_NODE && text->content)
+                    {
+                        css += (const char *)text->content;
+                    }
+                }
+                if (!css.empty())
+                {
+                    stylesheet.parse(css);
+                }
+            }
+        }
+    }
+
+    xmlNodePtr body = elem_first_by_name(html, BAD_CAST "body");
+    BookStyle root_style;
+    if (body)
+    {
+        std::vector<std::string> classes;
+        xmlChar *cls = xmlGetProp(body, BAD_CAST "class");
+        if (cls)
+        {
+            std::string text((const char *)cls);
+            xmlFree(cls);
+            std::string cur;
+            for (char c : text)
+            {
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+                {
+                    if (!cur.empty())
+                    {
+                        classes.push_back(cur);
+                        cur.clear();
+                    }
+                }
+                else
+                {
+                    cur.push_back(c);
+                }
+            }
+            if (!cur.empty())
+            {
+                classes.push_back(cur);
+            }
+        }
+        root_style = stylesheet.apply(BookStyle{}, "body", classes);
+    }
+    xmlNodePtr node = elem_first_child(body);
 
     NodeProcessor processor(
         make_address(chapter_number),
-        id_to_addr_out
+        id_to_addr_out,
+        stylesheet,
+        root_style
     );
     visit_nodes(node, processor);
 

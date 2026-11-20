@@ -121,8 +121,14 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             : 0;
         const bool pre = token.pre;
         const bool quote = token.quote;
-        const bool base_bold = header_level > 0;
-        const bool base_italic = quote;
+        float scale = token.font_scale > 0.2f ? token.font_scale : 1.f;
+        if (!token.scale_set && header_level > 0)
+        {
+            scale = header_level == 1 ? 1.5f : header_level == 2 ? 1.25f : 1.15f;
+        }
+        const bool base_bold = token.bold || header_level > 0;
+        const bool base_italic = token.italic || quote;
+        const bool centered = token.centered || (!token.center_set && header_level > 0 && header_level <= 2);
         const uint32_t span_shift = static_cast<uint32_t>(text.size() - (
             token.type == TokenType::ListItem
                 ? static_cast<const ListItemDocToken &>(token).text.size()
@@ -140,12 +146,12 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             return shifted;
         }();
 
-        auto font_for = [&](int style) -> TTF_Font * {
+        auto font_for = [&](int style, float run_scale) -> TTF_Font * {
             if (!style_font)
             {
                 return nullptr;
             }
-            return style_font(header_level, pre, style);
+            return style_font(run_scale, pre, style);
         };
 
         const char *full = text.c_str();
@@ -162,30 +168,36 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
                 shifted_spans,
                 base_bold,
                 base_italic,
+                scale,
                 font_for
             );
             return width <= avail;
         };
 
-        int slot_span = 1;
-        if (style_font && !text.empty() && (header_level > 0 || pre))
-        {
-            TTF_Font *sample = style_font(header_level, pre, style_flags(base_bold, base_italic));
-            int glyph_h = sample ? detect_line_height(sample) : static_cast<int>(line_height_pixels);
-            slot_span = std::max(1, (glyph_h + 4 + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
-            if (header_level == 1)
+        auto slots_for = [&](float run_scale) {
+            int slot_span = 1;
+            if (style_font && (run_scale > 1.08f || pre))
             {
-                slot_span = std::max(slot_span, 2);
+                TTF_Font *sample = style_font(run_scale, pre, style_flags(base_bold, base_italic));
+                int glyph_h = sample ? detect_line_height(sample) : static_cast<int>(line_height_pixels);
+                slot_span = std::max(1, (glyph_h + 4 + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
+                if (run_scale >= 1.5f)
+                {
+                    slot_span = std::max(slot_span, 2);
+                }
             }
-        }
+            return slot_span;
+        };
 
         DocAddr address = token.address;
         std::vector<std::unique_ptr<DisplayLine>> lines;
         wrap_lines(full, fits, [&](const char *str, uint32_t len) {
             std::string line_text(str, len);
-            bool centered = header_level > 0 && header_level <= 2;
             auto line = std::make_unique<TextLine>(address, line_text, centered);
             line->header_level = header_level;
+            line->font_scale = scale;
+            line->bold = base_bold;
+            line->italic = base_italic;
             line->pre = pre;
             line->quote = quote;
             line->address_lead = lines.empty() ? extra_text_width : 0;
@@ -195,7 +207,15 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
                 static_cast<uint32_t>(str - full),
                 len
             );
-            line->slot_span = line_text.empty() ? 1 : slot_span;
+            float line_scale = scale;
+            for (const StyleSpan &span : line->spans)
+            {
+                if (span.scale > line_scale)
+                {
+                    line_scale = span.scale;
+                }
+            }
+            line->slot_span = line_text.empty() ? 1 : slots_for(line_scale);
             int used_span = line->slot_span;
             lines.push_back(std::move(line));
             for (int extra = 1; extra < used_span; ++extra)

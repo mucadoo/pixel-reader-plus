@@ -78,22 +78,14 @@ struct TokenViewState
     };
     std::vector<VisibleText> visible;
 
-    TTF_Font *font_for(int header_level, bool pre, int style) const
+    TTF_Font *font_for(float scale, bool pre, int style) const
     {
         uint32_t base = sys_styling.get_font_size();
-        uint32_t size = base;
-        if (header_level == 1)
+        if (scale < 0.2f)
         {
-            size = base * 3 / 2;
+            scale = 1.f;
         }
-        else if (header_level == 2)
-        {
-            size = base * 5 / 4;
-        }
-        else if (header_level >= 3)
-        {
-            size = base * 8 / 7;
-        }
+        uint32_t size = static_cast<uint32_t>(static_cast<float>(base) * scale + 0.5f);
         if (size < 12) size = 12;
         if (size > 72) size = 72;
 
@@ -204,8 +196,8 @@ struct TokenViewState
                   );
               },
               line_height,
-              [this](int header_level, bool pre, int style) {
-                  return this->font_for(header_level, pre, style);
+              [this](float scale, bool pre, int style) {
+                  return this->font_for(scale, pre, style);
               }
           ),
           line_scroll_throttle(250, 50),
@@ -261,16 +253,17 @@ static void layout_visible_words(TokenViewState &state)
             const auto *text_line = static_cast<const TextLine *>(line);
             if (!text_line->continuation && !text_line->text.empty())
             {
-                bool base_bold = text_line->header_level > 0;
-                bool base_italic = text_line->quote;
-                auto font_for = [&](int style) {
-                    return state.font_for(text_line->header_level, text_line->pre, style);
+                bool base_bold = text_line->bold || text_line->header_level > 0;
+                bool base_italic = text_line->italic || text_line->quote;
+                auto font_for = [&](int style, float scale) {
+                    return state.font_for(scale, text_line->pre, style);
                 };
                 LineLayout layout = layout_line(
                     text_line->text,
                     text_line->spans,
                     base_bold,
                     base_italic,
+                    text_line->font_scale,
                     font_for,
                     text_line->address,
                     text_line->address_lead
@@ -284,13 +277,9 @@ static void layout_visible_words(TokenViewState &state)
                 }
                 int box_h = std::max(1, text_line->slot_span) * line_height;
                 int text_h = line_height - line_padding;
-                if (!layout.pieces.empty())
+                for (const DrawnPiece &piece : layout.pieces)
                 {
-                    TTF_Font *sample = font_for(layout.pieces[0].style);
-                    if (sample)
-                    {
-                        text_h = detect_line_height(sample);
-                    }
+                    text_h = std::max(text_h, piece.h);
                 }
                 int text_y = line_y + std::max(0, (box_h - text_h) / 2);
 
@@ -359,16 +348,21 @@ static void draw_text_line(
         );
     }
 
-    auto font_for = [&](int style) {
-        return state.font_for(text_line->header_level, text_line->pre, style);
+    auto font_for = [&](int style, float scale) {
+        return state.font_for(scale, text_line->pre, style);
     };
+    int max_ascent = 0;
+    for (const DrawnPiece &piece : visual.layout.pieces)
+    {
+        max_ascent = std::max(max_ascent, piece.ascent);
+    }
     for (const DrawnPiece &piece : visual.layout.pieces)
     {
         if (piece.text.empty() || piece.w <= 0)
         {
             continue;
         }
-        TTF_Font *run_font = font_for(piece.style);
+        TTF_Font *run_font = font_for(piece.style, piece.scale);
         if (!run_font)
         {
             continue;
@@ -378,9 +372,10 @@ static void draw_text_line(
         {
             continue;
         }
+        int dy = max_ascent - piece.ascent;
         SDL_Rect dest = {
             static_cast<Sint16>(piece.x + visual.origin),
-            static_cast<Sint16>(visual.text_y),
+            static_cast<Sint16>(visual.text_y + dy),
             0,
             0
         };

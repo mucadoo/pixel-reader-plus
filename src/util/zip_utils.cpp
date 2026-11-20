@@ -2,6 +2,63 @@
 
 #include <zip.h>
 #include <iostream>
+#include <vector>
+
+std::string normalize_zip_path(std::string path)
+{
+    for (char &c : path)
+    {
+        if (c == '\\')
+        {
+            c = '/';
+        }
+    }
+
+    std::vector<std::string> parts;
+    std::string cur;
+    auto flush = [&]() {
+        if (cur.empty() || cur == ".")
+        {
+            cur.clear();
+            return;
+        }
+        if (cur == "..")
+        {
+            if (!parts.empty())
+            {
+                parts.pop_back();
+            }
+        }
+        else
+        {
+            parts.push_back(cur);
+        }
+        cur.clear();
+    };
+    for (char c : path)
+    {
+        if (c == '/')
+        {
+            flush();
+        }
+        else
+        {
+            cur.push_back(c);
+        }
+    }
+    flush();
+
+    std::string out;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (i)
+        {
+            out.push_back('/');
+        }
+        out += parts[i];
+    }
+    return out;
+}
 
 // Read zip file contents as a null-terminated string
 std::vector<char> read_zip_file_str(zip_t *zip, const std::string &filepath)

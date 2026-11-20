@@ -14,7 +14,7 @@
 #include <functional>
 #include <optional>
 
-using StyleFontFn = std::function<TTF_Font *(int header_level, bool pre, int style)>;
+using StyleFontFn = std::function<TTF_Font *(float scale, bool pre, int style)>;
 
 // Lazy renders tokens into lines of text, and provides access to the lines
 // through an infinite-scroll type interface.

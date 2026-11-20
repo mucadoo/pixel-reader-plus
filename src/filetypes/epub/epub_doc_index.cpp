@@ -44,7 +44,10 @@ const std::vector<std::unique_ptr<DocToken>> &EpubDocIndex::ensure_cached(uint32
             document.zip_path,
             spine_index,
             document.tokens_cache,
-            document.id_to_addr_cache
+            document.id_to_addr_cache,
+            [&](const std::filesystem::path &resource_path) {
+                return read_zip_file_str(zip, normalize_zip_path(resource_path.generic_string()));
+            }
         );
         document.cache_is_valid = true;
     }

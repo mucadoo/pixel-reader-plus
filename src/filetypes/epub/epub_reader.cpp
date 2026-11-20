@@ -256,5 +256,5 @@ std::shared_ptr<TokenIter> EPubReader::get_iter(DocAddr address) const
 
 std::vector<char> EPubReader::load_resource(const std::filesystem::path &path) const
 {
-    return read_zip_file_str(state->zip, path);
+    return read_zip_file_str(state->zip, normalize_zip_path(path.generic_string()));
 }

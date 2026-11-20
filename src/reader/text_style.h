@@ -12,7 +12,9 @@
 
 int style_flags(bool bold, bool italic);
 
-// Width of text[offset, offset+len), applying bold and italic runs.
+using RunFontFn = std::function<TTF_Font *(int style, float scale)>;
+
+// Width of text[offset, offset+len), applying bold, italic, and size runs.
 int measure_styled(
     const char *text,
     uint32_t offset,
@@ -20,7 +22,8 @@ int measure_styled(
     const std::vector<StyleSpan> &spans,
     bool base_bold,
     bool base_italic,
-    const std::function<TTF_Font *(int style)> &font_for
+    float base_scale,
+    const RunFontFn &font_for
 );
 
 std::vector<StyleSpan> clip_spans(
@@ -35,7 +38,10 @@ struct DrawnPiece
     std::string text;
     int x = 0;
     int w = 0;
+    int h = 0;
+    int ascent = 0;
     int style = 0;
+    float scale = 1.f;
 };
 
 struct LayoutWord
@@ -61,7 +67,8 @@ LineLayout layout_line(
     const std::vector<StyleSpan> &spans,
     bool base_bold,
     bool base_italic,
-    const std::function<TTF_Font *(int style)> &font_for,
+    float base_scale,
+    const RunFontFn &font_for,
     DocAddr line_address,
     uint32_t address_lead
 );

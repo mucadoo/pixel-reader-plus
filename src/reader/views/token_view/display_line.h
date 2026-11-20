@@ -29,6 +29,9 @@ struct TextLine: public DisplayLine
     std::string text;
     bool centered;
     int header_level = 0;
+    float font_scale = 1.f;
+    bool bold = false;
+    bool italic = false;
     bool pre = false;
     bool quote = false;
     int slot_span = 1;

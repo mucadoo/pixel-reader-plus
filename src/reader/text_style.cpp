@@ -4,6 +4,7 @@
 #include "util/utf8.h"
 
 #include <algorithm>
+#include <cmath>
 
 int style_flags(bool bold, bool italic)
 {
@@ -22,20 +23,42 @@ int style_flags(bool bold, bool italic)
 namespace
 {
 
-int style_at(uint32_t offset, const std::vector<StyleSpan> &spans, bool base_bold, bool base_italic)
+struct RunStyle
+{
+    int flags = 0;
+    float scale = 1.f;
+
+    bool operator==(const RunStyle &other) const
+    {
+        return flags == other.flags && std::fabs(scale - other.scale) < 0.02f;
+    }
+};
+
+RunStyle style_at(
+    uint32_t offset,
+    const std::vector<StyleSpan> &spans,
+    bool base_bold,
+    bool base_italic,
+    float base_scale
+)
 {
     bool bold = base_bold;
     bool italic = base_italic;
+    float scale = base_scale > 0.2f ? base_scale : 1.f;
     for (const StyleSpan &span : spans)
     {
         if (offset >= span.start && offset < span.end)
         {
             bold = bold || span.bold;
             italic = italic || span.italic;
+            if (span.scale > 0.2f)
+            {
+                scale = span.scale;
+            }
             break;
         }
     }
-    return style_flags(bold, italic);
+    return {style_flags(bold, italic), scale};
 }
 
 int measure_plain(TTF_Font *font, const char *s, uint32_t len)
@@ -90,7 +113,8 @@ int measure_styled(
     const std::vector<StyleSpan> &spans,
     bool base_bold,
     bool base_italic,
-    const std::function<TTF_Font *(int style)> &font_for
+    float base_scale,
+    const RunFontFn &font_for
 )
 {
     if (!text || len == 0)
@@ -104,9 +128,9 @@ int measure_styled(
     while (p < end)
     {
         bool ws = is_whitespace(*p);
-        int style = style_at(static_cast<uint32_t>(p - text), spans, base_bold, base_italic);
+        RunStyle run = style_at(static_cast<uint32_t>(p - text), spans, base_bold, base_italic, base_scale);
         const char *q = p;
-        while (q < end && is_whitespace(*q) == ws && style_at(static_cast<uint32_t>(q - text), spans, base_bold, base_italic) == style)
+        while (q < end && is_whitespace(*q) == ws && style_at(static_cast<uint32_t>(q - text), spans, base_bold, base_italic, base_scale) == run)
         {
             const char *next = utf8_step(q);
             if (next == q)
@@ -115,7 +139,7 @@ int measure_styled(
             }
             q = next;
         }
-        width += measure_plain(font_for(style), p, static_cast<uint32_t>(q - p));
+        width += measure_plain(font_for(run.flags, run.scale), p, static_cast<uint32_t>(q - p));
         p = q;
     }
     return width;
@@ -153,7 +177,8 @@ LineLayout layout_line(
     const std::vector<StyleSpan> &spans,
     bool base_bold,
     bool base_italic,
-    const std::function<TTF_Font *(int style)> &font_for,
+    float base_scale,
+    const RunFontFn &font_for,
     DocAddr line_address,
     uint32_t address_lead
 )
@@ -187,9 +212,9 @@ LineLayout layout_line(
     while (p < end)
     {
         bool ws = is_whitespace(*p);
-        int style = style_at(static_cast<uint32_t>(p - base), spans, base_bold, base_italic);
+        RunStyle run = style_at(static_cast<uint32_t>(p - base), spans, base_bold, base_italic, base_scale);
         const char *q = p;
-        while (q < end && is_whitespace(*q) == ws && style_at(static_cast<uint32_t>(q - base), spans, base_bold, base_italic) == style)
+        while (q < end && is_whitespace(*q) == ws && style_at(static_cast<uint32_t>(q - base), spans, base_bold, base_italic, base_scale) == run)
         {
             const char *next = utf8_step(q);
             if (next == q)
@@ -199,12 +224,19 @@ LineLayout layout_line(
             q = next;
         }
 
-        int piece_w = measure_plain(font_for(style), p, static_cast<uint32_t>(q - p));
+        TTF_Font *font = font_for(run.flags, run.scale);
+        int piece_w = measure_plain(font, p, static_cast<uint32_t>(q - p));
         DrawnPiece piece;
         piece.text.assign(p, q);
         piece.x = x;
         piece.w = piece_w;
-        piece.style = style;
+        piece.style = run.flags;
+        piece.scale = run.scale;
+        if (font)
+        {
+            piece.ascent = TTF_FontAscent(font);
+            piece.h = TTF_FontHeight(font);
+        }
         layout.pieces.push_back(piece);
 
         if (ws)

@@ -19,6 +19,7 @@ class ReaderView: public View
     std::unique_ptr<ReaderViewState> state;
 
     void update_token_view_title(DocAddr address);
+    bool step_pagination();
 
 public:
     ReaderView(

@@ -5,6 +5,8 @@
 
 #include "doc_api/doc_reader.h"
 #include "reader/highlights.h"
+#include "reader/page_index.h"
+#include "reader/reading_mode.h"
 #include "reader/system_styling.h"
 #include "reader/shoulder_keymap.h"
 #include "reader/text_style.h"
@@ -38,6 +40,9 @@ bool line_fits_on_screen(TTF_Font *font, int avail_width, const char *s, uint32_
 
 struct TokenViewState
 {
+    std::shared_ptr<DocReader> doc_reader;
+    PageIndex page_index;
+
     SystemStyling &sys_styling;
     TokenViewStyling &token_view_styling;
     const uint32_t sys_styling_sub_id;
@@ -54,6 +59,8 @@ struct TokenViewState
 
     std::string title;
     int title_progress_percent = 0;
+    uint32_t title_page = 0;
+    uint32_t title_pages = 0;
 
     std::function<void(DocAddr)> on_scroll;
 
@@ -64,8 +71,13 @@ struct TokenViewState
     std::filesystem::path highlights_path;
     std::vector<Highlight> highlights;
     bool selecting = false;
+    bool aligning_page = false;
+    bool extending = false;
     bool has_selection = false;
     DocAddr selected_begin = 0;
+    DocAddr focus_end = 0;
+    DocAddr anchor_begin = 0;
+    DocAddr anchor_end = 0;
     std::vector<LayoutWord> page_words;
 
     struct VisibleText
@@ -167,7 +179,8 @@ struct TokenViewState
     }
 
     TokenViewState(std::shared_ptr<DocReader> reader, DocAddr address, SystemStyling &sys_styling, TokenViewStyling &token_view_styling)
-        : sys_styling(sys_styling),
+        : doc_reader(std::move(reader)),
+          sys_styling(sys_styling),
           token_view_styling(token_view_styling),
           sys_styling_sub_id(sys_styling.subscribe_to_changes([this](SystemStyling::ChangeId change_id) {
               if (change_id == SystemStyling::ChangeId::FONT_SIZE || change_id == SystemStyling::ChangeId::FONT_NAME)
@@ -185,7 +198,7 @@ struct TokenViewState
           current_font(sys_styling.get_loaded_font()),
           line_height(detect_line_height(sys_styling.get_font_name(), sys_styling.get_font_size()) + line_padding),
           line_scroller(
-              reader,
+              doc_reader,
               address,
               [this](const char *s, uint32_t len) {
                   return line_fits_on_screen(
@@ -232,10 +245,12 @@ TokenView::~TokenView()
 {
 }
 
+static int visible_text_lines(TokenViewState &state);
+
 static void layout_visible_words(TokenViewState &state)
 {
     state.page_words.clear();
-    int n = state.num_text_display_lines();
+    int n = visible_text_lines(state);
     state.visible.assign(n, TokenViewState::VisibleText());
     const int line_height = state.line_height;
     const int line_padding = state.line_padding;
@@ -328,7 +343,9 @@ static void draw_text_line(
 
     for (const LayoutWord &word : visual.layout.words)
     {
-        bool selected = state.selecting && state.has_selection && word.begin == state.selected_begin;
+        DocAddr range_begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
+        DocAddr range_end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
+        bool selected = state.selecting && state.has_selection && word.begin >= range_begin && word.begin < range_end;
         bool marked = highlights_cover(state.highlights, word.begin);
         if (!selected && !marked)
         {
@@ -412,7 +429,8 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         );
     }
 
-    int num_text_display_lines = state->num_text_display_lines();
+    // In Page mode only the current page is drawn. Lines past its end belong to the next page.
+    int num_text_display_lines = visible_text_lines(*state);
     const Uint16 padding_y = state->excess_pxl_y() / 2;
     Sint16 line_y = padding_y;
 
@@ -497,13 +515,27 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
     if (state->token_view_styling.get_show_title_bar())
     {
         // Recompute for short book case
-        line_y = padding_y + num_text_display_lines * line_height;
+        line_y = padding_y + state->num_text_display_lines() * line_height;
         SDL_Rect title_crop_rect = {0, 0, 0, (Uint16)line_height};
 
         // Progress
         {
-            char percent_str[32];
-            snprintf(percent_str, sizeof(percent_str), " %d%%", state->title_progress_percent);
+            char percent_str[48];
+            if (state->title_pages > 0)
+            {
+                snprintf(
+                    percent_str,
+                    sizeof(percent_str),
+                    " %u / %u  %d%%",
+                    state->title_page,
+                    state->title_pages,
+                    state->title_progress_percent
+                );
+            }
+            else
+            {
+                snprintf(percent_str, sizeof(percent_str), " %d%%", state->title_progress_percent);
+            }
 
             SDL_Surface *page_surface = TTF_RenderUTF8_Shaded(font, percent_str, theme.secondary_text, theme.background);
 
@@ -586,6 +618,26 @@ void TokenView::scroll(int num_lines)
     }
 }
 
+static std::pair<DocAddr, DocAddr> selection_bounds(const TokenViewState &state)
+{
+    DocAddr begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
+    DocAddr end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
+    return {begin, end};
+}
+
+static void assign_focus(TokenViewState &state, const LayoutWord &word)
+{
+    state.selected_begin = word.begin;
+    state.focus_end = word.end;
+    if (!state.extending)
+    {
+        state.anchor_begin = word.begin;
+        state.anchor_end = word.end;
+    }
+    state.has_selection = true;
+    state.needs_render = true;
+}
+
 static int word_index(const TokenViewState &state, DocAddr begin)
 {
     for (int i = 0; i < static_cast<int>(state.page_words.size()); ++i)
@@ -619,6 +671,8 @@ static int closest_on_line(const std::vector<LayoutWord> &words, int line_index,
     return best;
 }
 
+static int absolute_line(TokenViewState &state);
+
 void TokenView::on_keypress(SDLKey key)
 {
     if (state->selecting)
@@ -632,10 +686,19 @@ void TokenView::on_keypress(SDLKey key)
 
     switch (key) {
         case SW_BTN_UP:
-            scroll(-1);
-            break;
         case SW_BTN_DOWN:
-            scroll(1);
+            if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+            {
+                turn_page(key == SW_BTN_UP ? -1 : 1);
+            }
+            else if (key == SW_BTN_UP)
+            {
+                scroll(-1);
+            }
+            else
+            {
+                scroll(1);
+            }
             break;
         case SW_BTN_L1:
         case SW_BTN_R1:
@@ -658,13 +721,20 @@ void TokenView::on_keypress(SDLKey key)
             // fallthrough
         case SW_BTN_LEFT:
         case SW_BTN_RIGHT:
-            if (key == SW_BTN_LEFT)
+            if (key == SW_BTN_LEFT || key == SW_BTN_RIGHT)
             {
-                scroll(-state->num_text_display_lines());
-            }
-            else if (key == SW_BTN_RIGHT)
-            {
-                scroll(state->num_text_display_lines());
+                if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+                {
+                    turn_page(key == SW_BTN_LEFT ? -1 : 1);
+                }
+                else if (key == SW_BTN_LEFT)
+                {
+                    scroll(-state->num_text_display_lines());
+                }
+                else
+                {
+                    scroll(state->num_text_display_lines());
+                }
             }
             break;
         default:
@@ -676,8 +746,7 @@ void TokenView::on_keypress(SDLKey key)
         layout_visible_words(*state);
         if (word_index(*state, state->selected_begin) < 0 && !state->page_words.empty())
         {
-            state->selected_begin = state->page_words.front().begin;
-            state->needs_render = true;
+            assign_focus(*state, state->page_words.front());
         }
     }
 }
@@ -696,7 +765,14 @@ void TokenView::on_keyheld(SDLKey key, uint32_t held_time_ms)
     switch (key) {
         case SW_BTN_UP:
         case SW_BTN_DOWN:
-            if (state->line_scroll_throttle(held_time_ms))
+            if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+            {
+                if (state->page_scroll_throttle(held_time_ms))
+                {
+                    on_keypress(key);
+                }
+            }
+            else if (state->line_scroll_throttle(held_time_ms))
             {
                 on_keypress(key);
             }
@@ -747,12 +823,220 @@ void TokenView::set_title(const std::string &title)
     }
 }
 
-void TokenView::set_title_progress(int percent)
+void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages)
 {
-    if (percent != state->title_progress_percent)
+    if (percent != state->title_progress_percent || page != state->title_page || pages != state->title_pages)
     {
         state->title_progress_percent = percent;
+        state->title_page = page;
+        state->title_pages = pages;
         state->needs_render = true;
+    }
+}
+
+static std::string page_index_key(TokenViewState &state, bool chapter)
+{
+    std::string key = state.sys_styling.get_font_name();
+    key.push_back('\n');
+    key += std::to_string(state.sys_styling.get_font_size());
+    key.push_back('\n');
+    if (!chapter)
+    {
+        key += "book";
+        return key;
+    }
+
+    const DisplayLine *line = state.line_scroller.get_line_relative(0);
+    DocAddr address = line ? line->address : 0;
+    auto toc = state.doc_reader->get_toc_position(address);
+    key += "ch";
+    key += std::to_string(toc.toc_index);
+    return key;
+}
+
+static int absolute_line(TokenViewState &state)
+{
+    const DisplayLine *line = state.line_scroller.get_line_relative(0);
+    if (!line)
+    {
+        return 0;
+    }
+
+    int back = 0;
+    if (line->type == DisplayLine::Type::ImageRef)
+    {
+        back = static_cast<int>(static_cast<const ImageRefLine *>(line)->offset);
+        const DisplayLine *origin = state.line_scroller.get_line_relative(-back);
+        if (origin)
+        {
+            line = origin;
+        }
+    }
+    else if (line->continuation)
+    {
+        while (back < 256)
+        {
+            const DisplayLine *prev = state.line_scroller.get_line_relative(-back);
+            if (!prev || !prev->continuation)
+            {
+                if (prev)
+                {
+                    line = prev;
+                }
+                break;
+            }
+            ++back;
+        }
+    }
+
+    bool blank = false;
+    if (line->type == DisplayLine::Type::Text)
+    {
+        const auto *text = static_cast<const TextLine *>(line);
+        blank = text->text.empty();
+    }
+    return state.page_index.line_for_address(line->address, blank) + back;
+}
+
+// Number of screen lines that belong to the current page. Scroll mode and an
+// unfinished page count show the full screen.
+static int visible_text_lines(TokenViewState &state)
+{
+    const int size = std::max(1, state.num_text_display_lines());
+    if (state.token_view_styling.get_reading_mode() != ReadingMode::Page)
+    {
+        return size;
+    }
+    bool chapter = state.token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    if (!state.page_index.ready_for(page_index_key(state, chapter)))
+    {
+        return size;
+    }
+    const int line = absolute_line(state);
+    const int pages = state.page_index.page_count(size);
+    if (pages <= 0)
+    {
+        return size;
+    }
+    const int page = state.page_index.page_of_line(line, size);
+    const int end = page + 1 < pages
+        ? state.page_index.first_line_of_page(page + 1, size)
+        : state.page_index.total_lines();
+    return std::clamp(end - line, 1, size);
+}
+
+bool TokenView::advance_page_index(bool chapter)
+{
+    std::string key = page_index_key(*state, chapter);
+    if (!state->page_index.matches(key))
+    {
+        DocAddr start = 0;
+        std::optional<DocAddr> end;
+        if (chapter)
+        {
+            const DisplayLine *line = state->line_scroller.get_line_relative(0);
+            DocAddr address = line ? line->address : 0;
+            auto toc = state->doc_reader->get_toc_position(address);
+            start = state->doc_reader->get_toc_item_address(toc.toc_index);
+            const auto &items = state->doc_reader->get_table_of_contents();
+            if (toc.toc_index + 1 < items.size())
+            {
+                end = state->doc_reader->get_toc_item_address(toc.toc_index + 1);
+            }
+        }
+        state->page_index.start(state->doc_reader->get_iter(start), end, key);
+    }
+    return state->page_index.pump(state->line_scroller, 10);
+}
+
+bool TokenView::page_index_ready(bool chapter)
+{
+    return state->page_index.ready_for(page_index_key(*state, chapter));
+}
+
+bool TokenView::page_numbers(bool chapter, uint32_t &page, uint32_t &pages)
+{
+    if (!page_index_ready(chapter))
+    {
+        return false;
+    }
+    int total = state->page_index.total_lines();
+    int size = std::max(1, state->num_text_display_lines());
+    if (total <= 0)
+    {
+        return false;
+    }
+    int line = absolute_line(*state);
+    if (line < 0)
+    {
+        line = 0;
+    }
+    int count = state->page_index.page_count(size);
+    if (count <= 0)
+    {
+        return false;
+    }
+    pages = static_cast<uint32_t>(count);
+    page = static_cast<uint32_t>(state->page_index.page_of_line(line, size)) + 1;
+    if (page > pages)
+    {
+        page = pages;
+    }
+    if (page < 1)
+    {
+        page = 1;
+    }
+    return true;
+}
+
+bool TokenView::align_to_page(bool chapter)
+{
+    if (state->aligning_page || !page_index_ready(chapter))
+    {
+        return false;
+    }
+    int size = std::max(1, state->num_text_display_lines());
+    int line = absolute_line(*state);
+    int start = state->page_index.first_line_of_page(state->page_index.page_of_line(line, size), size);
+    if (line == start)
+    {
+        return false;
+    }
+    state->aligning_page = true;
+    int before = state->line_scroller.get_line_number();
+    scroll(start - line);
+    int after = state->line_scroller.get_line_number();
+    state->aligning_page = false;
+    return after != before;
+}
+
+void TokenView::turn_page(int direction)
+{
+    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    if (!page_index_ready(chapter))
+    {
+        return;
+    }
+    int size = std::max(1, state->num_text_display_lines());
+    int line = absolute_line(*state);
+    int pages = state->page_index.page_count(size);
+    if (pages <= 0)
+    {
+        return;
+    }
+    int page = state->page_index.page_of_line(line, size) + direction;
+    if (page < 0)
+    {
+        page = 0;
+    }
+    if (page >= pages)
+    {
+        page = pages - 1;
+    }
+    int target = state->page_index.first_line_of_page(page, size);
+    if (target != line)
+    {
+        scroll(target - line);
     }
 }
 
@@ -774,15 +1058,25 @@ void TokenView::start_word_select()
         return;
     }
     state->selecting = true;
-    state->has_selection = true;
-    state->selected_begin = state->page_words[0].begin;
-    state->needs_render = true;
+    state->extending = false;
+    assign_focus(*state, state->page_words[0]);
 }
 
 void TokenView::cancel_word_select()
 {
     state->selecting = false;
+    state->extending = false;
     state->has_selection = false;
+    state->needs_render = true;
+}
+
+void TokenView::toggle_extend_selection()
+{
+    if (!state->selecting)
+    {
+        return;
+    }
+    state->extending = !state->extending;
     state->needs_render = true;
 }
 
@@ -798,18 +1092,18 @@ std::string TokenView::selected_lookup() const
 
 bool TokenView::selected_is_highlighted() const
 {
-    return highlights_cover(state->highlights, state->selected_begin);
+    auto bounds = selection_bounds(*state);
+    return highlight_covers_range(state->highlights, bounds.first, bounds.second);
 }
 
 void TokenView::toggle_selected_highlight()
 {
-    int index = word_index(*state, state->selected_begin);
-    if (index < 0)
+    auto bounds = selection_bounds(*state);
+    if (bounds.second <= bounds.first)
     {
         return;
     }
-    const LayoutWord &word = state->page_words[index];
-    toggle_highlight(state->highlights, word.begin, word.end);
+    toggle_highlight(state->highlights, bounds.first, bounds.second);
     state->remember_highlights();
     state->needs_render = true;
 }
@@ -832,9 +1126,7 @@ void TokenView::move_word_selection(SDLKey key)
     auto select_index = [&](int next) {
         if (next >= 0 && next < static_cast<int>(state->page_words.size()))
         {
-            state->selected_begin = state->page_words[next].begin;
-            state->has_selection = true;
-            state->needs_render = true;
+            assign_focus(*state, state->page_words[next]);
         }
     };
 

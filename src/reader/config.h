@@ -1,6 +1,8 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
+#include "reader/reading_mode.h"
+
 #define TARGET_FPS 20
 
 #define IDLE_SAVE_TIME_SEC 60
@@ -34,5 +36,6 @@
 #define DEFAULT_SHOULDER_KEYMAP "LR"
 
 #define DEFAULT_PROGRESS_REPORTING ProgressReporting::GLOBAL_PERCENT
+#define DEFAULT_READING_MODE ReadingMode::Scroll
 
 #endif

@@ -67,7 +67,9 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_li
         lines.emplace_back(std::make_unique<ImageLine>(token.address, token.path, num_lines, image->w, image->h));
         for (int i = 1; i < num_lines; ++i)
         {
-            lines.emplace_back(std::make_unique<ImageRefLine>(token.address, i));
+            auto ref = std::make_unique<ImageRefLine>(token.address, i);
+            ref->continuation = true;
+            lines.emplace_back(std::move(ref));
         }
     }
     else
@@ -233,6 +235,44 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
         });
 
         return lines;
+    }
+}
+
+void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<DocAddr> &line_addresses)
+{
+    if (token.type == TokenType::Image)
+    {
+        const auto &image_token = static_cast<const ImageDocToken &>(token);
+        int slots = 3;
+        if (SDL_Surface *cached = image_cache.get_image(image_token.path.string()))
+        {
+            if (cached->h > 0)
+            {
+                slots = std::max(1, (cached->h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
+            }
+        }
+        else
+        {
+            auto data = reader->load_resource(image_token.path);
+            int w = 0;
+            int h = 0;
+            if (!data.empty() && image_pixel_size(data.data(), static_cast<uint32_t>(data.size()), w, h))
+            {
+                float scale = scale_to_fit_width(w);
+                int scaled_h = std::max(1, static_cast<int>(h * scale));
+                slots = std::max(1, (scaled_h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
+            }
+        }
+        for (int i = 0; i < slots; ++i)
+        {
+            line_addresses.push_back(token.address);
+        }
+        return;
+    }
+
+    for (const auto &line : render_display_lines(token))
+    {
+        line_addresses.push_back(line->address);
     }
 }
 

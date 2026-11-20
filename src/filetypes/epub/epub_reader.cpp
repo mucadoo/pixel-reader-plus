@@ -246,6 +246,19 @@ uint32_t EPubReader::get_global_progress_percent(const DocAddr &address) const
     );
 }
 
+std::pair<uint32_t, uint32_t> EPubReader::get_progress_extent(const DocAddr &address, bool chapter) const
+{
+    if (chapter)
+    {
+        auto extent = state->toc_index->get_toc_item_progress(address);
+        if (extent.second > 0)
+        {
+            return extent;
+        }
+    }
+    return state->toc_index->get_global_progress(address);
+}
+
 std::shared_ptr<TokenIter> EPubReader::get_iter(DocAddr address) const
 {
     return std::make_shared<EPubTokenIter>(

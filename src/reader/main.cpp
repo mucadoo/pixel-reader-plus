@@ -1,4 +1,5 @@
 #include "./config.h"
+#include "./work_pump.h"
 #include "./font_catalog.h"
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
@@ -6,9 +7,11 @@
 #include "./system_styling.h"
 #include "./color_theme_def.h"
 #include "./view_stack.h"
+#include "./views/definition_view.h"
 #include "./views/file_selector.h"
 #include "./views/reader_bootstrap_view.h"
 #include "./views/settings_view.h"
+#include "reader/controls_guide.h"
 #include "./views/token_view/token_view_styling.h"
 #include "filetypes/open_doc.h"
 #include "sys/keymap.h"
@@ -231,12 +234,14 @@ int main(int argc, char **argv)
     // Text Styling
     TokenViewStyling token_view_styling(
         settings_get_show_title_bar(state_store).value_or(DEFAULT_SHOW_PROGRESS),
-        settings_get_progress_reporting(state_store).value_or(DEFAULT_PROGRESS_REPORTING)
+        settings_get_progress_reporting(state_store).value_or(DEFAULT_PROGRESS_REPORTING),
+        settings_get_reading_mode(state_store).value_or(DEFAULT_READING_MODE)
     );
     token_view_styling.subscribe_to_changes([&token_view_styling, &state_store]() {
         // Persist changes
         settings_set_show_title_bar(state_store, token_view_styling.get_show_title_bar());
         settings_set_progress_reporting(state_store, token_view_styling.get_progress_reporting());
+        settings_set_reading_mode(state_store, token_view_styling.get_reading_mode());
     });
 
     // Setup views
@@ -261,6 +266,13 @@ int main(int argc, char **argv)
         token_view_styling,
         SYSTEM_FONT
     );
+    settings_view->set_controls_action([&view_stack, &sys_styling]() {
+        view_stack.push(std::make_shared<DefinitionView>(
+            "Controls",
+            controls_guide_text(),
+            sys_styling
+        ));
+    });
 
     // Track held keys
     HeldKeyTracker held_key_tracker(
@@ -294,6 +306,10 @@ int main(int argc, char **argv)
     while (!quit)
     {
         bool ran_user_code = task_queue.drain();
+        if (reader_step_work())
+        {
+            ran_user_code = true;
+        }
 
         SDL_Event event;
         while (SDL_PollEvent(&event))
@@ -317,9 +333,10 @@ int main(int argc, char **argv)
                         {
                             view_stack.on_keypress(key);
 
-                            if (key == SW_BTN_X)
+                            auto top = view_stack.top_view();
+                            if (key == SW_BTN_X && top && !top->is_done())
                             {
-                                if (view_stack.top_view() != settings_view)
+                                if (top != settings_view)
                                 {
                                     settings_view->unterminate();
                                     view_stack.push(settings_view);

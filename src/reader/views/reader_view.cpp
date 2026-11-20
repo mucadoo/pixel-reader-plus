@@ -2,11 +2,14 @@
 
 #include "./definition_view.h"
 #include "./selection_menu.h"
+#include "reader/controls_guide.h"
 #include "./token_view/token_view.h"
 #include "./token_view/token_view_styling.h"
 
 #include "reader/dictionary.h"
+#include "reader/reading_mode.h"
 #include "reader/system_styling.h"
+#include "reader/work_pump.h"
 #include "reader/view_stack.h"
 
 #include "doc_api/doc_reader.h"
@@ -139,6 +142,10 @@ ReaderView::ReaderView(
 {
     update_token_view_title(seek_address);
 
+    reader_set_work([this]() {
+        return step_pagination();
+    });
+
     // Update title info on scroll
     state->token_view->set_on_scroll([this](DocAddr address) {
         update_token_view_title(address);
@@ -152,6 +159,7 @@ ReaderView::ReaderView(
 
 ReaderView::~ReaderView()
 {
+    reader_clear_work();
     state->token_view_styling.unsubscribe_from_changes(
         state->token_view_styling_sub_id
     );
@@ -171,22 +179,72 @@ void ReaderView::update_token_view_title(DocAddr address)
         state->token_view->set_title(state->filename);
     }
 
+    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    if (state->token_view_styling.get_reading_mode() == ReadingMode::Page
+        && state->token_view->align_to_page(chapter))
+    {
+        return;
+    }
+
     uint32_t progress_percent = (
-        state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT ?
+        chapter ?
         toc_position.progress_percent :
         state->reader->get_global_progress_percent(address)
     );
-    state->token_view->set_title_progress(progress_percent);
+
+    uint32_t page = 0;
+    uint32_t pages = 0;
+    if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+    {
+        state->token_view->page_numbers(chapter, page, pages);
+    }
+    state->token_view->set_title_progress(progress_percent, page, pages);
+}
+
+bool ReaderView::step_pagination()
+{
+    if (state->token_view_styling.get_reading_mode() != ReadingMode::Page)
+    {
+        return false;
+    }
+
+    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool was_ready = state->token_view->page_index_ready(chapter);
+    if (was_ready)
+    {
+        return false;
+    }
+
+    // Count the whole book or chapter now, from its first line, then align.
+    while (state->token_view->advance_page_index(chapter))
+    {
+    }
+    if (state->token_view->page_index_ready(chapter))
+    {
+        update_token_view_title(get_current_address(*state));
+        return true;
+    }
+    return false;
 }
 
 bool ReaderView::render(SDL_Surface *dest_surface, bool force_render)
 {
+    update_token_view_title(get_current_address(*state));
     return state->token_view->render(dest_surface, force_render);
 }
 
 bool ReaderView::is_done()
 {
     return state->is_done;
+}
+
+static void open_controls_guide(ReaderViewState &state)
+{
+    state.view_stack.push(std::make_shared<DefinitionView>(
+        "Controls",
+        controls_guide_text(),
+        state.sys_styling
+    ));
 }
 
 static void open_word_actions(ReaderViewState &state)
@@ -248,7 +306,18 @@ void ReaderView::on_keypress(SDLKey key)
             open_word_actions(*state);
             return;
         }
+        if (key == SW_BTN_START)
+        {
+            state->token_view->toggle_extend_selection();
+            return;
+        }
         state->token_view->on_keypress(key);
+        return;
+    }
+
+    if (key == SW_BTN_START)
+    {
+        open_controls_guide(*state);
         return;
     }
 

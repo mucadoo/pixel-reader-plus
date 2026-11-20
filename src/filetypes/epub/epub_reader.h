@@ -28,6 +28,7 @@ public:
     DocAddr get_toc_item_address(uint32_t toc_item_index) const override;
 
     uint32_t get_global_progress_percent(const DocAddr &address) const override;
+    std::pair<uint32_t, uint32_t> get_progress_extent(const DocAddr &address, bool chapter) const override;
 
     std::shared_ptr<TokenIter> get_iter(DocAddr address = make_address()) const override;
 

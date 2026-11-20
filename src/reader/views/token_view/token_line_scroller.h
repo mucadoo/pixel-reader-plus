@@ -7,6 +7,7 @@
 
 #include "doc_api/doc_addr.h"
 #include "doc_api/doc_reader.h"
+#include "doc_api/doc_token.h"
 #include "util/indexed_dequeue.h"
 #include "util/sdl_image_cache.h"
 #include "util/sdl_pointer.h"
@@ -52,6 +53,8 @@ public:
         uint32_t line_height_pixels,
         StyleFontFn style_font
     );
+
+    void collect_token_lines(const DocToken &token, std::vector<DocAddr> &line_addresses);
 
     const DisplayLine *get_line_relative(int offset);
     int get_line_number() const;

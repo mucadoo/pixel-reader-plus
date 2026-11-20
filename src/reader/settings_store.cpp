@@ -14,6 +14,7 @@ constexpr const char *SETTINGS_KEY_COLOR_THEME = "color_theme";
 constexpr const char *SETTINGS_KEY_FONT_NAME = "font_name";
 constexpr const char *SETTINGS_KEY_FONT_SIZE = "font_size";
 constexpr const char *SETTINGS_PROGRESS_REPORTING = "progress_reporting";
+constexpr const char *SETTINGS_READING_MODE = "reading_mode";
 
 } // namespace
 
@@ -56,6 +57,21 @@ std::optional<ProgressReporting> settings_get_progress_reporting(const StateStor
 void settings_set_progress_reporting(StateStore &state_store, ProgressReporting progress_reporting)
 {
     state_store.set_setting(SETTINGS_PROGRESS_REPORTING, encode_progress_reporting(progress_reporting));
+}
+
+std::optional<ReadingMode> settings_get_reading_mode(const StateStore &state_store)
+{
+    auto mode = state_store.get_setting(SETTINGS_READING_MODE);
+    if (!mode)
+    {
+        return std::nullopt;
+    }
+    return decode_reading_mode(*mode);
+}
+
+void settings_set_reading_mode(StateStore &state_store, ReadingMode reading_mode)
+{
+    state_store.set_setting(SETTINGS_READING_MODE, encode_reading_mode(reading_mode));
 }
 
 std::optional<std::string> settings_get_color_theme(const StateStore &state_store)

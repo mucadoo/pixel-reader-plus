@@ -22,27 +22,35 @@ These are the printed buttons on the Flip.
 | A | Show or hide the progress line. |
 | B | Close the book and return to the file list. |
 | X | Settings. |
-| Y | Select a word. |
+| Y | Select a word. Commas, periods, and quotes are left outside the selection. |
 | Select | Chapter list. Press Select again to close it. |
+| Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
-The progress line shows the book title and how far through it you are. Settings can switch that between the whole book and the current chapter.
+The progress line shows the chapter name and how far you are.
+
+**Scroll** is the normal way to read. Up and down move a line, and left and right move a screen. The progress line shows the percentage, because a page number does not belong to a continuous scroll. The percentage follows the text and does not jump when you turn a screen.
+
+**Page** counts real screens from the start of the book or chapter. The progress line shows `12 / 248` plus the percent. When you switch to Page, the reader finishes that count and then jumps to the top of the page you were on, so you are never left in the middle of a page. After that, the D-pad and the shoulder buttons turn a whole page. Up and down do not scroll a line. Each turn adds 1. A new chapter, a title page, and a picture that does not fit the rest of the page start at the top of the next page. Until the count finishes, the percentage stays on the line and those buttons wait. Changing the font counts again and lines you up the same way.
+
+**Book** or **Chapter** applies to both. Book is the whole file. Chapter is the current chapter, so the percentage and the page count both start over at each chapter.
 
 ## Word lookup and highlights
 
-Press **Y** on a page. A cursor sits on a word.
+Press **Y** on a page. A cursor sits on one word. A comma, period, quote, or similar mark attached to that word is not part of the selection.
 
-| Button | While a word is selected |
+| Button | While words are selected |
 | --- | --- |
-| D-pad | Move to another word. Hold to repeat. Left at the start of the page, or right at the end, turns the page. |
-| A | Open **Look up** and **Highlight**. If the word is already highlighted, the second row is **Remove highlight**. |
+| D-pad | Move the cursor. Hold to repeat. Left at the start of the page, or right at the end, turns the page. Until you extend, each move is still one word. |
+| Start | Keep the first word and add every word you move through. Press Start again to stop extending. The next move returns to one word. |
+| A | Open **Look up** and **Highlight**. Look up uses the word at the cursor. Highlight covers the whole selection. If that stretch is already highlighted, the second row is **Remove highlight**. |
 | B or Y | Leave word selection. The shoulders still turn the page. |
 
 **Look up** opens the definition full screen. Up and down scroll a long definition. Any other button closes it.
 
 The dictionary is English only. It is WordNet 3.1, one gloss per word, the first sense that was kept. Lookup tries the word, then the word without `'s`, then the word without a trailing `s`. It does not know phrases, names, or other languages. If the dictionary file is missing, Look up says there is no entry.
 
-**Highlight** marks that word and saves it with the book. A highlight is a bar behind the word. It is still there after you close the book. Removing it deletes that one mark. Installing the reader again does not delete highlights.
+**Highlight** marks the selected words and saves them with the book. A highlight is a bar behind each word. Punctuation between the words is not painted. It is still there after you close the book. Removing it deletes the marks that overlap the selection. Installing the reader again does not delete highlights.
 
 ## How the text is shown
 
@@ -74,7 +82,9 @@ Press **X**. Up and down move between rows. Left and right change the selected r
 - **Font size.** Body text, from 18 to 40. Titles scale with it.
 - **Font.** The fonts shipped in `resources/fonts`, including DejaVu Sans, DejaVu Serif, and Merriweather. Merriweather uses its bold file for bold text. The other fonts use a synthetic bold.
 - **Shoulder keymap.** `LR` uses L1 and R1 to turn pages. `L2R2` uses L2 and R2 instead.
-- **Progress.** Percentage of the whole book, or percentage of the current chapter.
+- **Progress.** `Book` or `Chapter`. The percentage, and the page count in Page mode, both follow that choice.
+- **Reading.** `Scroll` shows the percentage. `Page` shows a real page count that moves one number at a time.
+- **Controls.** Press **A** to open the same shortcut guide that **Start** opens while reading.
 
 **A** while reading shows or hides the progress line. That choice is saved too.
 

@@ -40,13 +40,23 @@ public:
     void seek_to_address(DocAddr address);
 
     void set_title(const std::string &title);
-    void set_title_progress(int percent);
+    void set_title_progress(int percent, uint32_t page, uint32_t pages);
+
+    // Counts display lines for page mode. Returns true while more counting remains.
+    bool advance_page_index(bool chapter);
+    bool page_index_ready(bool chapter);
+    bool page_numbers(bool chapter, uint32_t &page, uint32_t &pages);
+    // Move to the first line of the page that contains the current line.
+    // Returns true when the view actually moved.
+    bool align_to_page(bool chapter);
+    void turn_page(int direction);
 
     void set_on_scroll(std::function<void(DocAddr)> callback);
 
     bool is_word_selecting() const;
     void start_word_select();
     void cancel_word_select();
+    void toggle_extend_selection();
     void move_word_selection(SDLKey key);
     std::string selected_lookup() const;
     bool selected_is_highlighted() const;

@@ -2,6 +2,7 @@
 #define SETTINGS_STORE_H_
 
 #include "./reader/progress_reporting.h"
+#include "./reader/reading_mode.h"
 
 #include <optional>
 #include <string>
@@ -19,6 +20,9 @@ void settings_set_shoulder_keymap(StateStore &state_store, std::string keymap);
 // Progress reporting
 std::optional<ProgressReporting> settings_get_progress_reporting(const StateStore &state_store);
 void settings_set_progress_reporting(StateStore &state_store, ProgressReporting progress_reporting);
+
+std::optional<ReadingMode> settings_get_reading_mode(const StateStore &state_store);
+void settings_set_reading_mode(StateStore &state_store, ReadingMode reading_mode);
 
 // Color theme
 std::optional<std::string> settings_get_color_theme(const StateStore &state_store);

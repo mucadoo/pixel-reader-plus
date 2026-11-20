@@ -140,6 +140,8 @@ struct Node
     bool block_italic = false;
     bool center = false;
     bool center_set = false;
+    bool break_before = false;
+    bool break_after = false;
 
     Node(Type type, DocAddr address, xmlNodePtr node, std::string text, int list_depth)
         : type(type)
@@ -200,6 +202,7 @@ class NodeProcessor
     int bold_depth = 0;
     int italic_depth = 0;
     int quote_depth = 0;
+    bool pending_break = false;
     std::vector<int> header_levels;
     const Stylesheet &stylesheet;
 
@@ -242,6 +245,13 @@ class NodeProcessor
         emitted.block_italic = frame.block.italic;
         emitted.center = frame.block.center;
         emitted.center_set = frame.block.center_set;
+        bool consumes = type != Node::Type::InlineBreak;
+        emitted.break_before = consumes && pending_break;
+        if (emitted.break_before)
+        {
+            pending_break = false;
+        }
+        emitted.break_after = frame.self.break_after == 1 || frame.block.break_after == 1;
         DEBUG_LOG("[node: " << nodes.back().to_string() << "]");
     }
 
@@ -295,6 +305,11 @@ public:
         Frame next = frames.back();
         std::string tag = node->name ? (const char *)node->name : "";
         next.self = stylesheet.apply(next.self, tag, class_list(node));
+        if (tag.size() == 2 && tag[0] == 'h' && tag[1] == '1' && !next.self.break_before_set)
+        {
+            next.self.break_before = 1;
+            next.self.break_before_set = true;
+        }
         if (tag == "b" || tag == "strong")
         {
             next.self.bold = true;
@@ -317,6 +332,10 @@ public:
                 next.self.center = true;
                 next.self.center_set = true;
             }
+        }
+        if (next.self.break_before == 1)
+        {
+            pending_break = true;
         }
         if (element_is_blocking(node->name) && tag != "br")
         {
@@ -455,6 +474,7 @@ public:
     void on_exit_element_node(xmlNodePtr node, int node_depth)
     {
         DEBUG_LOG("</node name=\"" << node->name << "\">");
+        bool break_after = !frames.empty() && frames.back().self.break_after == 1;
 
         ElementType elem_type = elem_name_to_enum(node->name);
         switch (elem_type)
@@ -532,6 +552,10 @@ public:
             }
         }
         pop_style();
+        if (break_after)
+        {
+            pending_break = true;
+        }
     }
 
     const std::vector<Node> &get_nodes() const
@@ -683,6 +707,16 @@ void generate_doc_tokens(
     tokens_out.reserve(n);
 
     bool separator_allowed = true;
+    bool carry_break = false;
+    auto push_token = [&](std::unique_ptr<DocToken> token, const Node &head) {
+        if (carry_break || head.break_before)
+        {
+            token->page_break_before = true;
+        }
+        token->page_break_after = head.break_after;
+        carry_break = head.break_after;
+        tokens_out.push_back(std::move(token));
+    };
     uint32_t i = 0;
     while (i < n)
     {
@@ -727,7 +761,7 @@ void generate_doc_tokens(
                         token->center_set = head.center_set;
                         token->bold = head.block_bold;
                         token->italic = head.block_italic;
-                        tokens_out.push_back(std::move(token));
+                        push_token(std::move(token), head);
 
                         separator_allowed = true;
                     }
@@ -751,7 +785,7 @@ void generate_doc_tokens(
                         token->scale_set = head.block_scale_set;
                         token->bold = head.block_bold;
                         token->italic = head.block_italic;
-                        tokens_out.push_back(std::move(token));
+                        push_token(std::move(token), head);
                         separator_allowed = true;
                     }
                 }
@@ -768,10 +802,13 @@ void generate_doc_tokens(
                         std::string combined = (!rel.empty() && (rel[0] == '/' || rel[0] == '\\'))
                             ? rel
                             : (base.empty() ? rel : base + "/" + rel);
-                        tokens_out.push_back(std::make_unique<ImageDocToken>(
-                            address,
-                            normalize_zip_path(combined)
-                        ));
+                        push_token(
+                            std::make_unique<ImageDocToken>(
+                                address,
+                                normalize_zip_path(combined)
+                            ),
+                            head
+                        );
                     }
                     else
                     {
@@ -784,10 +821,13 @@ void generate_doc_tokens(
             case Node::Type::SectionSeparator:
                 if (separator_allowed)
                 {
-                    tokens_out.push_back(std::make_unique<TextDocToken>(
-                        address,
-                        ""
-                    ));
+                    push_token(
+                        std::make_unique<TextDocToken>(
+                            address,
+                            ""
+                        ),
+                        head
+                    );
 
                     separator_allowed = false;
                 }

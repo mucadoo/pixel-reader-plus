@@ -78,6 +78,22 @@ int detect_line_height(const std::string &font, uint32_t size)
     return detect_line_height(cached_load_font(font, size));
 }
 
+bool image_pixel_size(const char *data, uint32_t size, int &w, int &h)
+{
+    int comp = 0;
+    w = 0;
+    h = 0;
+    if (!data || size == 0)
+    {
+        return false;
+    }
+    if (!stbi_info_from_memory(reinterpret_cast<const stbi_uc *>(data), static_cast<int>(size), &w, &h, &comp))
+    {
+        return false;
+    }
+    return w > 0 && h > 0;
+}
+
 surface_unique_ptr load_surface_from_ptr(const char *data, uint32_t size, const std::string &img_format, SDL_PixelFormat *surface_format)
 {
     char type_str[8];

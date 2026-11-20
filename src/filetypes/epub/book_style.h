@@ -14,6 +14,11 @@ struct BookStyle
     bool italic = false;
     bool center = false;
     bool center_set = false;
+    // 0 stays on this page, 1 starts a new page. break_*_set means the stylesheet chose it.
+    int break_before = 0;
+    bool break_before_set = false;
+    int break_after = 0;
+    bool break_after_set = false;
 };
 
 class Stylesheet
@@ -39,6 +44,8 @@ private:
         int bold = -1;
         int italic = -1;
         int align = -1;
+        int break_before = -1;
+        int break_after = -1;
     };
 
     std::vector<Rule> rules;

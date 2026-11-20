@@ -144,6 +144,34 @@ void Stylesheet::parse(const std::string &css)
                     base.italic = 0;
                 }
             }
+            else if (name == "page-break-before" || name == "break-before" || name == "page-break-after" || name == "break-after")
+            {
+                size_t bang = value.find('!');
+                if (bang != std::string::npos)
+                {
+                    value = trim(value.substr(0, bang));
+                }
+                int forced = -1;
+                if (value == "always" || value == "left" || value == "right" || value == "page" || value == "recto" || value == "verso")
+                {
+                    forced = 1;
+                }
+                else if (value == "auto" || value == "avoid" || value == "avoid-page")
+                {
+                    forced = 0;
+                }
+                if (forced >= 0)
+                {
+                    if (name.find("after") != std::string::npos)
+                    {
+                        base.break_after = forced;
+                    }
+                    else
+                    {
+                        base.break_before = forced;
+                    }
+                }
+            }
             else if (name == "text-align")
             {
                 if (value == "center")
@@ -209,6 +237,11 @@ BookStyle Stylesheet::apply(
 ) const
 {
     BookStyle next = parent;
+    // A break belongs to the element that declared it, not to every child.
+    next.break_before = 0;
+    next.break_before_set = false;
+    next.break_after = 0;
+    next.break_after_set = false;
     float parent_scale = parent.scale > 0.2f ? parent.scale : 1.f;
     std::string name = lower_copy(tag);
 
@@ -270,6 +303,16 @@ BookStyle Stylesheet::apply(
         if (rule->italic >= 0)
         {
             next.italic = rule->italic == 1;
+        }
+        if (rule->break_before >= 0)
+        {
+            next.break_before = rule->break_before;
+            next.break_before_set = true;
+        }
+        if (rule->break_after >= 0)
+        {
+            next.break_after = rule->break_after;
+            next.break_after_set = true;
         }
         if (rule->align == 1)
         {

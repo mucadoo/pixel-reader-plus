@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct TocItem
@@ -46,6 +47,8 @@ public:
     virtual DocAddr get_toc_item_address(uint32_t toc_item_index) const = 0;
 
     virtual uint32_t get_global_progress_percent(const DocAddr &address) const = 0;
+    // Position and total length in address units. chapter selects the current chapter.
+    virtual std::pair<uint32_t, uint32_t> get_progress_extent(const DocAddr &address, bool chapter) const = 0;
 
     virtual std::shared_ptr<TokenIter> get_iter(DocAddr address = 0) const = 0;
 

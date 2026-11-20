@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 int style_flags(bool bold, bool italic)
 {
@@ -59,6 +60,62 @@ RunStyle style_at(
         }
     }
     return {style_flags(bold, italic), scale};
+}
+
+uint32_t utf8_codepoint(const char *s, const char *end)
+{
+    const unsigned char *u = reinterpret_cast<const unsigned char *>(s);
+    size_t n = static_cast<size_t>(end - s);
+    if (n == 0)
+    {
+        return 0;
+    }
+    if (u[0] < 0x80)
+    {
+        return u[0];
+    }
+    if (n >= 2 && (u[0] & 0xE0) == 0xC0)
+    {
+        return ((u[0] & 0x1F) << 6) | (u[1] & 0x3F);
+    }
+    if (n >= 3 && (u[0] & 0xF0) == 0xE0)
+    {
+        return ((u[0] & 0x0F) << 12) | ((u[1] & 0x3F) << 6) | (u[2] & 0x3F);
+    }
+    if (n >= 4 && (u[0] & 0xF8) == 0xF0)
+    {
+        return ((u[0] & 0x07) << 18) | ((u[1] & 0x3F) << 12) | ((u[2] & 0x3F) << 6) | (u[3] & 0x3F);
+    }
+    return u[0];
+}
+
+// Letters and digits stay in the word. Commas, periods, quotes, and dashes do not.
+bool is_word_cp(uint32_t cp)
+{
+    if (cp < 128)
+    {
+        bool digit = cp >= '0' && cp <= '9';
+        bool upper = cp >= 'A' && cp <= 'Z';
+        bool lower = cp >= 'a' && cp <= 'z';
+        return digit || upper || lower || cp == '\'' || cp == '-';
+    }
+    if (cp == 0x00AB || cp == 0x00BB)
+    {
+        return false;
+    }
+    if (cp >= 0x2010 && cp <= 0x2027)
+    {
+        return false;
+    }
+    if (cp >= 0x2000 && cp <= 0x206F)
+    {
+        return false;
+    }
+    if (cp >= 0x3000 && cp <= 0x303F)
+    {
+        return false;
+    }
+    return true;
 }
 
 int measure_plain(TTF_Font *font, const char *s, uint32_t len)
@@ -242,49 +299,56 @@ LineLayout layout_line(
         if (ws)
         {
             finish_word();
+            x += piece_w;
         }
         else
         {
-            DocAddr piece_begin = addr;
-            bool any_real = false;
+            int piece_origin = x;
+            int consumed = 0;
             for (const char *c = p; c < q; )
             {
-                if (lead > 0)
-                {
-                    --lead;
-                }
-                else
-                {
-                    if (!any_real)
-                    {
-                        piece_begin = addr;
-                        any_real = true;
-                    }
-                    ++addr;
-                }
                 const char *next = utf8_step(c);
                 if (next == c)
                 {
                     break;
                 }
+                bool skipped_lead = false;
+                DocAddr cp_addr = addr;
+                if (lead > 0)
+                {
+                    --lead;
+                    skipped_lead = true;
+                }
+                else
+                {
+                    ++addr;
+                }
+                int through = measure_plain(font, p, static_cast<uint32_t>(next - p));
+                int cp_w = through - consumed;
+                int cp_x = piece_origin + consumed;
+                consumed = through;
+                uint32_t cp = utf8_codepoint(c, next);
+                if (!skipped_lead && is_word_cp(cp))
+                {
+                    if (!in_word)
+                    {
+                        word = LayoutWord();
+                        word.x = cp_x;
+                        word.begin = cp_addr;
+                        in_word = true;
+                    }
+                    word.text.append(c, next);
+                    word.end = addr;
+                }
+                else
+                {
+                    finish_word();
+                }
+                x = cp_x + cp_w;
                 c = next;
             }
-
-            if (any_real)
-            {
-                if (!in_word)
-                {
-                    word = LayoutWord();
-                    word.x = x;
-                    word.begin = piece_begin;
-                    in_word = true;
-                }
-                word.text.append(p, q);
-                word.end = addr;
-            }
+            x = piece_origin + piece_w;
         }
-
-        x += piece_w;
         p = q;
     }
 

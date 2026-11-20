@@ -12,6 +12,7 @@ using Highlight = std::pair<DocAddr, DocAddr>;
 std::vector<Highlight> load_highlights(const std::filesystem::path &path);
 void save_highlights(const std::filesystem::path &path, const std::vector<Highlight> &highlights);
 bool highlights_cover(const std::vector<Highlight> &highlights, DocAddr begin);
+bool highlight_covers_range(const std::vector<Highlight> &highlights, DocAddr begin, DocAddr end);
 void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr end);
 
 #endif

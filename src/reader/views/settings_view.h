@@ -3,6 +3,7 @@
 
 #include "reader/view.h"
 
+#include <functional>
 #include <string>
 
 struct SystemStyling;
@@ -21,12 +22,14 @@ class SettingsView: public View
     uint32_t styling_sub_id;
 
     int num_menu_items;
+    std::function<void()> controls_action;
 
     void on_change_theme(int dir);
     void on_change_font_size(int dir);
     void on_change_font_name(int dir);
     void on_change_shoulder_keymap(int dir);
     void on_change_progress();
+    void on_change_reading();
 
 public:
     SettingsView(
@@ -43,6 +46,7 @@ public:
 
     void terminate();
     void unterminate();
+    void set_controls_action(std::function<void()> action);
 };
 
 #endif

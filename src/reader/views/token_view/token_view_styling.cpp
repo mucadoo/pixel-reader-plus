@@ -6,17 +6,18 @@ struct TokenViewStylingState
 {
     bool show_title_bar;
     ProgressReporting progress_reporting;
+    ReadingMode reading_mode;
 
     uint32_t next_subscriber_id = 1;
     std::unordered_map<uint32_t, std::function<void()>> subscribers;
 
-    TokenViewStylingState(bool show_title_bar, ProgressReporting progress_reporting)
-        : show_title_bar(show_title_bar), progress_reporting(progress_reporting)
+    TokenViewStylingState(bool show_title_bar, ProgressReporting progress_reporting, ReadingMode reading_mode)
+        : show_title_bar(show_title_bar), progress_reporting(progress_reporting), reading_mode(reading_mode)
     {}
 };
 
-TokenViewStyling::TokenViewStyling(bool show_title_bar, ProgressReporting progress_reporting)
-    : state(std::make_unique<TokenViewStylingState>(show_title_bar, progress_reporting))
+TokenViewStyling::TokenViewStyling(bool show_title_bar, ProgressReporting progress_reporting, ReadingMode reading_mode)
+    : state(std::make_unique<TokenViewStylingState>(show_title_bar, progress_reporting, reading_mode))
 {
 }
 
@@ -56,6 +57,20 @@ void TokenViewStyling::set_progress_reporting(ProgressReporting progress_reporti
     if (state->progress_reporting != progress_reporting)
     {
         state->progress_reporting = progress_reporting;
+        notify_subscribers();
+    }
+}
+
+ReadingMode TokenViewStyling::get_reading_mode() const
+{
+    return state->reading_mode;
+}
+
+void TokenViewStyling::set_reading_mode(ReadingMode reading_mode)
+{
+    if (state->reading_mode != reading_mode)
+    {
+        state->reading_mode = reading_mode;
         notify_subscribers();
     }
 }

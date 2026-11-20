@@ -9,5 +9,6 @@ int detect_line_height(TTF_Font *font);
 int detect_line_height(const std::string &font, uint32_t size);
 
 surface_unique_ptr load_surface_from_ptr(const char *data, uint32_t size, const std::string &img_format, SDL_PixelFormat *surface_format);
+bool image_pixel_size(const char *data, uint32_t size, int &w, int &h);
 
 #endif

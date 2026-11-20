@@ -47,6 +47,9 @@ struct DocToken
     bool center_set = false;
     bool bold = false;
     bool italic = false;
+    // Page mode starts a new page around this block. Not part of equality.
+    bool page_break_before = false;
+    bool page_break_after = false;
 
 protected:
     std::string common_to_string(std::string data) const;

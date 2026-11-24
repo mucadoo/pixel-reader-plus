@@ -40,6 +40,7 @@ void initialize_views(
     SystemStyling &sys_styling,
     TokenViewStyling &token_view_styling,
     TaskQueue &task_queue,
+    const std::filesystem::path &store_path,
     std::optional<std::filesystem::path> requested_book_path
 )
 {
@@ -85,6 +86,14 @@ void initialize_views(
         });
         fs->set_on_view_focus([&state_store]() {
             state_store.remove_current_book_path();
+        });
+        fs->set_on_info([&view_stack, &sys_styling](const std::string &title, const std::string &body) {
+            view_stack.push(std::make_shared<DefinitionView>(title, body, sys_styling));
+        });
+        fs->set_cover_cache_dir(store_path / "covers");
+        fs->set_grid_view(settings_get_browser_grid(state_store).value_or(false));
+        fs->set_on_view_mode_change([&state_store](bool grid) {
+            settings_set_browser_grid(state_store, grid);
         });
 
         view_stack.push(fs);
@@ -258,6 +267,7 @@ int main(int argc, char **argv)
         sys_styling,
         token_view_styling,
         task_queue,
+        config[CONFIG_KEY_STORE_PATH],
         requested_book_path
     );
     quit = view_stack.is_done();
@@ -402,6 +412,7 @@ int main(int argc, char **argv)
 
         held_key_tracker.accumulate(avg_loop_time); // Pretend perfect loop timing for event firing consistency
         ran_user_code = held_key_tracker.for_longest_held(key_held_callback) || ran_user_code;
+        ran_user_code = view_stack.tick(avg_loop_time) || ran_user_code;
 
         if (ran_user_code)
         {

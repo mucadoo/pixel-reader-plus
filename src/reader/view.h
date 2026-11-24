@@ -22,6 +22,10 @@ public:
     // Pass key and held time in ms.
     virtual void on_keyheld(SDLKey, uint32_t) {}
 
+    // Called every frame on the top view with the time since the last frame, for
+    // animation and small background jobs. Return true if it needs a redraw.
+    virtual bool tick(uint32_t) { return false; }
+
     // This view has been popped from the stack (now defunct).
     virtual void on_pop() {}
 

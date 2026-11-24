@@ -162,6 +162,37 @@ bool epub_parse_package_contents(const std::string &rootfile_path, const char *p
         }
     }
 
+    // get cover id from <metadata><meta name="cover" content="id"/>
+    {
+        xmlNodePtr metadata = elem_first_by_name(
+            elem_first_child(elem_first_by_name(node, BAD_CAST "package")),
+            BAD_CAST "metadata"
+        );
+        xmlNodePtr meta = elem_first_by_name(elem_first_child(metadata), BAD_CAST "meta");
+        while (meta)
+        {
+            xmlChar *name_attr = xmlGetProp(meta, BAD_CAST "name");
+            xmlChar *content_attr = xmlGetProp(meta, BAD_CAST "content");
+            if (name_attr && content_attr && xmlStrEqual(name_attr, BAD_CAST "cover"))
+            {
+                out_package.cover_id = (const char *)content_attr;
+            }
+            if (name_attr)
+            {
+                xmlFree(name_attr);
+            }
+            if (content_attr)
+            {
+                xmlFree(content_attr);
+            }
+            if (!out_package.cover_id.empty())
+            {
+                break;
+            }
+            meta = elem_next_by_name(meta, BAD_CAST "meta");
+        }
+    }
+
     xmlFreeDoc(package_doc);
 
     return true;

@@ -1093,9 +1093,16 @@ bool TokenView::advance_page_index(bool chapter)
             auto toc = state->doc_reader->get_toc_position(address);
             start = state->doc_reader->get_toc_item_address(toc.toc_index);
             const auto &items = state->doc_reader->get_table_of_contents();
-            if (toc.toc_index + 1 < items.size())
+            // The chapter ends where the next one that starts later begins. Two
+            // entries can point at the same place, which would leave this one empty.
+            for (size_t next = toc.toc_index + 1; next < items.size(); ++next)
             {
-                end = state->doc_reader->get_toc_item_address(toc.toc_index + 1);
+                DocAddr next_address = state->doc_reader->get_toc_item_address(static_cast<uint32_t>(next));
+                if (next_address > start)
+                {
+                    end = next_address;
+                    break;
+                }
             }
         }
         state->page_index.start(state->doc_reader->get_iter(start), end, key);
@@ -1180,16 +1187,28 @@ void TokenView::turn_page(int direction)
     int pages = state->page_index.page_count(size);
     if (pages <= 0)
     {
+        // Nothing counted for this stretch: move a screen rather than stay stuck.
+        scroll(direction * size);
         return;
     }
     int page = state->page_index.page_of_line(line, size) + direction;
-    if (page < 0)
+    if (page < 0 || page >= pages)
     {
-        page = 0;
-    }
-    if (page >= pages)
-    {
-        page = pages - 1;
+        if (chapter)
+        {
+            // The count covers only this chapter, so past either end the next
+            // page is in the neighboring chapter. Step into it. When its count
+            // finishes the view lines up with the top of that page.
+            if (page >= pages)
+            {
+                scroll(std::max(1, state->page_index.total_lines() - line));
+            }
+            else
+            {
+                scroll(-size);
+            }
+        }
+        return;
     }
     int target = state->page_index.first_line_of_page(page, size);
     if (target != line)

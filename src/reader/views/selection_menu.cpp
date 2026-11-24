@@ -1,6 +1,7 @@
 #include <iostream>
 #include "./selection_menu.h"
 
+#include "./menu_draw.h"
 #include "sys/screen.h"
 #include "sys/keymap.h"
 #include "reader/shoulder_keymap.h"
@@ -170,6 +171,7 @@ void SelectionMenu::set_cursor_pos(uint32_t new_cursor_pos)
     }
 
     cursor_pos = new_cursor_pos;
+    marquee.reset();
     if (on_focus)
     {
         on_focus(cursor_pos);
@@ -193,68 +195,7 @@ void SelectionMenu::close()
     _is_done = true;
 }
 
-namespace
-{
-
-SDL_Color quiet_text(const ColorTheme &theme)
-{
-    return SDL_Color {
-        static_cast<Uint8>((theme.main_text.r * 2 + theme.background.r) / 3),
-        static_cast<Uint8>((theme.main_text.g * 2 + theme.background.g) / 3),
-        static_cast<Uint8>((theme.main_text.b * 2 + theme.background.b) / 3),
-        0
-    };
-}
-
-surface_unique_ptr shade(TTF_Font *font, const std::string &text, SDL_Color fg, SDL_Color bg)
-{
-    if (!font || text.empty())
-    {
-        return nullptr;
-    }
-    return surface_unique_ptr { TTF_RenderUTF8_Shaded(font, text.c_str(), fg, bg) };
-}
-
-void blit_crop(SDL_Surface *src, SDL_Surface *dest, int x, int y, int max_w)
-{
-    if (!src || max_w <= 0)
-    {
-        return;
-    }
-    SDL_Rect src_rect = {0, 0, static_cast<Uint16>(src->w), static_cast<Uint16>(src->h)};
-    if (src_rect.w > max_w)
-    {
-        src_rect.w = static_cast<Uint16>(max_w);
-    }
-    SDL_Rect dst = {static_cast<Sint16>(x), static_cast<Sint16>(y), 0, 0};
-    SDL_BlitSurface(src, &src_rect, dest, &dst);
-}
-
-int text_width(TTF_Font *font, const std::string &text)
-{
-    int w = 0;
-    int h = 0;
-    if (font && !text.empty())
-    {
-        TTF_SizeUTF8(font, text.c_str(), &w, &h);
-    }
-    return w;
-}
-
-void dim_screen(SDL_Surface *dest)
-{
-    surface_unique_ptr mask { SDL_CreateRGBSurface(SDL_SWSURFACE, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0, 0, 0, 0) };
-    if (!mask)
-    {
-        return;
-    }
-    SDL_SetAlpha(mask.get(), SDL_SRCALPHA, 140);
-    SDL_Rect rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-    SDL_FillRect(mask.get(), &rect, SDL_MapRGB(mask->format, 0, 0, 0));
-    SDL_BlitSurface(mask.get(), nullptr, dest, &rect);
-}
-
-}
+using namespace menu_draw;
 
 bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
 {
@@ -375,32 +316,12 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
     bool chrome = !title.empty();
     if (chrome)
     {
-        auto heading = shade(loaded_font, title, fg_color, bg_color);
-        blit_crop(
-            heading.get(),
-            dest_surface,
-            14,
-            std::max(0, (line_height - (heading ? heading->h : 0)) / 2),
-            SCREEN_WIDTH / 2
-        );
+        char count[32] = "";
         if (!entries.empty())
         {
-            char count[32];
             std::snprintf(count, sizeof(count), "%u / %u", cursor_pos + 1, static_cast<unsigned>(entries.size()));
-            auto count_surface = shade(loaded_font, count, quiet, bg_color);
-            if (count_surface)
-            {
-                blit_crop(
-                    count_surface.get(),
-                    dest_surface,
-                    static_cast<int>(SCREEN_WIDTH) - 14 - count_surface->w,
-                    std::max(0, (line_height - count_surface->h) / 2),
-                    count_surface->w
-                );
-            }
         }
-        SDL_Rect rule = {0, static_cast<Sint16>(line_height - 1), SCREEN_WIDTH, 1};
-        SDL_FillRect(dest_surface, &rule, rect_quiet_color);
+        draw_title_bar(dest_surface, loaded_font, theme, line_height, title, count);
     }
 
     Sint16 x = chrome ? 16 : line_padding;
@@ -457,12 +378,21 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
             is_highlighted ? hl_text_color : fg_color,
             is_highlighted ? hl_bg_color : bg_color
         );
+        const int text_space = static_cast<int>(SCREEN_WIDTH) - x - 12 - detail_reserve;
+        int shift = 0;
+        if (is_highlighted && chrome)
+        {
+            // A name too long for its row slides, so all of it can be read.
+            marquee.set_overflow(message ? message->w - text_space : 0);
+            shift = marquee.offset();
+        }
         blit_crop(
             message.get(),
             dest_surface,
             x,
             y + line_padding / 2,
-            static_cast<int>(SCREEN_WIDTH) - x - 12 - detail_reserve
+            text_space,
+            shift
         );
 
         y += line_height;
@@ -499,53 +429,7 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
 
     if (chrome)
     {
-        int footer_y = static_cast<int>(SCREEN_HEIGHT) - line_height;
-        SDL_Rect rule = {0, static_cast<Sint16>(footer_y), SCREEN_WIDTH, 1};
-        SDL_FillRect(dest_surface, &rule, rect_quiet_color);
-        std::vector<surface_unique_ptr> hint_surfaces;
-        for (const auto &text : hints)
-        {
-            auto hint = shade(loaded_font, text, quiet, bg_color);
-            if (hint)
-            {
-                hint_surfaces.push_back(std::move(hint));
-            }
-        }
-        // Spread the hints across the bar. If a large font leaves no room, drop
-        // hints from the middle, which are the least important.
-        const int min_gap = 14;
-        const int span = static_cast<int>(SCREEN_WIDTH) - 28;
-        auto total_width = [&hint_surfaces]() {
-            int total = 0;
-            for (const auto &hint : hint_surfaces)
-            {
-                total += hint->w;
-            }
-            return total;
-        };
-        while (hint_surfaces.size() > 2 &&
-               span - total_width() < min_gap * static_cast<int>(hint_surfaces.size() - 1))
-        {
-            hint_surfaces.erase(hint_surfaces.begin() + 1);
-        }
-        if (!hint_surfaces.empty())
-        {
-            int gaps = static_cast<int>(hint_surfaces.size()) - 1;
-            int gap = gaps > 0 ? (span - total_width()) / gaps : 0;
-            int hint_x = 14;
-            for (size_t i = 0; i < hint_surfaces.size(); ++i)
-            {
-                const auto &hint = hint_surfaces[i];
-                int x_pos = hint_x;
-                if (gaps > 0 && i + 1 == hint_surfaces.size())
-                {
-                    x_pos = static_cast<int>(SCREEN_WIDTH) - 14 - hint->w;
-                }
-                int hint_y = footer_y + std::max(0, (line_height - hint->h) / 2);
-                blit_crop(hint.get(), dest_surface, x_pos, hint_y, hint->w);
-                hint_x += hint->w + gap;
-            }
-        }
+        draw_hint_bar(dest_surface, loaded_font, theme, line_height, hints);
     }
 
     return true;
@@ -554,6 +438,16 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
 bool SelectionMenu::is_modal()
 {
     return compact;
+}
+
+bool SelectionMenu::tick(uint32_t elapsed_ms)
+{
+    if (marquee.tick(elapsed_ms))
+    {
+        needs_render = true;
+        return true;
+    }
+    return false;
 }
 
 bool SelectionMenu::is_done()
@@ -574,6 +468,7 @@ void SelectionMenu::on_move_down(uint32_t step)
         {
             scroll_pos = cursor_pos - num_display_lines() + 1;
         }
+        marquee.reset();
         if (on_focus)
         {
             on_focus(cursor_pos);
@@ -589,6 +484,7 @@ void SelectionMenu::on_move_up(uint32_t step)
     {
         cursor_pos = cursor_pos <= step ? 0 : cursor_pos - step;
         scroll_pos = std::min(scroll_pos, cursor_pos);
+        marquee.reset();
 
         if (on_focus)
         {

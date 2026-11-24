@@ -14,11 +14,20 @@ The reader remembers the folder and the position in the book. The next time you 
 
 The list opens on the folder you used last. The top bar names the folder and shows your place in it, such as `3 / 12`. Each book is shown by its title, without the file extension, with its type and size on the right, such as `EPUB, 1.2 MB`. Folders sit above the books and say `Folder`. **Up one folder** is the first row inside a subfolder. If a folder has no books or folders, the list says so and tells you where to put books.
 
-| Button | In the book list |
+A name that is too long for its row slides once the row is selected: it waits a moment, scrolls to the end, pauses, and starts over. In the grid it slides under the selected cover.
+
+**Select** switches between the list and the cover grid. The choice is saved. The grid shows one to four rows of covers, depending on the screen height, with the title under each cover. A book's cover is taken from the book itself (EPUB only) and shrunk in the background, so the grid never waits on it. The small pictures are kept in a `covers` folder inside the reader's store, so they appear at once the next time. A book with no cover, or a `.txt` file, gets a plain colored cover with its title and type. Folders and **Up one folder** get their own tiles.
+
+**Y** shows the properties of the selected entry: name, type, size, and the folder it is in. Any button closes it.
+
+| Button | In the book list and the grid |
 | --- | --- |
-| D-pad up / down | Move one row. Hold to keep moving. |
-| D-pad left / right, L1 / R1 | Move half a screen. |
+| D-pad up / down | List: move one row. Grid: move one row of covers. Hold to keep moving. |
+| D-pad left / right | List: move half a screen. Grid: move one cover. |
+| L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. Settings can move this to L2 / R2. |
 | A | Open the book or folder. |
+| Y | Properties of the selected entry. |
+| Select | Switch between the list and the grid. |
 | X | Settings. |
 | B | Go up one folder. In the top folder it does nothing. |
 | Menu | Quit the app. |
@@ -46,7 +55,7 @@ The progress line shows the chapter name and how far you are.
 
 **Page** counts real screens from the start of the book or chapter. The progress line shows `12 / 248` plus the percent. When you switch to Page, the reader finishes that count and then jumps to the top of the page you were on, so you are never left in the middle of a page. After that, the D-pad and the shoulder buttons turn a whole page. Up and down do not scroll a line. Each turn adds 1. A new chapter, a title page, and a picture that does not fit the rest of the page start at the top of the next page. The blank line between two paragraphs never opens a page, so a page always starts on text. The count runs in the background, so the app keeps answering buttons while a long book is counted. Until it finishes, the percentage stays on the line and those buttons move one screen. When it finishes, the reader lines up with the top of the page you are on. Changing the font counts again and lines you up the same way.
 
-**Book** or **Chapter** applies to both. Book is the whole file. Chapter is the current chapter, so the percentage and the page count both start over at each chapter.
+**Book** or **Chapter** applies to both. Book is the whole file. Chapter is the current chapter, so the percentage and the page count both start over at each chapter. In Chapter mode a page turn stops at the edge of the chapter. Turning past the last page of a chapter moves to the first line after it, and turning back from the first page moves one screen up into the previous chapter, so you are never stuck inside one chapter.
 
 ## Word lookup and highlights
 

@@ -2,6 +2,7 @@
 #define SELECTION_MENU_H_
 
 #include "reader/view.h"
+#include "reader/views/menu_draw.h"
 #include "util/throttled.h"
 
 #include <SDL/SDL_ttf.h>
@@ -24,6 +25,7 @@ class SelectionMenu: public View
     uint32_t cursor_pos = 0;
     uint32_t scroll_pos = 0;
     int marker_pos = -1;
+    menu_draw::Marquee marquee;
     bool close_on_select = false;
     bool compact = false;
 
@@ -78,6 +80,7 @@ public:
     bool render(SDL_Surface *dest_surface, bool force_render) override;
     bool is_done() override;
     bool is_modal() override;
+    bool tick(uint32_t elapsed_ms) override;
     void on_keypress(SDLKey key) override;
     void on_keyheld(SDLKey key, uint32_t held_time_ms) override;
 };

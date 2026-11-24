@@ -15,8 +15,24 @@ constexpr const char *SETTINGS_KEY_FONT_NAME = "font_name";
 constexpr const char *SETTINGS_KEY_FONT_SIZE = "font_size";
 constexpr const char *SETTINGS_PROGRESS_REPORTING = "progress_reporting";
 constexpr const char *SETTINGS_READING_MODE = "reading_mode";
+constexpr const char *SETTINGS_BROWSER_VIEW = "browser_view";
 
 } // namespace
+
+std::optional<bool> settings_get_browser_grid(const StateStore &state_store)
+{
+    const auto &opt = state_store.get_setting(SETTINGS_BROWSER_VIEW);
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "grid";
+}
+
+void settings_set_browser_grid(StateStore &state_store, bool grid)
+{
+    state_store.set_setting(SETTINGS_BROWSER_VIEW, grid ? "grid" : "list");
+}
 
 std::optional<bool> settings_get_show_title_bar(const StateStore &state_store)
 {

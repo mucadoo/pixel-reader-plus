@@ -39,9 +39,37 @@ std::vector<std::string> wrap_body(TTF_Font *font, const std::string &text, int 
         {
             return;
         }
-        std::string trial = line.empty() ? word : line + " " + word;
         int w = 0;
         int h = 0;
+        TTF_SizeUTF8(font, word.c_str(), &w, &h);
+        if (w > max_w)
+        {
+            // A word wider than a line, such as a long path: break it by letters.
+            if (!line.empty())
+            {
+                lines.push_back(line);
+                line.clear();
+            }
+            std::string piece;
+            for (size_t i = 0; i < word.size();)
+            {
+                const char *next = utf8_step(word.c_str() + i);
+                std::string grown = piece + std::string(word.c_str() + i, next);
+                TTF_SizeUTF8(font, grown.c_str(), &w, &h);
+                if (w > max_w && !piece.empty())
+                {
+                    lines.push_back(piece);
+                    piece.clear();
+                    grown = std::string(word.c_str() + i, next);
+                }
+                piece = std::move(grown);
+                i = static_cast<size_t>(next - word.c_str());
+            }
+            line = piece;
+            word.clear();
+            return;
+        }
+        std::string trial = line.empty() ? word : line + " " + word;
         TTF_SizeUTF8(font, trial.c_str(), &w, &h);
         if (w > max_w && !line.empty())
         {
@@ -61,9 +89,9 @@ std::vector<std::string> wrap_body(TTF_Font *font, const std::string &text, int 
         if (c == ' ' || c == '\n')
         {
             flush_word();
-            if (c == '\n' && !line.empty())
+            if (c == '\n')
             {
-                lines.push_back(line);
+                lines.push_back(line); // an empty line keeps a blank row
                 line.clear();
             }
             ++i;

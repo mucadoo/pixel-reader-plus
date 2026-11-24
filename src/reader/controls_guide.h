@@ -33,6 +33,7 @@ inline const char *controls_guide_text()
         "Choosing Page counts from the start, then jumps to the top of the page you were on.\n"
         "The count runs in the background. Until it finishes, the percent stays up and a page turn moves one screen.\n"
         "Book or Chapter chooses the whole book or the current chapter, for both modes.\n"
+        "In Chapter mode, turning past the end of a chapter moves into the next one.\n"
         "\n"
         "Settings\n"
         "The name is on the left and the choice is on the right. The book stays behind the menu.\n"
@@ -45,6 +46,10 @@ inline const char *controls_guide_text()
         "Each book shows its title, its type, and its size. Folders are marked Folder.\n"
         "Up and down move one row. Left and right move half a screen.\n"
         "A opens the book or folder. X opens settings.\n"
+        "Y shows the properties of the selected entry.\n"
+        "Select switches between the list and the cover grid.\n"
+        "In the grid, D-pad moves one cover. L1 and R1 move a screen.\n"
+        "A long name slides when it is selected.\n"
         "B goes up one folder. Menu quits.\n";
 }
 

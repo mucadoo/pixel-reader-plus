@@ -27,6 +27,9 @@ namespace
 // Longest the page count may hold the main loop in one frame.
 constexpr Uint32 PAGINATION_SLICE_MS = 12;
 
+// Longest a key may wait for the count of the stretch it just entered.
+constexpr Uint32 PAGINATION_SETTLE_MS = 150;
+
 } // namespace
 
 struct ReaderViewState
@@ -213,7 +216,13 @@ void ReaderView::update_token_view_title(DocAddr address)
     state->token_view->set_title_progress(progress_percent, page, pages);
 }
 
-bool ReaderView::step_pagination()
+bool ReaderView::pagination_ready() const
+{
+    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    return state->token_view->page_index_ready(chapter);
+}
+
+bool ReaderView::run_pagination(uint32_t budget_ms)
 {
     if (state->token_view_styling.get_reading_mode() != ReadingMode::Page)
     {
@@ -221,8 +230,7 @@ bool ReaderView::step_pagination()
     }
 
     bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
-    bool was_ready = state->token_view->page_index_ready(chapter);
-    if (was_ready)
+    if (state->token_view->page_index_ready(chapter))
     {
         return false;
     }
@@ -232,7 +240,7 @@ bool ReaderView::step_pagination()
     const Uint32 slice_start = SDL_GetTicks();
     while (state->token_view->advance_page_index(chapter))
     {
-        if (SDL_GetTicks() - slice_start >= PAGINATION_SLICE_MS)
+        if (SDL_GetTicks() - slice_start >= budget_ms)
         {
             return true;
         }
@@ -243,6 +251,26 @@ bool ReaderView::step_pagination()
         return true;
     }
     return false;
+}
+
+bool ReaderView::step_pagination()
+{
+    return run_pagination(PAGINATION_SLICE_MS);
+}
+
+void ReaderView::settle_pagination(bool was_ready)
+{
+    if (!was_ready || state->token_view_styling.get_reading_mode() != ReadingMode::Page)
+    {
+        return;
+    }
+    // Only when the count was done before and this input made it start over, as
+    // happens at the edge of a chapter. A first count of a whole book stays in
+    // the background slices.
+    if (!pagination_ready())
+    {
+        run_pagination(PAGINATION_SETTLE_MS);
+    }
 }
 
 bool ReaderView::render(SDL_Surface *dest_surface, bool force_render)
@@ -313,6 +341,13 @@ static void open_word_actions(ReaderViewState &state)
 }
 
 void ReaderView::on_keypress(SDLKey key)
+{
+    const bool was_ready = pagination_ready();
+    handle_keypress(key);
+    settle_pagination(was_ready);
+}
+
+void ReaderView::handle_keypress(SDLKey key)
 {
     if (state->token_view->is_word_selecting())
     {
@@ -388,7 +423,9 @@ void ReaderView::seek_to_address(DocAddr address)
 {
     if (state->token_view)
     {
+        const bool was_ready = pagination_ready();
         state->token_view->seek_to_address(address);
+        settle_pagination(was_ready);
         update_token_view_title(address);
 
         if (state->on_change_address)

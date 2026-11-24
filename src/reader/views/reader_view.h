@@ -20,6 +20,14 @@ class ReaderView: public View
 
     void update_token_view_title(DocAddr address);
     bool step_pagination();
+    // Count pages for up to budget_ms. True when something changed.
+    bool run_pagination(uint32_t budget_ms);
+    bool pagination_ready() const;
+    // A key or a jump can send the view into a stretch that has not been counted.
+    // Finish a short count before the next frame, so the screen never shows the
+    // unaligned view first and snaps to the page a moment later.
+    void settle_pagination(bool was_ready);
+    void handle_keypress(SDLKey key);
 
 public:
     ReaderView(

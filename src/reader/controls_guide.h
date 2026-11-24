@@ -31,7 +31,7 @@ inline const char *controls_guide_text()
         "Page mode shows the page and how many pages. Turning a page adds 1.\n"
         "A new chapter, a title page, and a picture that does not fit start at the top of a page.\n"
         "Choosing Page counts from the start, then jumps to the top of the page you were on.\n"
-        "Until that count finishes, the percent stays up and the D-pad does not scroll.\n"
+        "The count runs in the background. Until it finishes, the percent stays up and a page turn moves one screen.\n"
         "Book or Chapter chooses the whole book or the current chapter, for both modes.\n"
         "\n"
         "Settings\n"
@@ -39,7 +39,13 @@ inline const char *controls_guide_text()
         "Up and down change the row. Left and right change the choice.\n"
         "Reading switches Scroll and Page.\n"
         "Controls, then A, opens this guide.\n"
-        "B closes settings.\n";
+        "B closes settings.\n"
+        "\n"
+        "Book list\n"
+        "Each book shows its title, its type, and its size. Folders are marked Folder.\n"
+        "Up and down move one row. Left and right move half a screen.\n"
+        "A opens the book or folder. X opens settings.\n"
+        "B goes up one folder. Menu quits.\n";
 }
 
 #endif

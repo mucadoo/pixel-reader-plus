@@ -223,19 +223,19 @@ void PageIndex::ensure_pages(int page_size) const
     int i = 0;
     while (i < n)
     {
-        // A chapter break can leave blank separator lines in front of the title.
-        // If the previous page is already full they would open the new page, and
-        // if it still has room they stay behind. Skip them so every chapter
-        // starts on its first line of content.
+        // Blank separator lines between paragraphs or in front of a chapter title
+        // must not open a page. If the previous page is already full they would
+        // land at the top of the next one, so skip them and start on content.
         int content = i;
         while (content < n && slots[content].blank)
         {
             ++content;
         }
-        if (content > i && content < n && slots[content].hard_break)
+        if (content >= n)
         {
-            i = content;
+            break; // only blank lines are left
         }
+        i = content;
 
         page_starts.push_back(i);
         bool page_has_content = false;

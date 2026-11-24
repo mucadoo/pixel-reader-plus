@@ -12,6 +12,11 @@ HeldKeyTracker::~HeldKeyTracker()
 {
 }
 
+void HeldKeyTracker::set_held_override(std::function<std::optional<bool>(SDLKey)> override_fn)
+{
+    held_override = std::move(override_fn);
+}
+
 void HeldKeyTracker::accumulate(uint32_t ms)
 {
     const Uint8 *keystate = SDL_GetKeyState(nullptr);
@@ -20,7 +25,9 @@ void HeldKeyTracker::accumulate(uint32_t ms)
     auto time_it = held_times.begin();
     while (key_it != keycodes.end())
     {
-        if (keystate[*key_it])
+        std::optional<bool> overridden = held_override ? held_override(*key_it) : std::nullopt;
+        bool held = overridden ? *overridden : keystate[*key_it] != 0;
+        if (held)
         {
             *time_it += ms;
         }

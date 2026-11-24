@@ -89,7 +89,26 @@ SelectionMenu::~SelectionMenu()
 void SelectionMenu::set_entries(std::vector<std::string> new_entries)
 {
     entries = new_entries;
+    details.clear();
     set_cursor_pos(0);
+    needs_render = true;
+}
+
+void SelectionMenu::set_details(std::vector<std::string> new_details)
+{
+    details = std::move(new_details);
+    needs_render = true;
+}
+
+void SelectionMenu::set_empty_message(std::string message)
+{
+    empty_message = std::move(message);
+    needs_render = true;
+}
+
+void SelectionMenu::set_hints(std::vector<std::string> new_hints)
+{
+    hints = std::move(new_hints);
     needs_render = true;
 }
 
@@ -415,6 +434,23 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
             SDL_FillRect(dest_surface, &mark, is_highlighted ? rect_hl_text_color : rect_fg_color);
         }
 
+        int detail_reserve = 0;
+        if (chrome && global_i < details.size() && !details[global_i].empty())
+        {
+            auto detail = shade(
+                loaded_font,
+                details[global_i],
+                is_highlighted ? hl_text_color : quiet,
+                is_highlighted ? hl_bg_color : bg_color
+            );
+            if (detail)
+            {
+                int detail_x = static_cast<int>(SCREEN_WIDTH) - 18 - detail->w;
+                blit_crop(detail.get(), dest_surface, detail_x, y + line_padding / 2, detail->w);
+                detail_reserve = detail->w + 14;
+            }
+        }
+
         auto message = shade(
             loaded_font,
             entries[global_i],
@@ -426,10 +462,39 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
             dest_surface,
             x,
             y + line_padding / 2,
-            static_cast<int>(SCREEN_WIDTH) - x - 12
+            static_cast<int>(SCREEN_WIDTH) - x - 12 - detail_reserve
         );
 
         y += line_height;
+    }
+
+    if (chrome && !empty_message.empty())
+    {
+        std::vector<std::string> lines;
+        size_t start = 0;
+        while (start <= empty_message.size())
+        {
+            size_t end = empty_message.find('\n', start);
+            if (end == std::string::npos)
+            {
+                end = empty_message.size();
+            }
+            lines.push_back(empty_message.substr(start, end - start));
+            start = end + 1;
+        }
+        int block_h = static_cast<int>(lines.size()) * line_height;
+        int top = line_height + (static_cast<int>(SCREEN_HEIGHT) - line_height * 2 - block_h) / 2;
+        int rows_bottom = line_height + static_cast<int>(std::min<size_t>(entries.size(), num_lines)) * line_height;
+        top = std::max(top, rows_bottom + line_height / 2);
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            auto line = shade(loaded_font, lines[i], i == 0 ? fg_color : quiet, bg_color);
+            if (line)
+            {
+                int line_x = std::max(14, (static_cast<int>(SCREEN_WIDTH) - line->w) / 2);
+                blit_crop(line.get(), dest_surface, line_x, top + static_cast<int>(i) * line_height, static_cast<int>(SCREEN_WIDTH) - 28);
+            }
+        }
     }
 
     if (chrome)
@@ -437,13 +502,49 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
         int footer_y = static_cast<int>(SCREEN_HEIGHT) - line_height;
         SDL_Rect rule = {0, static_cast<Sint16>(footer_y), SCREEN_WIDTH, 1};
         SDL_FillRect(dest_surface, &rule, rect_quiet_color);
-        auto open = shade(loaded_font, "A  Open", quiet, bg_color);
-        auto close = shade(loaded_font, "B  Close", quiet, bg_color);
-        int hint_y = footer_y + std::max(0, (line_height - (open ? open->h : 0)) / 2);
-        blit_crop(open.get(), dest_surface, 14, hint_y, SCREEN_WIDTH / 2);
-        if (close)
+        std::vector<surface_unique_ptr> hint_surfaces;
+        for (const auto &text : hints)
         {
-            blit_crop(close.get(), dest_surface, static_cast<int>(SCREEN_WIDTH) - 14 - close->w, hint_y, close->w);
+            auto hint = shade(loaded_font, text, quiet, bg_color);
+            if (hint)
+            {
+                hint_surfaces.push_back(std::move(hint));
+            }
+        }
+        // Spread the hints across the bar. If a large font leaves no room, drop
+        // hints from the middle, which are the least important.
+        const int min_gap = 14;
+        const int span = static_cast<int>(SCREEN_WIDTH) - 28;
+        auto total_width = [&hint_surfaces]() {
+            int total = 0;
+            for (const auto &hint : hint_surfaces)
+            {
+                total += hint->w;
+            }
+            return total;
+        };
+        while (hint_surfaces.size() > 2 &&
+               span - total_width() < min_gap * static_cast<int>(hint_surfaces.size() - 1))
+        {
+            hint_surfaces.erase(hint_surfaces.begin() + 1);
+        }
+        if (!hint_surfaces.empty())
+        {
+            int gaps = static_cast<int>(hint_surfaces.size()) - 1;
+            int gap = gaps > 0 ? (span - total_width()) / gaps : 0;
+            int hint_x = 14;
+            for (size_t i = 0; i < hint_surfaces.size(); ++i)
+            {
+                const auto &hint = hint_surfaces[i];
+                int x_pos = hint_x;
+                if (gaps > 0 && i + 1 == hint_surfaces.size())
+                {
+                    x_pos = static_cast<int>(SCREEN_WIDTH) - 14 - hint->w;
+                }
+                int hint_y = footer_y + std::max(0, (line_height - hint->h) / 2);
+                blit_crop(hint.get(), dest_surface, x_pos, hint_y, hint->w);
+                hint_x += hint->w + gap;
+            }
         }
     }
 

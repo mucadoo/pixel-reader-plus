@@ -5,15 +5,21 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <vector>
 
 class HeldKeyTracker {
     std::vector<SDLKey> keycodes;
     std::vector<uint32_t> held_times;
+    std::function<std::optional<bool>(SDLKey)> held_override;
 
 public:
     HeldKeyTracker(std::vector<SDLKey> keycodes);
     virtual ~HeldKeyTracker();
+
+    // Decides whether a key is held instead of SDL's key state. Return nullopt
+    // to use SDL's key state for that key.
+    void set_held_override(std::function<std::optional<bool>(SDLKey)> override_fn);
 
     void accumulate(uint32_t ms);
     bool for_longest_held(const std::function<void(SDLKey, uint32_t)> &callback);

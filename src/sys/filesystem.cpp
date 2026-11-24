@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstring>
 #include <dirent.h>
+#include <fcntl.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 std::vector<FSEntry> directory_listing(const std::string& path)
@@ -23,7 +26,16 @@ std::vector<FSEntry> directory_listing(const std::string& path)
             std::string name = std::string(entry->d_name);
             if ((is_dir || is_file) && name != "." && name != "..")
             {
-                entries.push_back({name, is_dir});
+                unsigned long long size = 0;
+                if (is_file)
+                {
+                    struct stat st;
+                    if (fstatat(dirfd(dir), entry->d_name, &st, 0) == 0)
+                    {
+                        size = static_cast<unsigned long long>(st.st_size);
+                    }
+                }
+                entries.push_back({name, is_dir, size});
             }
         }
     }

@@ -8,10 +8,11 @@ struct FSEntry
 {
     std::string name;
     bool is_dir;
+    unsigned long long size = 0; // bytes, files only
 
     static FSEntry directory(const std::string& path)
     {
-        return { path, true };
+        return { path, true, 0 };
     }
 };
 

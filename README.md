@@ -10,6 +10,19 @@ Copy `.epub` or `.txt` files to `Roms/EBOOKS` on the SD card. Open **E-Reader**,
 
 The reader remembers the folder and the position in the book. The next time you open that book, it returns to the same place.
 
+## The book list
+
+The list opens on the folder you used last. The top bar names the folder and shows your place in it, such as `3 / 12`. Each book is shown by its title, without the file extension, with its type and size on the right, such as `EPUB, 1.2 MB`. Folders sit above the books and say `Folder`. **Up one folder** is the first row inside a subfolder. If a folder has no books or folders, the list says so and tells you where to put books.
+
+| Button | In the book list |
+| --- | --- |
+| D-pad up / down | Move one row. Hold to keep moving. |
+| D-pad left / right, L1 / R1 | Move half a screen. |
+| A | Open the book or folder. |
+| X | Settings. |
+| B | Go up one folder. In the top folder it does nothing. |
+| Menu | Quit the app. |
+
 ## Reading
 
 These are the printed buttons on the Flip.
@@ -31,7 +44,7 @@ The progress line shows the chapter name and how far you are.
 
 **Scroll** is the normal way to read. Up and down move a line, and left and right move a screen. The progress line shows the percentage, because a page number does not belong to a continuous scroll. The percentage follows the text and does not jump when you turn a screen.
 
-**Page** counts real screens from the start of the book or chapter. The progress line shows `12 / 248` plus the percent. When you switch to Page, the reader finishes that count and then jumps to the top of the page you were on, so you are never left in the middle of a page. After that, the D-pad and the shoulder buttons turn a whole page. Up and down do not scroll a line. Each turn adds 1. A new chapter, a title page, and a picture that does not fit the rest of the page start at the top of the next page. Until the count finishes, the percentage stays on the line and those buttons wait. Changing the font counts again and lines you up the same way.
+**Page** counts real screens from the start of the book or chapter. The progress line shows `12 / 248` plus the percent. When you switch to Page, the reader finishes that count and then jumps to the top of the page you were on, so you are never left in the middle of a page. After that, the D-pad and the shoulder buttons turn a whole page. Up and down do not scroll a line. Each turn adds 1. A new chapter, a title page, and a picture that does not fit the rest of the page start at the top of the next page. The blank line between two paragraphs never opens a page, so a page always starts on text. The count runs in the background, so the app keeps answering buttons while a long book is counted. Until it finishes, the percentage stays on the line and those buttons move one screen. When it finishes, the reader lines up with the top of the page you are on. Changing the font counts again and lines you up the same way.
 
 **Book** or **Chapter** applies to both. Book is the whole file. Chapter is the current chapter, so the percentage and the page count both start over at each chapter.
 

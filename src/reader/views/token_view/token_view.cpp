@@ -1168,11 +1168,14 @@ bool TokenView::align_to_page(bool chapter)
 void TokenView::turn_page(int direction)
 {
     bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    int size = std::max(1, state->num_text_display_lines());
     if (!page_index_ready(chapter))
     {
+        // Still counting: move a screen so reading goes on. Once the count
+        // finishes the view lines up with the page it is on.
+        scroll(direction * size);
         return;
     }
-    int size = std::max(1, state->num_text_display_lines());
     int line = state->page_index.line_for_navigation(absolute_line(*state), size);
     int pages = state->page_index.page_count(size);
     if (pages <= 0)

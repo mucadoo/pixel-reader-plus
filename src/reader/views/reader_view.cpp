@@ -17,7 +17,17 @@
 #include "sys/screen.h"
 #include "util/sdl_font_cache.h"
 
+#include <SDL/SDL.h>
+
 #include <iostream>
+
+namespace
+{
+
+// Longest the page count may hold the main loop in one frame.
+constexpr Uint32 PAGINATION_SLICE_MS = 12;
+
+} // namespace
 
 struct ReaderViewState
 {
@@ -217,9 +227,15 @@ bool ReaderView::step_pagination()
         return false;
     }
 
-    // Count the whole book or chapter now, from its first line, then align.
+    // Count from the first line of the book or chapter in short slices between
+    // frames, so a long count never stops the app from answering buttons.
+    const Uint32 slice_start = SDL_GetTicks();
     while (state->token_view->advance_page_index(chapter))
     {
+        if (SDL_GetTicks() - slice_start >= PAGINATION_SLICE_MS)
+        {
+            return true;
+        }
     }
     if (state->token_view->page_index_ready(chapter))
     {

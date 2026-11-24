@@ -16,6 +16,7 @@
 #include "filetypes/open_doc.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
+#include "sys/trigger_input.h"
 #include "util/fps_limiter.h"
 #include "util/held_key_tracker.h"
 #include "util/key_value_file.h"
@@ -289,12 +290,54 @@ int main(int argc, char **argv)
     );
     SystemKeyChordTracker chord_tracker;
 
+    TriggerInput trigger_input;
+    auto is_trigger = [](SDLKey key) {
+        return key == SW_BTN_L2 || key == SW_BTN_R2;
+    };
+    held_key_tracker.set_held_override([&trigger_input, &is_trigger](SDLKey key) -> std::optional<bool> {
+        if (trigger_input.active() && is_trigger(key))
+        {
+            return trigger_input.is_down(key);
+        }
+        return std::nullopt;
+    });
+
     auto key_held_callback = [&view_stack](SDLKey key, uint32_t held_ms) {
         view_stack.on_keyheld(key, held_ms);
     };
 
     // Timing
     Timer idle_timer;
+
+    // Returns true when the key ran view code.
+    auto handle_key_down = [&](SDLKey raw_key) {
+        idle_timer.reset();
+
+        SDLKey key = chord_tracker.on_keypress(raw_key);
+
+        if (key == SW_BTN_POWER)
+        {
+            state_store.flush();
+            return false;
+        }
+
+        view_stack.on_keypress(key);
+
+        auto top = view_stack.top_view();
+        if (key == SW_BTN_X && top && !top->is_done())
+        {
+            if (top != settings_view)
+            {
+                settings_view->unterminate();
+                view_stack.push(settings_view);
+            }
+            else
+            {
+                settings_view->terminate();
+            }
+        }
+        return true;
+    };
     FPSLimiter limit_fps(TARGET_FPS);
     const uint32_t avg_loop_time = 1000 / TARGET_FPS;
 
@@ -311,6 +354,17 @@ int main(int argc, char **argv)
             ran_user_code = true;
         }
 
+        trigger_input.poll([&](SDLKey key, bool down) {
+            if (down)
+            {
+                ran_user_code = handle_key_down(key) || ran_user_code;
+            }
+            else
+            {
+                chord_tracker.on_keyrelease(key);
+            }
+        });
+
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -321,39 +375,21 @@ int main(int argc, char **argv)
                     break;
                 case SDL_KEYDOWN:
                     {
-                        idle_timer.reset();
-
-                        SDLKey key = chord_tracker.on_keypress(event.key.keysym.sym);
-
-                        if (key == SW_BTN_POWER)
+                        SDLKey key = event.key.keysym.sym;
+                        if (trigger_input.active() && is_trigger(key))
                         {
-                            state_store.flush();
+                            break; // read from the pad instead
                         }
-                        else
-                        {
-                            view_stack.on_keypress(key);
-
-                            auto top = view_stack.top_view();
-                            if (key == SW_BTN_X && top && !top->is_done())
-                            {
-                                if (top != settings_view)
-                                {
-                                    settings_view->unterminate();
-                                    view_stack.push(settings_view);
-                                }
-                                else
-                                {
-                                    settings_view->terminate();
-                                }
-                            }
-
-                            ran_user_code = true;
-                        }
+                        ran_user_code = handle_key_down(key) || ran_user_code;
                     }
                     break;
                 case SDL_KEYUP:
                     {
                         SDLKey key = event.key.keysym.sym;
+                        if (trigger_input.active() && is_trigger(key))
+                        {
+                            break;
+                        }
                         chord_tracker.on_keyrelease(key);
                     }
                     break;

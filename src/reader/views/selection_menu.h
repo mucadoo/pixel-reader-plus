@@ -18,6 +18,9 @@ class SelectionMenu: public View
 
     std::vector<std::string> entries;
     std::string title;
+    std::vector<std::string> details;
+    std::string empty_message;
+    std::vector<std::string> hints = {"A  Open", "B  Close"};
     uint32_t cursor_pos = 0;
     uint32_t scroll_pos = 0;
     int marker_pos = -1;
@@ -60,6 +63,12 @@ public:
     void set_compact(bool compact);
     // Row that stays marked after the cursor moves, such as the chapter being read.
     void set_marker(uint32_t index);
+    // Quiet text at the right end of each row, parallel to the entries. Empty means none.
+    void set_details(std::vector<std::string> new_details);
+    // Shown in the list area when there is nothing to pick. Lines are split on newlines.
+    void set_empty_message(std::string message);
+    // Button hints along the bottom. The first sits left, the last right, the rest between.
+    void set_hints(std::vector<std::string> new_hints);
 
     void set_cursor_pos(const std::string &entry);
     void set_cursor_pos(uint32_t pos);

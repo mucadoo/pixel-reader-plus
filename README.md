@@ -12,7 +12,7 @@ The reader remembers the folder and the position in the book. The next time you 
 
 ## The book list
 
-The list opens on the folder you used last. The top bar names the folder and shows your place in it, such as `3 / 12`. Each book is shown by its title, without the file extension, with its type and size on the right, such as `EPUB, 1.2 MB`. Folders sit above the books and say `Folder`. **Up one folder** is the first row inside a subfolder. If a folder has no books or folders, the list says so and tells you where to put books.
+The list opens on the folder you used last, or on `Roms/EBOOKS` the first time. It stays on the SD card: **Up one folder** stops at the card's top folder, and a saved folder that is not on the card is ignored. The top bar names the folder and shows your place in it, such as `3 / 12`. Each book is shown by its title, without the file extension, with its type and size on the right, such as `EPUB, 1.2 MB`. Folders sit above the books and say `Folder`. **Up one folder** is the first row inside a subfolder. If a folder has no books or folders, the list says so and tells you where to put books.
 
 A name that is too long for its row slides once the row is selected: it waits a moment, scrolls to the end, pauses, and starts over. In the grid it slides under the selected cover.
 

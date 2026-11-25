@@ -41,10 +41,10 @@ void HeldKeyTracker::accumulate(uint32_t ms)
     }
 }
 
-bool HeldKeyTracker::for_longest_held(const std::function<void(SDLKey, uint32_t)> &callback)
+bool HeldKeyTracker::for_newest_held(const std::function<void(SDLKey, uint32_t)> &callback)
 {
-    uint32_t longest_time = 0;
-    SDLKey longest_key = SDLK_UNKNOWN;
+    uint32_t newest_time = 0;
+    SDLKey newest_key = SDLK_UNKNOWN;
 
     auto key_it = keycodes.begin();
     auto time_it = held_times.begin();
@@ -52,19 +52,19 @@ bool HeldKeyTracker::for_longest_held(const std::function<void(SDLKey, uint32_t)
     {
         SDLKey key = *key_it;
         uint32_t time = *time_it;
-        if (time > longest_time)
+        if (time != 0 && (newest_time == 0 || time < newest_time))
         {
-            longest_time = time;
-            longest_key = key;
+            newest_time = time;
+            newest_key = key;
         }
 
         ++key_it;
         ++time_it;
     }
 
-    if (longest_time != 0)
+    if (newest_time != 0)
     {
-        callback(longest_key, longest_time);
+        callback(newest_key, newest_time);
         return true;
     }
 

@@ -34,6 +34,67 @@
 namespace
 {
 
+// Where the browser starts, and the folder it may not leave.
+struct BrowseLimits
+{
+    std::filesystem::path start;
+    std::filesystem::path top_folder; // empty when there is no SD card to stay on
+};
+
+bool is_inside(const std::filesystem::path &path, const std::filesystem::path &folder)
+{
+    const auto p = path.lexically_normal();
+    const auto f = folder.lexically_normal();
+    auto p_it = p.begin();
+    for (auto f_it = f.begin(); f_it != f.end(); ++f_it)
+    {
+        if (f_it->empty())
+        {
+            continue; // a trailing separator
+        }
+        if (p_it == p.end() || *p_it != *f_it)
+        {
+            return false;
+        }
+        ++p_it;
+    }
+    return true;
+}
+
+// The reader opens on the books folder of the SD card. It resumes the folder
+// used last only while that is still on the card, so a first run, or a folder
+// that is gone, never lands on the device's own file system.
+BrowseLimits find_browse_limits(const std::optional<std::filesystem::path> &last_used)
+{
+    std::error_code ec;
+    std::filesystem::path card;
+    for (const char *candidate : {"/mnt/SDCARD", "/mnt/sdcard"})
+    {
+        if (std::filesystem::is_directory(candidate, ec))
+        {
+            card = candidate;
+            break;
+        }
+    }
+
+    if (card.empty())
+    {
+        return {last_used.value_or(DEFAULT_BROWSE_PATH), {}};
+    }
+
+    if (last_used && is_inside(*last_used, card))
+    {
+        return {*last_used, card};
+    }
+
+    std::filesystem::path books = card / "Roms" / "EBOOKS";
+    if (!std::filesystem::is_directory(books, ec))
+    {
+        books = card;
+    }
+    return {books / "", card};
+}
+
 void initialize_views(
     ViewStack &view_stack,
     StateStore &state_store,
@@ -74,10 +135,11 @@ void initialize_views(
     }
     else
     {
-        auto browse_path = state_store.get_current_browse_path().value_or(DEFAULT_BROWSE_PATH);
+        const BrowseLimits limits = find_browse_limits(state_store.get_current_browse_path());
         std::shared_ptr<FileSelector> fs = std::make_shared<FileSelector>(
-            browse_path,
-            sys_styling
+            limits.start,
+            sys_styling,
+            limits.top_folder
         );
 
         fs->set_on_file_selected(load_book);
@@ -411,7 +473,7 @@ int main(int argc, char **argv)
         quit = quit || chord_tracker.exit_requested();
 
         held_key_tracker.accumulate(avg_loop_time); // Pretend perfect loop timing for event firing consistency
-        ran_user_code = held_key_tracker.for_longest_held(key_held_callback) || ran_user_code;
+        ran_user_code = held_key_tracker.for_newest_held(key_held_callback) || ran_user_code;
         ran_user_code = view_stack.tick(avg_loop_time) || ran_user_code;
 
         if (ran_user_code)

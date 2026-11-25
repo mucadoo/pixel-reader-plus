@@ -22,7 +22,9 @@ public:
     void set_held_override(std::function<std::optional<bool>(SDLKey)> override_fn);
 
     void accumulate(uint32_t ms);
-    bool for_longest_held(const std::function<void(SDLKey, uint32_t)> &callback);
+    // Calls back for the key pressed most recently among those held, so an older
+    // key that stays down (a drifting stick, for one) cannot take over the repeat.
+    bool for_newest_held(const std::function<void(SDLKey, uint32_t)> &callback);
 };
 
 #endif

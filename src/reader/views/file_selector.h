@@ -20,7 +20,8 @@ class FileSelector: public View
 
 public:
     // Expects to receive a path to a file, or directory with trailing separator.
-    FileSelector(std::filesystem::path path, SystemStyling &styling);
+    // When top_folder is given, the browser never goes above it.
+    FileSelector(std::filesystem::path path, SystemStyling &styling, std::filesystem::path top_folder = {});
     virtual ~FileSelector();
 
     bool render(SDL_Surface *dest_surface, bool force_render) override;

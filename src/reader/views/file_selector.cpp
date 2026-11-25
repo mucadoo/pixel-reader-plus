@@ -18,6 +18,7 @@
 struct FSState
 {
     std::filesystem::path path;
+    std::filesystem::path top_folder; // empty when the browser may go all the way up
     std::vector<FSEntry> path_entries;
     std::function<void(const std::filesystem::path &)> on_file_selected;
     std::function<void(const std::filesystem::path &)> on_file_focus;
@@ -140,7 +141,7 @@ bool has_way_up(const FSState *s)
 void refresh_path_entries(FSState *s)
 {
     s->path_entries.clear();
-    if (s->path.has_parent_path() && s->path != s->path.root_path())
+    if (s->path.has_parent_path() && s->path != s->path.root_path() && s->path != s->top_folder)
     {
         s->path_entries.push_back(FSEntry::directory(".."));
     }
@@ -328,12 +329,22 @@ std::filesystem::path sanitize_starting_path(std::filesystem::path path)
 
 } // namespace
 
-FileSelector::FileSelector(std::filesystem::path path, SystemStyling &styling)
+FileSelector::FileSelector(std::filesystem::path path, SystemStyling &styling, std::filesystem::path top_folder)
     : state(std::make_unique<FSState>(
           sanitize_starting_path(path),
           styling
       ))
 {
+    if (!top_folder.empty())
+    {
+        top_folder = top_folder.lexically_normal();
+        if (!top_folder.has_filename())
+        {
+            top_folder = top_folder.parent_path(); // drop the trailing separator
+        }
+        state->top_folder = top_folder;
+    }
+
     state->menu.set_on_selection([this](uint32_t menu_index) {
         on_menu_entry_selected(this->state.get(), menu_index);
     });

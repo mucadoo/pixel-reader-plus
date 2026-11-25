@@ -38,7 +38,7 @@ inline const char *controls_guide_text()
         "Page mode shows the page and how many pages. Turning a page adds 1.\n"
         "A new chapter, a title page, and a picture that does not fit start at the top of a page.\n"
         "Choosing Page counts from the start, then jumps to the top of the page you were on.\n"
-        "The count runs in the background. Until it finishes, the percent stays up and a page turn moves one screen.\n"
+        "While the pages are counted, a Counting pages screen shows the progress and nothing else. B still leaves the book.\n"
         "Book or Chapter chooses the whole book or the current chapter, for both modes.\n"
         "In Chapter mode, turning past the end of a chapter moves into the next one.\n"
         "\n"

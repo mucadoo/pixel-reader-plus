@@ -4,6 +4,7 @@
 #include "./goto_view.h"
 #include "./popup_view.h"
 #include "./selection_menu.h"
+#include "./menu_draw.h"
 #include "reader/book_info.h"
 #include "reader/bookmarks.h"
 #include "reader/controls_guide.h"
@@ -36,7 +37,7 @@ namespace
 {
 
 // Longest the page count may hold the main loop in one frame.
-constexpr Uint32 PAGINATION_SLICE_MS = 12;
+constexpr Uint32 PAGINATION_SLICE_MS = 50;
 
 // Longest a key may wait for the count of the stretch it just entered.
 constexpr Uint32 PAGINATION_SETTLE_MS = 150;
@@ -65,6 +66,9 @@ struct ReaderViewState
     std::vector<Bookmark> bookmarks;
     std::vector<DocAddr> jump_stack;
     std::unique_ptr<TokenView> token_view;
+    // The count of pages is on screen instead of the text, and the percent drawn.
+    bool counting_shown = false;
+    int counting_drawn = -1;
 
     ReaderViewState(std::filesystem::path path, DocAddr seek_address, std::shared_ptr<DocReader> reader, SystemStyling &sys_styling, TokenViewStyling &token_view_styling, uint32_t token_view_styling_sub_id, ViewStack &view_stack, std::filesystem::path highlights_path)
         : filename(path.filename()),
@@ -523,6 +527,11 @@ void ReaderView::update_token_view_title(DocAddr address)
         progress_percent, page, pages, chapter_percent, book_percent, chapter_minutes, book_minutes);
 }
 
+bool ReaderView::counting_pages() const
+{
+    return state->token_view_styling.get_reading_mode() == ReadingMode::Page && !pagination_ready();
+}
+
 bool ReaderView::pagination_ready() const
 {
     bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
@@ -582,8 +591,51 @@ void ReaderView::settle_pagination(bool was_ready)
 
 bool ReaderView::render(SDL_Surface *dest_surface, bool force_render)
 {
+    if (counting_pages())
+    {
+        const bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+        const int percent = state->token_view->page_count_percent(chapter);
+        if (!force_render && state->counting_shown && percent == state->counting_drawn)
+        {
+            return false;
+        }
+        state->counting_shown = true;
+        state->counting_drawn = percent;
+
+        const auto &theme = state->sys_styling.get_loaded_color_theme();
+        TTF_Font *font = cached_load_font(state->sys_styling.get_font_name(), state->sys_styling.get_font_size());
+        SDL_FillRect(dest_surface, NULL, SDL_MapRGB(dest_surface->format, theme.background.r, theme.background.g, theme.background.b));
+        auto title = menu_draw::shade(font, "Counting pages", theme.main_text, theme.background);
+        auto value = menu_draw::shade(font, std::to_string(percent) + "%", menu_draw::quiet_text(theme), theme.background);
+        if (!title || !value)
+        {
+            return true;
+        }
+        const int gap = 8;
+        const int bar_w = std::min(SCREEN_WIDTH - 80, 320);
+        const int bar_h = 6;
+        int y = SCREEN_HEIGHT / 2 - (title->h + value->h + bar_h + gap * 2) / 2;
+        SDL_Rect at = {static_cast<Sint16>(SCREEN_WIDTH / 2 - title->w / 2), static_cast<Sint16>(y), 0, 0};
+        SDL_BlitSurface(title.get(), NULL, dest_surface, &at);
+        y += title->h + gap;
+        SDL_Rect track = {static_cast<Sint16>(SCREEN_WIDTH / 2 - bar_w / 2), static_cast<Sint16>(y), static_cast<Uint16>(bar_w), static_cast<Uint16>(bar_h)};
+        const SDL_Color quiet = menu_draw::quiet_text(theme);
+        SDL_FillRect(dest_surface, &track, SDL_MapRGB(dest_surface->format, quiet.r, quiet.g, quiet.b));
+        SDL_Rect inner = {static_cast<Sint16>(track.x + 1), static_cast<Sint16>(track.y + 1), static_cast<Uint16>(bar_w - 2), static_cast<Uint16>(bar_h - 2)};
+        SDL_FillRect(dest_surface, &inner, SDL_MapRGB(dest_surface->format, theme.background.r, theme.background.g, theme.background.b));
+        SDL_Rect fill = {inner.x, inner.y, static_cast<Uint16>(inner.w * percent / 100), inner.h};
+        SDL_FillRect(dest_surface, &fill, SDL_MapRGB(dest_surface->format, theme.main_text.r, theme.main_text.g, theme.main_text.b));
+        y += bar_h + gap;
+        SDL_Rect at2 = {static_cast<Sint16>(SCREEN_WIDTH / 2 - value->w / 2), static_cast<Sint16>(y), 0, 0};
+        SDL_BlitSurface(value.get(), NULL, dest_surface, &at2);
+        return true;
+    }
     update_token_view_title(get_current_address(*state));
-    return state->token_view->render(dest_surface, force_render);
+    // The text comes back after the count, so draw it whole once.
+    const bool redraw = state->counting_shown;
+    state->counting_shown = false;
+    state->counting_drawn = -1;
+    return state->token_view->render(dest_surface, force_render || redraw);
 }
 
 bool ReaderView::is_done()
@@ -699,6 +751,15 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
 }
 void ReaderView::on_keypress(SDLKey key)
 {
+    if (counting_pages())
+    {
+        // Nothing to read until the count is done. B still leaves the book.
+        if (key == SW_BTN_B)
+        {
+            state->is_done = true;
+        }
+        return;
+    }
     const bool was_ready = pagination_ready();
     handle_keypress(key);
     settle_pagination(was_ready);
@@ -762,6 +823,10 @@ void ReaderView::handle_keypress(SDLKey key)
 
 void ReaderView::on_keyheld(SDLKey key, uint32_t hold_time_ms)
 {
+    if (counting_pages())
+    {
+        return;
+    }
     state->token_view->on_keyheld(key, hold_time_ms);
 }
 

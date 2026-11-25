@@ -23,6 +23,8 @@ class ReaderView: public View
     // Count pages for up to budget_ms. True when something changed.
     bool run_pagination(uint32_t budget_ms);
     bool pagination_ready() const;
+    // Page mode with the pages not counted yet. Nothing but the count shows then.
+    bool counting_pages() const;
     // A key or a jump can send the view into a stretch that has not been counted.
     // Finish a short count before the next frame, so the screen never shows the
     // unaligned view first and snaps to the page a moment later.

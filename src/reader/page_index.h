@@ -47,6 +47,8 @@ public:
     // True while more tokens remain.
     bool pump(TokenLineScroller &scroller, int budget);
     int total_lines() const;
+    // Address of the last line counted so far, for a progress readout.
+    std::optional<DocAddr> progress_address() const;
     // prefer_blank selects a blank line that shares its address with the following text.
     int line_for_address(DocAddr address, bool prefer_blank) const;
     int page_count(int lines_per_page) const;

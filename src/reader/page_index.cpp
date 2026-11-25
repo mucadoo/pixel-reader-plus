@@ -158,6 +158,15 @@ bool PageIndex::pump(TokenLineScroller &scroller, int budget)
     return true;
 }
 
+std::optional<DocAddr> PageIndex::progress_address() const
+{
+    if (slots.empty())
+    {
+        return std::nullopt;
+    }
+    return slots.back().address;
+}
+
 int PageIndex::total_lines() const
 {
     return static_cast<int>(slots.size());

@@ -1350,6 +1350,23 @@ bool TokenView::advance_page_index(bool chapter)
     return state->page_index.pump(state->line_scroller, 10);
 }
 
+int TokenView::page_count_percent(bool chapter)
+{
+    if (!state->page_index.matches(page_index_key(*state, chapter)))
+    {
+        return 0;
+    }
+    const auto address = state->page_index.progress_address();
+    if (!address)
+    {
+        return 0;
+    }
+    const uint32_t percent = chapter
+        ? state->doc_reader->get_toc_position(*address).progress_percent
+        : state->doc_reader->get_global_progress_percent(*address);
+    return static_cast<int>(std::min<uint32_t>(percent, 100));
+}
+
 bool TokenView::page_index_ready(bool chapter)
 {
     return state->page_index.ready_for(page_index_key(*state, chapter));

@@ -50,6 +50,8 @@ public:
     // Counts display lines for page mode. Returns true while more counting remains.
     bool advance_page_index(bool chapter);
     bool page_index_ready(bool chapter);
+    // How far the running count has got, 0 to 100.
+    int page_count_percent(bool chapter);
     bool page_numbers(bool chapter, uint32_t &page, uint32_t &pages);
     // Move to the first line of the page that contains the current line.
     // Returns true when the view actually moved.

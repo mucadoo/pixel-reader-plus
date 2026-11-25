@@ -2,6 +2,7 @@
 
 #include "./epub_doc_addr.h"
 #include "./xhtml_parser.h"
+#include "doc_api/open_progress.h"
 #include "doc_api/token_addressing.h"
 #include "util/zip_utils.h"
 
@@ -113,6 +114,7 @@ uint32_t EpubDocIndex::address_width(uint32_t spine_index) const
         }
         else
         {
+            report_open_progress(spine_index, spine_size());
             const auto &_tokens = ensure_cached(spine_index);
             if (_tokens.size())
             {

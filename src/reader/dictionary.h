@@ -2,6 +2,7 @@
 #define DICTIONARY_H_
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,7 +16,7 @@ class Dictionary
     std::string data;
     std::vector<uint32_t> lines;
 
-    void ensure_loaded();
+    void ensure_loaded(const std::function<void(int)> &progress = {});
     std::optional<std::string> find_exact(const std::string &key) const;
 
 public:
@@ -24,6 +25,9 @@ public:
 
     std::optional<std::string> lookup(const std::string &key);
     bool available();
+    bool is_loaded() const { return loaded; }
+    // Reads the file now, reporting 0 to 100 as it goes. A later lookup then answers at once.
+    void load(const std::function<void(int)> &progress);
 };
 
 // The dictionary that suits a book language such as "pt-BR" or "fr". Unknown

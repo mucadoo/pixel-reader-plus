@@ -52,7 +52,7 @@ std::string dictionary_name_for_language(const std::string &language)
     return "english";
 }
 
-void Dictionary::ensure_loaded()
+void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
 {
     if (loaded)
     {
@@ -86,24 +86,46 @@ void Dictionary::ensure_loaded()
         return;
     }
     in.seekg(0);
-    data.resize(static_cast<size_t>(size));
-    in.read(data.data(), size);
-    if (data.empty())
-    {
-        return;
-    }
+    const size_t total = static_cast<size_t>(size);
+    data.resize(total);
 
+    // Read in pieces so progress can be shown, and find the line starts as we go.
+    const size_t piece = 1 << 20;
     lines.push_back(0);
-    for (size_t i = 0; i < data.size(); ++i)
+    size_t done = 0;
+    while (done < total)
     {
-        if (data[i] == '\n' && i + 1 < data.size())
+        const size_t want = std::min(piece, total - done);
+        in.read(data.data() + done, static_cast<std::streamsize>(want));
+        const size_t got = static_cast<size_t>(in.gcount());
+        if (got == 0)
         {
-            lines.push_back(static_cast<uint32_t>(i + 1));
+            break;
+        }
+        const char *begin = data.data() + done;
+        const char *end = begin + got;
+        for (const char *p = begin; (p = static_cast<const char *>(std::memchr(p, '\n', static_cast<size_t>(end - p)))); ++p)
+        {
+            lines.push_back(static_cast<uint32_t>(p - data.data() + 1));
+        }
+        done += got;
+        if (progress)
+        {
+            progress(static_cast<int>(done * 100 / total));
         }
     }
-    ok = !lines.empty();
+    data.resize(done);
+    if (!lines.empty() && lines.back() >= data.size())
+    {
+        lines.pop_back();
+    }
+    ok = done > 0 && !lines.empty();
 }
 
+void Dictionary::load(const std::function<void(int)> &progress)
+{
+    ensure_loaded(progress);
+}
 std::optional<std::string> Dictionary::find_exact(const std::string &key) const
 {
     if (!ok || key.empty())

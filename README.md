@@ -80,7 +80,9 @@ The dictionary follows the language the book declares (`dc:language`): `en`, `fr
 - **English** is WordNet 3.1, one gloss per word, the first sense that was kept.
 - **French** and **Portuguese** come from the English Wiktionary through [Kaikki](https://kaikki.org). They give an English gloss per word, up to three part-of-speech readings, and they include inflected forms, such as `plural of livre`. Neither dictionary knows phrases.
 
-Lookup tries the word, then the word without `'s`, then the word without a trailing `s`, then the part after an apostrophe (`l'homme` becomes `homme`). Accented letters are kept, and a capital accented letter matches its lowercase form. If the dictionary file is missing, Look up says there is no entry.
+Lookup tries the word, then the word without `'s`, then the word without a trailing `s`, then the part after an apostrophe (`l'homme` becomes `homme`). Accented letters are kept, and a capital accented letter matches its lowercase form. If the dictionary file is missing, Look up says there is no entry. A dictionary is read from the card the first time you look something up in it, and a **Loading dictionary** screen with a bar shows that, so the screen never just freezes.
+
+The first time a book is opened, the reader has to measure every part of it. An **Opening book** screen with a bar shows that. The result is remembered, so the next opening is quick.
 
 On a word that is a link in the book, such as a footnote number, the **A** menu also has **Show note**, which opens the text the link points to when it names a spot in the book, and **Go to link**, which jumps there. **Jump back** in the book menu returns.
 

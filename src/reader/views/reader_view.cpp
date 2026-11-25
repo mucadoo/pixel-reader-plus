@@ -5,6 +5,7 @@
 #include "./popup_view.h"
 #include "./selection_menu.h"
 #include "./menu_draw.h"
+#include "reader/progress_screen.h"
 #include "reader/book_info.h"
 #include "reader/bookmarks.h"
 #include "reader/controls_guide.h"
@@ -602,32 +603,7 @@ bool ReaderView::render(SDL_Surface *dest_surface, bool force_render)
         state->counting_shown = true;
         state->counting_drawn = percent;
 
-        const auto &theme = state->sys_styling.get_loaded_color_theme();
-        TTF_Font *font = cached_load_font(state->sys_styling.get_font_name(), state->sys_styling.get_font_size());
-        SDL_FillRect(dest_surface, NULL, SDL_MapRGB(dest_surface->format, theme.background.r, theme.background.g, theme.background.b));
-        auto title = menu_draw::shade(font, "Counting pages", theme.main_text, theme.background);
-        auto value = menu_draw::shade(font, std::to_string(percent) + "%", menu_draw::quiet_text(theme), theme.background);
-        if (!title || !value)
-        {
-            return true;
-        }
-        const int gap = 8;
-        const int bar_w = std::min(SCREEN_WIDTH - 80, 320);
-        const int bar_h = 6;
-        int y = SCREEN_HEIGHT / 2 - (title->h + value->h + bar_h + gap * 2) / 2;
-        SDL_Rect at = {static_cast<Sint16>(SCREEN_WIDTH / 2 - title->w / 2), static_cast<Sint16>(y), 0, 0};
-        SDL_BlitSurface(title.get(), NULL, dest_surface, &at);
-        y += title->h + gap;
-        SDL_Rect track = {static_cast<Sint16>(SCREEN_WIDTH / 2 - bar_w / 2), static_cast<Sint16>(y), static_cast<Uint16>(bar_w), static_cast<Uint16>(bar_h)};
-        const SDL_Color quiet = menu_draw::quiet_text(theme);
-        SDL_FillRect(dest_surface, &track, SDL_MapRGB(dest_surface->format, quiet.r, quiet.g, quiet.b));
-        SDL_Rect inner = {static_cast<Sint16>(track.x + 1), static_cast<Sint16>(track.y + 1), static_cast<Uint16>(bar_w - 2), static_cast<Uint16>(bar_h - 2)};
-        SDL_FillRect(dest_surface, &inner, SDL_MapRGB(dest_surface->format, theme.background.r, theme.background.g, theme.background.b));
-        SDL_Rect fill = {inner.x, inner.y, static_cast<Uint16>(inner.w * percent / 100), inner.h};
-        SDL_FillRect(dest_surface, &fill, SDL_MapRGB(dest_surface->format, theme.main_text.r, theme.main_text.g, theme.main_text.b));
-        y += bar_h + gap;
-        SDL_Rect at2 = {static_cast<Sint16>(SCREEN_WIDTH / 2 - value->w / 2), static_cast<Sint16>(y), 0, 0};
-        SDL_BlitSurface(value.get(), NULL, dest_surface, &at2);
+        progress_screen::draw(dest_surface, state->sys_styling, "Counting pages", "", percent);
         return true;
     }
     update_token_view_title(get_current_address(*state));
@@ -712,11 +688,22 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
             case Act::LookUp:
             {
                 static std::map<std::string, Dictionary> dictionaries;
+                SystemStyling &styling = state.sys_styling;
+                const auto load_with_bar = [&styling](Dictionary &d, const std::string &label) {
+                    if (!d.is_loaded())
+                    {
+                        d.load([&styling, &label](int percent) {
+                            progress_screen::show(styling, "Loading dictionary", label, percent);
+                        });
+                    }
+                };
                 Dictionary *dictionary = &dictionaries.try_emplace(dictionary_name, dictionary_name).first->second;
+                load_with_bar(*dictionary, dictionary_name);
                 if (!dictionary->available() && dictionary_name != "english")
                 {
                     // The book's language has no dictionary on the card.
                     dictionary = &dictionaries.try_emplace("english", "english").first->second;
+                    load_with_bar(*dictionary, "english");
                 }
                 std::string body;
                 if (lookup.empty())

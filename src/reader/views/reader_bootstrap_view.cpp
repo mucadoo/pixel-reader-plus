@@ -2,7 +2,9 @@
 
 #include "./popup_view.h"
 #include "./reader_view.h"
+#include "doc_api/open_progress.h"
 #include "filetypes/open_doc.h"
+#include "reader/progress_screen.h"
 #include "reader/config.h"
 #include "reader/library_log.h"
 #include "reader/ss_doc_reader_cache.h"
@@ -53,7 +55,14 @@ void ReaderBootstrapView::load_reader()
 
     std::shared_ptr<DocReader> reader = create_doc_reader(book_path);
     SSDocReaderCache cache(state_store);
-    if (!reader || !reader->open(cache))
+    // The first time a book is opened every part of it is measured. Show how far that is.
+    const std::string shown_name = book_path.stem().string();
+    set_open_progress_hook([&sys_styling, shown_name](uint32_t done, uint32_t total) {
+        progress_screen::show(sys_styling, "Opening book", shown_name, total ? static_cast<int>(done * 100 / total) : 0);
+    });
+    const bool opened = reader && reader->open(cache);
+    set_open_progress_hook(nullptr);
+    if (!opened)
     {
         std::cerr << "Failed to open " << book_path << std::endl;
         view_stack.push(std::make_shared<PopupView>("Error opening", SYSTEM_FONT, sys_styling));

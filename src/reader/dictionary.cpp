@@ -1,17 +1,13 @@
 #include "./dictionary.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <vector>
 
 namespace
 {
-
-const char *CANDIDATES[] = {
-    "resources/dictionary/english.txt",
-    "/mnt/SDCARD/App/PixelReader/resources/dictionary/english.txt",
-};
 
 int compare_key(const std::string &word, const char *start, size_t length)
 {
@@ -30,6 +26,32 @@ int compare_key(const std::string &word, const char *start, size_t length)
 
 } // namespace
 
+Dictionary::Dictionary(std::string name) : name(std::move(name))
+{
+}
+
+std::string dictionary_name_for_language(const std::string &language)
+{
+    std::string code;
+    for (char c : language)
+    {
+        if (c == '-' || c == '_')
+        {
+            break;
+        }
+        code.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    if (code == "pt" || code == "por")
+    {
+        return "portuguese";
+    }
+    if (code == "fr" || code == "fra" || code == "fre")
+    {
+        return "french";
+    }
+    return "english";
+}
+
 void Dictionary::ensure_loaded()
 {
     if (loaded)
@@ -38,8 +60,12 @@ void Dictionary::ensure_loaded()
     }
     loaded = true;
 
+    const std::string candidates[] = {
+        "resources/dictionary/" + name + ".txt",
+        "/mnt/SDCARD/App/PixelReader/resources/dictionary/" + name + ".txt",
+    };
     std::ifstream in;
-    for (const char *path : CANDIDATES)
+    for (const std::string &path : candidates)
     {
         in.open(path, std::ios::binary);
         if (in)
@@ -136,6 +162,15 @@ std::optional<std::string> Dictionary::lookup(const std::string &key)
     if (key.size() > 3 && key.back() == 's')
     {
         if (auto found = find_exact(key.substr(0, key.size() - 1)))
+        {
+            return found;
+        }
+    }
+    // l'homme, qu'il: try the part after the apostrophe.
+    const size_t apostrophe = key.rfind('\'');
+    if (apostrophe != std::string::npos && apostrophe + 1 < key.size())
+    {
+        if (auto found = find_exact(key.substr(apostrophe + 1)))
         {
             return found;
         }

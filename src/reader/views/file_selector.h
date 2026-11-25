@@ -1,6 +1,7 @@
 #ifndef FILE_SELECTOR_H_
 #define FILE_SELECTOR_H_
 
+#include "reader/browser_sort.h"
 #include "reader/view.h"
 
 #include <SDL/SDL_video.h>
@@ -39,6 +40,11 @@ public:
 
     // Where cover thumbnails are kept. Without it the grid shows plain covers only.
     void set_cover_cache_dir(std::filesystem::path dir);
+    // Where the titles and authors read from epubs are kept. Without it the
+    // browser shows file names.
+    void set_info_cache_dir(std::filesystem::path dir);
+    void set_sort(BrowserSort sort);
+    void set_on_sort_change(std::function<void(BrowserSort)> callback);
     void set_grid_view(bool grid);
     bool grid_view() const;
     void set_on_view_mode_change(std::function<void(bool grid)> callback);

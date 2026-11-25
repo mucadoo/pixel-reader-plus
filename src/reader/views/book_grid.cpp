@@ -421,11 +421,19 @@ void BookGrid::draw_cell(SDL_Surface *dest, const Layout &l, uint32_t index, int
     const int cover_x = cell_x + (l.cell_w - l.cover_w) / 2;
     const int cover_y = cell_y + CELL_PAD;
 
+    int art_x = cover_x;
+    int art_y = cover_y;
+    int art_w = l.cover_w;
+    int art_h = l.cover_h;
     SDL_Surface *picture = (covers && item.kind == Item::Kind::Book) ? covers->get(item.path) : nullptr;
     if (picture)
     {
         const int pic_x = cover_x + (l.cover_w - picture->w) / 2;
         const int pic_y = cover_y + (l.cover_h - picture->h) / 2;
+        art_x = pic_x;
+        art_y = pic_y;
+        art_w = picture->w;
+        art_h = picture->h;
         SDL_Rect where = {static_cast<Sint16>(pic_x), static_cast<Sint16>(pic_y), 0, 0};
         SDL_BlitSurface(picture, nullptr, dest, &where);
         outline(dest, pic_x, pic_y, picture->w, picture->h, map_color(dest, quiet_text(theme)));
@@ -433,6 +441,22 @@ void BookGrid::draw_cell(SDL_Surface *dest, const Layout &l, uint32_t index, int
     else
     {
         draw_placeholder(dest, item, cover_x, cover_y, l.cover_w, l.cover_h, selected);
+    }
+
+    // How far into the book the reader is: a bar along the bottom of the cover.
+    if (item.kind == Item::Kind::Book && item.progress >= 0 && art_w > 8 && art_h > 12)
+    {
+        const int bar_h = 5;
+        const int bar_x = art_x + 2;
+        const int bar_y = art_y + art_h - bar_h - 2;
+        const int bar_w = art_w - 4;
+        fill(dest, bar_x - 1, bar_y - 1, bar_w + 2, bar_h + 2, map_color(dest, theme.main_text));
+        fill(dest, bar_x, bar_y, bar_w, bar_h, map_color(dest, theme.background));
+        const int done_w = std::min(bar_w, bar_w * std::min(item.progress, 100) / 100);
+        if (done_w > 0)
+        {
+            fill(dest, bar_x, bar_y, done_w, bar_h, map_color(dest, theme.main_text));
+        }
     }
 
     // The name under the cover. The chosen one slides when it is too long.

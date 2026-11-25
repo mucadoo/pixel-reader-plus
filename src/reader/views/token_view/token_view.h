@@ -3,6 +3,7 @@
 
 #include "reader/view.h"
 #include "doc_api/doc_addr.h"
+#include "reader/highlights.h"
 
 #include <filesystem>
 #include <functional>
@@ -40,7 +41,11 @@ public:
     void seek_to_address(DocAddr address);
 
     void set_title(const std::string &title);
-    void set_title_progress(int percent, uint32_t page, uint32_t pages);
+    void set_book_title(const std::string &title);
+    // percent follows the Progress setting; the other two are always given
+    void set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent, int chapter_minutes, int book_minutes);
+    // Redraws the bar when the clock in it changes minute.
+    bool tick(uint32_t elapsed_ms) override;
 
     // Counts display lines for page mode. Returns true while more counting remains.
     bool advance_page_index(bool chapter);
@@ -59,8 +64,15 @@ public:
     void toggle_extend_selection();
     void move_word_selection(SDLKey key);
     std::string selected_lookup() const;
+    // The link the first selected word belongs to, or null.
+    std::shared_ptr<const std::string> selected_link() const;
     bool selected_is_highlighted() const;
     void toggle_selected_highlight();
+    // The words between the first and last selected word, as they were on the pages.
+    std::string selected_text() const;
+
+    const std::vector<Highlight> &highlights() const;
+    void remove_highlight(size_t index);
 };
 
 #endif

@@ -22,6 +22,17 @@ struct TocPosition
     uint32_t progress_percent;
 };
 
+// Where a link in the text leads.
+struct LinkTarget
+{
+    DocAddr address = 0;
+    // The text found at the target, such as the body of a footnote. Empty when
+    // the link points at a place with no text of its own.
+    std::string text;
+    // True when the link names a spot inside a file, not just a file.
+    bool has_fragment = false;
+};
+
 // Allow readers to cache arbitrary data
 class DocReaderCache
 {
@@ -49,6 +60,11 @@ public:
     virtual uint32_t get_global_progress_percent(const DocAddr &address) const = 0;
     // Position and total length in address units. chapter selects the current chapter.
     virtual std::pair<uint32_t, uint32_t> get_progress_extent(const DocAddr &address, bool chapter) const = 0;
+    // The address that lies the given percent (0 to 100) of the way through the book.
+    virtual DocAddr get_address_at_percent(uint32_t percent) const = 0;
+    // Resolves a link taken from a token's style span. Empty for links that
+    // lead outside the book or to nothing that can be found.
+    virtual std::optional<LinkTarget> resolve_link(const std::string &href) const = 0;
 
     virtual std::shared_ptr<TokenIter> get_iter(DocAddr address = 0) const = 0;
 

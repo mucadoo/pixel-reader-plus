@@ -29,6 +29,8 @@ public:
 
     uint32_t get_global_progress_percent(const DocAddr &address) const override;
     std::pair<uint32_t, uint32_t> get_progress_extent(const DocAddr &address, bool chapter) const override;
+    DocAddr get_address_at_percent(uint32_t percent) const override;
+    std::optional<LinkTarget> resolve_link(const std::string &href) const override;
 
     std::shared_ptr<TokenIter> get_iter(DocAddr address = make_address()) const override;
 

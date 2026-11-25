@@ -162,7 +162,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             {
                 return line_fits(s, len);
             }
-            int avail = SCREEN_WIDTH - 8 - (quote ? 18 : 0);
+            int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0);
             int width = measure_styled(
                 full,
                 static_cast<uint32_t>(s - full),
@@ -234,6 +234,14 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             }
         });
 
+        for (auto it = lines.rbegin(); it != lines.rend(); ++it)
+        {
+            if (!(*it)->continuation)
+            {
+                static_cast<TextLine *>(it->get())->paragraph_end = true;
+                break;
+            }
+        }
         return lines;
     }
 }
@@ -345,13 +353,15 @@ TokenLineScroller::TokenLineScroller(
     DocAddr address,
     std::function<bool(const char *, uint32_t)> line_fits,
     uint32_t line_height_pixels,
-    StyleFontFn style_font
+    StyleFontFn style_font,
+    int side_margin
 ) : reader(reader),
     forward_it(nullptr),
     backward_it(nullptr),
     line_fits(line_fits),
     style_font(std::move(style_font)),
-    line_height_pixels(line_height_pixels)
+    line_height_pixels(line_height_pixels),
+    side_margin(side_margin)
 {
     initialize_buffer_at(address);
 }
@@ -413,6 +423,11 @@ void TokenLineScroller::reset_buffer()
 void TokenLineScroller::set_line_height_pixels(uint32_t new_height)
 {
     line_height_pixels = new_height;
+}
+
+void TokenLineScroller::set_side_margin(int pixels)
+{
+    side_margin = pixels;
 }
 
 std::optional<int> TokenLineScroller::first_line_number() const

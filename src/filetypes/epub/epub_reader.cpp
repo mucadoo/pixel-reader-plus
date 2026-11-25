@@ -246,6 +246,43 @@ uint32_t EPubReader::get_global_progress_percent(const DocAddr &address) const
     );
 }
 
+std::optional<LinkTarget> EPubReader::resolve_link(const std::string &href) const
+{
+    if (href.find("://") != std::string::npos || href.rfind("mailto:", 0) == 0)
+    {
+        return std::nullopt;
+    }
+    const size_t hash = href.find('#');
+    const std::string path = hash == std::string::npos ? href : href.substr(0, hash);
+    const std::string fragment = hash == std::string::npos ? std::string() : href.substr(hash + 1);
+
+    const auto spine = state->doc_index->spine_index_of(path);
+    if (!spine)
+    {
+        return std::nullopt;
+    }
+
+    LinkTarget target;
+    target.address = make_address(*spine);
+    if (!fragment.empty())
+    {
+        const auto &ids = state->doc_index->elem_id_to_address(*spine);
+        const auto it = ids.find(fragment);
+        if (it != ids.end())
+        {
+            target.address = it->second;
+            target.has_fragment = true;
+            target.text = state->doc_index->text_at(*spine, it->second);
+        }
+    }
+    return target;
+}
+
+DocAddr EPubReader::get_address_at_percent(uint32_t percent) const
+{
+    return state->toc_index->get_address_at_percent(percent);
+}
+
 std::pair<uint32_t, uint32_t> EPubReader::get_progress_extent(const DocAddr &address, bool chapter) const
 {
     if (chapter)

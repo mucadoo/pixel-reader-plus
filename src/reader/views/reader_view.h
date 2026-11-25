@@ -45,14 +45,22 @@ public:
 
     bool render(SDL_Surface *dest_surface, bool force_render) override;
     bool is_done() override;
+    bool tick(uint32_t elapsed_ms) override;
 
     void on_keypress(SDLKey key) override;
     void on_keyheld(SDLKey key, uint32_t hold_time_ms) override;
 
     void set_on_change_address(std::function<void(DocAddr)> callback);
 
+    // Goes to the chapter and remembers where the reader was, so Jump back can return.
     void seek_to_toc_index(uint32_t toc_index);
     void seek_to_address(DocAddr address);
+    // Goes to the address and remembers where the reader was, so Jump back can return.
+    void jump_to(DocAddr address);
+    // Returns to the place before the last jump. False when there is none.
+    bool jump_back();
+    bool can_jump_back() const;
+    void open_book_menu();
 };
 
 #endif

@@ -30,6 +30,7 @@ public:
         Kind kind = Kind::Book;
         std::string label;
         std::string tag; // file type for a book, such as EPUB
+        int progress = -1; // percent read, or -1 for a book never opened
         std::filesystem::path path;
     };
 

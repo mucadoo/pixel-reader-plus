@@ -4,6 +4,9 @@
 #include "./selection_menu.h"
 #include "filetypes/open_doc.h"
 #include "reader/book_covers.h"
+#include "reader/book_info.h"
+#include "reader/browser_sort.h"
+#include "reader/library_log.h"
 #include "reader/system_styling.h"
 #include "sys/filesystem.h"
 #include "sys/keymap.h"
@@ -25,9 +28,13 @@ struct FSState
     std::function<void()> on_view_focus;
     std::function<void(const std::string &, const std::string &)> on_info;
     std::function<void(bool)> on_view_mode_change;
+    std::function<void(BrowserSort)> on_sort_change;
+    BrowserSort sort = BrowserSort::Name;
+    std::string continue_name; // name of the Continue reading row, empty when there is none
 
     SelectionMenu menu;
     std::unique_ptr<BookCovers> covers;
+    std::unique_ptr<BookInfoCache> info;
     BookGrid grid;
     bool grid_mode = false;
     uint32_t cursor = 0; // the chosen entry, shared by the list and the grid
@@ -124,7 +131,7 @@ void focus_first_item(FSState *s)
 
 std::vector<std::string> hints_for(const FSState *s, bool way_up)
 {
-    std::vector<std::string> hints = {"A  Open", "Y  Info", s->grid_mode ? "Select  List" : "Select  Grid"};
+    std::vector<std::string> hints = {"A  Open", "Y  Info", s->grid_mode ? "Select  List" : "Select  Grid", "Start  Sort"};
     if (way_up)
     {
         hints.push_back("B  Back");
@@ -138,12 +145,88 @@ bool has_way_up(const FSState *s)
     return !s->path_entries.empty() && s->path_entries[0].is_dir && s->path_entries[0].name == "..";
 }
 
+void rebuild_views(FSState *s);
+std::string entry_title(const FSState *s, const FSEntry &entry);
+
+std::string lowercase(std::string text)
+{
+    for (auto &c : text)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return text;
+}
+
+// Order the books as the sort setting asks. The way up, the Continue reading
+// row and the folders stay where they are.
+void apply_sort(FSState *s)
+{
+    auto first = std::find_if(s->path_entries.begin(), s->path_entries.end(), [s](const FSEntry &entry) {
+        return entry.name != ".." && entry.name != s->continue_name;
+    });
+    auto books = std::find_if(first, s->path_entries.end(), [](const FSEntry &entry) {
+        return !entry.is_dir;
+    });
+    if (s->sort == BrowserSort::Name || books == s->path_entries.end())
+    {
+        return;
+    }
+
+    auto author_of = [s](const FSEntry &entry) {
+        const BookInfo *info = s->info ? s->info->get(s->path / entry.name) : nullptr;
+        return info ? lowercase(info->author) : std::string();
+    };
+    auto opened_at = [s](const FSEntry &entry) {
+        const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
+        return log ? log->last_opened : 0LL;
+    };
+    std::stable_sort(books, s->path_entries.end(), [&](const FSEntry &a, const FSEntry &b) {
+        switch (s->sort)
+        {
+            case BrowserSort::Title:
+                return lowercase(entry_title(s, a)) < lowercase(entry_title(s, b));
+            case BrowserSort::Author:
+            {
+                const std::string author_a = author_of(a);
+                const std::string author_b = author_of(b);
+                if (author_a.empty() != author_b.empty())
+                {
+                    return !author_a.empty(); // books without an author last
+                }
+                if (author_a != author_b)
+                {
+                    return author_a < author_b;
+                }
+                return lowercase(entry_title(s, a)) < lowercase(entry_title(s, b));
+            }
+            case BrowserSort::Recent:
+                return opened_at(a) > opened_at(b);
+            case BrowserSort::Name:
+            default:
+                return false;
+        }
+    });
+}
+
 void refresh_path_entries(FSState *s)
 {
     s->path_entries.clear();
+    s->continue_name.clear();
     if (s->path.has_parent_path() && s->path != s->path.root_path() && s->path != s->top_folder)
     {
         s->path_entries.push_back(FSEntry::directory(".."));
+    }
+
+    // The book read last, one press away from any folder it is not in.
+    if (const auto recent = library_log().most_recent())
+    {
+        if (recent->parent_path() != s->path && file_type_is_supported(recent->filename().string()))
+        {
+            std::error_code ec;
+            const auto size = std::filesystem::file_size(*recent, ec);
+            s->continue_name = recent->string();
+            s->path_entries.push_back({s->continue_name, false, ec ? 0ull : static_cast<unsigned long long>(size)});
+        }
     }
 
     for (const auto &entry : directory_listing(s->path)) {
@@ -152,6 +235,24 @@ void refresh_path_entries(FSState *s)
         }
     }
 
+    apply_sort(s);
+    rebuild_views(s);
+}
+
+// The epub's own title when it is known, else the file name without its extension.
+std::string entry_title(const FSState *s, const FSEntry &entry)
+{
+    const BookInfo *info = s->info ? s->info->get(s->path / entry.name) : nullptr;
+    if (info && !info->title.empty())
+    {
+        return info->title;
+    }
+    return book_title(entry.name);
+}
+
+// Fill the list and the grid from path_entries, and put the cursor on the first row.
+void rebuild_views(FSState *s)
+{
     std::vector<std::string> menu_entries;
     std::vector<std::string> menu_details;
     std::vector<BookGrid::Item> grid_items;
@@ -181,31 +282,97 @@ void refresh_path_entries(FSState *s)
         }
         else
         {
-            menu_entries.push_back(book_title(entry.name));
+            const std::string prefix = entry.name == s->continue_name ? "Continue: " : "";
+            const std::string title = entry_title(s, entry);
+            const BookInfo *info = s->info ? s->info->get(s->path / entry.name) : nullptr;
+            menu_entries.push_back(prefix + (info && !info->author.empty() ? title + " - " + info->author : title));
             std::string kind = book_kind(entry.name);
-            menu_details.push_back(kind.empty() ? format_size(entry.size) : kind + ", " + format_size(entry.size));
+            std::string detail = kind.empty() ? format_size(entry.size) : kind + ", " + format_size(entry.size);
+            const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
+            if (log)
+            {
+                detail = (log->percent >= 99 ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
+            }
+            menu_details.push_back(detail);
             item.kind = BookGrid::Item::Kind::Book;
-            item.label = book_title(entry.name);
+            item.label = prefix + title;
             item.tag = kind;
+            item.progress = log ? log->percent : -1;
         }
         grid_items.push_back(item);
     }
 
-    const std::string title = folder_title(s->path);
+    std::string folder = folder_title(s->path);
+    if (*browser_sort_suffix(s->sort) != 0)
+    {
+        folder += std::string("  (") + browser_sort_suffix(s->sort) + ")";
+    }
     const auto hints = hints_for(s, has_way_up(s));
     const std::string empty_message = has_items ? "" : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS";
 
-    s->menu.set_title(title);
+    s->menu.set_title(folder);
     s->menu.set_entries(menu_entries);
     s->menu.set_details(menu_details);
     s->menu.set_hints(hints);
     s->menu.set_empty_message(empty_message);
 
-    s->grid.set_title(title);
+    s->grid.set_title(folder);
     s->grid.set_items(std::move(grid_items));
     s->grid.set_hints(hints);
     s->grid.set_empty_message(empty_message);
     s->cursor = 0;
+}
+
+// Sort again and rebuild the rows, with the cursor staying on the same entry.
+void resort_keeping_cursor(FSState *s)
+{
+    const uint32_t keep = s->cursor;
+    const std::string name = keep < s->path_entries.size() ? s->path_entries[keep].name : std::string();
+    apply_sort(s);
+    rebuild_views(s);
+    if (s->path_entries.empty())
+    {
+        return;
+    }
+    if (name.empty() || !focus_entry(s, name))
+    {
+        sync_cursor(s, std::min<uint32_t>(keep, static_cast<uint32_t>(s->path_entries.size()) - 1));
+    }
+}
+
+// Read a few more epubs for their titles and show them. True when something changed.
+bool load_book_info(FSState *s)
+{
+    if (!s->info)
+    {
+        return false;
+    }
+    int budget = 3;
+    bool changed = false;
+    for (const auto &entry : s->path_entries)
+    {
+        if (budget <= 0)
+        {
+            break;
+        }
+        if (entry.is_dir || book_kind(entry.name) != "EPUB")
+        {
+            continue;
+        }
+        const std::filesystem::path book = s->path / entry.name;
+        if (s->info->has(book))
+        {
+            continue;
+        }
+        s->info->load(book);
+        --budget;
+        changed = true;
+    }
+    if (changed)
+    {
+        resort_keeping_cursor(s);
+    }
+    return changed;
 }
 
 // Text for the properties screen of an entry.
@@ -213,6 +380,24 @@ std::string properties_text(const FSState *s, const FSEntry &entry)
 {
     std::string body;
     body += "Name\n" + entry.name + "\n\n";
+    if (!entry.is_dir && s->info)
+    {
+        if (const BookInfo *info = s->info->get(s->path / entry.name))
+        {
+            if (!info->title.empty())
+            {
+                body += "Title\n" + info->title + "\n\n";
+            }
+            if (!info->author.empty())
+            {
+                body += "Author\n" + info->author + "\n\n";
+            }
+            if (!info->language.empty())
+            {
+                body += "Language\n" + info->language + "\n\n";
+            }
+        }
+    }
     if (entry.is_dir)
     {
         body += "Type\nFolder\n\n";
@@ -383,11 +568,12 @@ bool FileSelector::render(SDL_Surface *dest_surface, bool force_render)
 
 bool FileSelector::tick(uint32_t elapsed_ms)
 {
+    const bool changed = load_book_info(state.get());
     if (state->grid_mode)
     {
-        return state->grid.tick(elapsed_ms);
+        return state->grid.tick(elapsed_ms) || changed;
     }
-    return state->menu.tick(elapsed_ms);
+    return state->menu.tick(elapsed_ms) || changed;
 }
 
 bool FileSelector::is_done()
@@ -414,6 +600,15 @@ void FileSelector::on_keypress(SDLKey key)
     if (key == SW_BTN_SELECT)
     {
         set_grid_view(!state->grid_mode);
+        return;
+    }
+    if (key == SW_BTN_START)
+    {
+        set_sort(next_browser_sort(state->sort));
+        if (state->on_sort_change)
+        {
+            state->on_sort_change(state->sort);
+        }
         return;
     }
     if (state->grid_mode)
@@ -459,6 +654,17 @@ void FileSelector::set_grid_view(bool grid)
     }
 }
 
+void FileSelector::set_sort(BrowserSort sort)
+{
+    state->sort = sort;
+    resort_keeping_cursor(state.get());
+}
+
+void FileSelector::set_on_sort_change(std::function<void(BrowserSort)> callback)
+{
+    state->on_sort_change = callback;
+}
+
 bool FileSelector::grid_view() const
 {
     return state->grid_mode;
@@ -478,6 +684,11 @@ void FileSelector::set_cover_cache_dir(std::filesystem::path dir)
 {
     state->covers = std::make_unique<BookCovers>(dir);
     state->grid.set_covers(state->covers.get());
+}
+
+void FileSelector::set_info_cache_dir(std::filesystem::path dir)
+{
+    state->info = std::make_unique<BookInfoCache>(std::move(dir));
 }
 
 void FileSelector::on_focus()

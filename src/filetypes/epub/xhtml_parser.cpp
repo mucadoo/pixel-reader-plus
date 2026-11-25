@@ -11,7 +11,9 @@
 
 #include <libxml/parser.h>
 
+#include <cctype>
 #include <cmath>
+#include <memory>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -142,6 +144,7 @@ struct Node
     bool center_set = false;
     bool break_before = false;
     bool break_after = false;
+    std::shared_ptr<const std::string> href;
 
     Node(Type type, DocAddr address, xmlNodePtr node, std::string text, int list_depth)
         : type(type)
@@ -218,6 +221,8 @@ class NodeProcessor
     std::vector<Node> nodes;
     std::set<std::string> unattached_ids;
     std::unordered_map<std::string, DocAddr> &id_to_addr;
+    std::filesystem::path file_path;
+    std::vector<std::shared_ptr<const std::string>> link_stack; // one per open <a>
 
     void attach_pending_ids(DocAddr address)
     {
@@ -252,6 +257,10 @@ class NodeProcessor
             pending_break = false;
         }
         emitted.break_after = frame.self.break_after == 1 || frame.block.break_after == 1;
+        if (!link_stack.empty())
+        {
+            emitted.href = link_stack.back();
+        }
         DEBUG_LOG("[node: " << nodes.back().to_string() << "]");
     }
 
@@ -265,6 +274,57 @@ public:
     {
         frames[0].self = root;
         frames[0].block = root;
+    }
+
+    void set_file_path(std::filesystem::path path)
+    {
+        file_path = std::move(path);
+    }
+
+    // The target of a link as a path inside the book, so it can be matched
+    // against the files of the spine. Outside addresses are kept as they are.
+    std::string resolve_href(const std::string &href) const
+    {
+        if (href.find("://") != std::string::npos || href.rfind("mailto:", 0) == 0)
+        {
+            return href;
+        }
+        const size_t hash = href.find('#');
+        std::string target = hash == std::string::npos ? href : href.substr(0, hash);
+        const std::string fragment = hash == std::string::npos ? std::string() : href.substr(hash + 1);
+
+        // %20 and friends
+        std::string decoded;
+        for (size_t i = 0; i < target.size(); ++i)
+        {
+            if (target[i] == '%' && i + 2 < target.size() + 0 && std::isxdigit(static_cast<unsigned char>(target[i + 1]))
+                && std::isxdigit(static_cast<unsigned char>(target[i + 2])))
+            {
+                decoded.push_back(static_cast<char>(std::stoi(target.substr(i + 1, 2), nullptr, 16)));
+                i += 2;
+            }
+            else
+            {
+                decoded.push_back(target[i]);
+            }
+        }
+
+        const std::string base = file_path.parent_path().generic_string();
+        std::string combined;
+        if (decoded.empty())
+        {
+            combined = file_path.generic_string();
+        }
+        else if (decoded[0] == '/' || decoded[0] == '\\')
+        {
+            combined = decoded;
+        }
+        else
+        {
+            combined = base.empty() ? decoded : base + "/" + decoded;
+        }
+        combined = normalize_zip_path(combined);
+        return fragment.empty() ? combined : combined + "#" + fragment;
     }
 
     static std::vector<std::string> class_list(xmlNodePtr node)
@@ -417,6 +477,20 @@ public:
             {
                 ++italic_depth;
             }
+            else if (strcmp(name, "a") == 0)
+            {
+                std::shared_ptr<const std::string> link;
+                xmlChar *href = xmlGetProp(node, BAD_CAST "href");
+                if (href)
+                {
+                    if (xmlStrlen(href) > 0)
+                    {
+                        link = std::make_shared<const std::string>(resolve_href((const char *)href));
+                    }
+                    xmlFree(href);
+                }
+                link_stack.push_back(link);
+            }
         }
 
         switch (elem_name_to_enum(node->name))
@@ -550,6 +624,10 @@ public:
             {
                 if (italic_depth > 0) --italic_depth;
             }
+            else if (strcmp(name, "a") == 0)
+            {
+                if (!link_stack.empty()) link_stack.pop_back();
+            }
         }
         pop_style();
         if (break_after)
@@ -597,7 +675,8 @@ void append_styled_piece(
     std::string piece,
     bool bold,
     bool italic,
-    float scale
+    float scale,
+    const std::shared_ptr<const std::string> &href
 )
 {
     if (result.empty())
@@ -614,7 +693,7 @@ void append_styled_piece(
 
     uint32_t start = static_cast<uint32_t>(result.size());
     result.append(piece);
-    if ((bold || italic || scale > 0.2f) && result.size() > start)
+    if ((bold || italic || scale > 0.2f || href) && result.size() > start)
     {
         StyleSpan span;
         span.start = start;
@@ -622,7 +701,9 @@ void append_styled_piece(
         span.bold = bold;
         span.italic = italic;
         span.scale = scale;
+        span.href = href;
         if (!spans.empty()
+            && spans.back().href == span.href
             && spans.back().end == span.start
             && spans.back().bold == span.bold
             && spans.back().italic == span.italic
@@ -662,7 +743,8 @@ void compact_styled(
             compact_whitespace(nodes[j].text.c_str()),
             bold,
             italic,
-            scale
+            scale,
+            nodes[j].href
         );
     }
 
@@ -945,6 +1027,7 @@ bool parse_xhtml_tokens(const char *xml_str, std::filesystem::path file_path, ui
         stylesheet,
         root_style
     );
+    processor.set_file_path(file_path);
     visit_nodes(node, processor);
 
     generate_doc_tokens(processor.get_nodes(), file_path.parent_path(), tokens_out);

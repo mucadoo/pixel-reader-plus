@@ -122,6 +122,13 @@ uint32_t TxtReader::get_global_progress_percent(const DocAddr &address) const
     return std::min(pos, size) * 100 / size;
 }
 
+DocAddr TxtReader::get_address_at_percent(uint32_t percent) const
+{
+    const uint64_t size = state->total_address_width;
+    const uint64_t target = size * std::min<uint32_t>(percent, 100) / 100;
+    return target >= size && size > 0 ? size - 1 : target;
+}
+
 std::pair<uint32_t, uint32_t> TxtReader::get_progress_extent(const DocAddr &address, bool) const
 {
     uint32_t size = state->total_address_width;

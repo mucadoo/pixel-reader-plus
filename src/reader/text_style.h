@@ -37,6 +37,8 @@ struct DrawnPiece
 {
     std::string text;
     int x = 0;
+    // Where the piece sat before justify moved it, or -1 when it did not move.
+    int src_x = -1;
     int w = 0;
     int h = 0;
     int ascent = 0;
@@ -53,14 +55,21 @@ struct LayoutWord
     int x = 0;
     int w = 0;
     int line_index = 0;
+    // Where the word links to, when it is part of a link.
+    std::shared_ptr<const std::string> link;
 };
 
 struct LineLayout
 {
+    bool justified = false;
     std::vector<DrawnPiece> pieces;
     std::vector<LayoutWord> words;
     int width = 0;
 };
+
+// Spreads the gaps between words so the line fills `width` pixels. Does nothing
+// when the line is already full or is too short to stretch without looking odd.
+void justify_layout(LineLayout &layout, int width);
 
 LineLayout layout_line(
     const std::string &text,

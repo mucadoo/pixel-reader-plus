@@ -3,6 +3,7 @@
 
 #include "reader/color_theme_def.h"
 #include "reader/font_catalog.h"
+#include "reader/layout_options.h"
 #include "reader/settings_store.h"
 #include "reader/shoulder_keymap.h"
 #include "reader/system_styling.h"
@@ -24,7 +25,7 @@ SettingsView::SettingsView(
     styling_sub_id(sys_styling.subscribe_to_changes([this](SystemStyling::ChangeId) {
         needs_render = true;
     })),
-    num_menu_items(7)
+    num_menu_items(ROW_COUNT)
 {
 }
 
@@ -148,6 +149,13 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
             true,
             sys_font
         },
+        {"Bar left", bar_item_label(token_view_styling.get_bar_left()), true, sys_font},
+        {"Bar middle", bar_item_label(token_view_styling.get_bar_middle()), true, sys_font},
+        {"Bar right", bar_item_label(token_view_styling.get_bar_right()), true, sys_font},
+        {"Clock", clock_format_label(token_view_styling.get_clock_format()), true, sys_font},
+        {"Margins", margin_label(token_view_styling.get_margin_level()), true, sys_font},
+        {"Line spacing", spacing_label(token_view_styling.get_spacing_level()), true, sys_font},
+        {"Justify", token_view_styling.get_justify() ? "On" : "Off", true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -289,7 +297,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         y += row_h;
     }
 
-    const char *footer_left = line_selected == 6 ? "A  Open" : "Left / right";
+    const char *footer_left = line_selected == ROW_CONTROLS ? "A  Open" : "Left / right";
     auto footer = shade(sys_font, footer_left, quiet, theme.background);
     auto close = shade(sys_font, "B  Close", quiet, theme.background);
     int footer_y = panel_y + panel_h - pad - footer_h;
@@ -366,6 +374,25 @@ void SettingsView::on_change_progress()
     );
 }
 
+void SettingsView::on_change_bar(int slot, int dir)
+{
+    auto step = [dir](BarItem item) {
+        return dir < 0 ? get_prev_bar_item(item) : get_next_bar_item(item);
+    };
+    if (slot == 0)
+    {
+        token_view_styling.set_bar_left(step(token_view_styling.get_bar_left()));
+    }
+    else if (slot == 1)
+    {
+        token_view_styling.set_bar_middle(step(token_view_styling.get_bar_middle()));
+    }
+    else
+    {
+        token_view_styling.set_bar_right(step(token_view_styling.get_bar_right()));
+    }
+}
+
 void SettingsView::on_change_reading()
 {
     token_view_styling.set_reading_mode(
@@ -412,11 +439,37 @@ void SettingsView::on_keypress(SDLKey key)
                 {
                     on_change_reading();
                 }
+                else if (line_selected >= ROW_BAR_LEFT && line_selected <= ROW_BAR_RIGHT)
+                {
+                    on_change_bar(static_cast<int>(line_selected - ROW_BAR_LEFT), dir);
+                }
+                else if (line_selected == ROW_CLOCK)
+                {
+                    token_view_styling.set_clock_format(
+                        get_next_clock_format(token_view_styling.get_clock_format())
+                    );
+                }
+                else if (line_selected == ROW_MARGINS)
+                {
+                    token_view_styling.set_margin_level(
+                        (token_view_styling.get_margin_level() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_SPACING)
+                {
+                    token_view_styling.set_spacing_level(
+                        (token_view_styling.get_spacing_level() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_JUSTIFY)
+                {
+                    token_view_styling.set_justify(!token_view_styling.get_justify());
+                }
                 needs_render = true;
             }
             break;
         case SW_BTN_A:
-            if (line_selected == 6 && controls_action)
+            if (line_selected == ROW_CONTROLS && controls_action)
             {
                 controls_action();
             }

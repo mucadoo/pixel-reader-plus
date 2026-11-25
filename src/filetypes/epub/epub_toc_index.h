@@ -36,6 +36,8 @@ public:
     std::pair<uint32_t, uint32_t> get_toc_item_progress(const DocAddr &address) const;
     // Return (pos inside, size of) the book in units of address space.
     std::pair<uint32_t, uint32_t> get_global_progress(const DocAddr &address) const;
+    // The address that lies the given percent of the way through the book.
+    DocAddr get_address_at_percent(uint32_t percent) const;
 };
 
 #endif

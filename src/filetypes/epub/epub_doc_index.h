@@ -51,6 +51,12 @@ public:
 
     const std::vector<std::unique_ptr<DocToken>> &tokens(uint32_t spine_index) const;
     const std::unordered_map<std::string, DocAddr> &elem_id_to_address(uint32_t spine_index) const;
+
+    // The spine entry stored at this path inside the book.
+    std::optional<uint32_t> spine_index_of(const std::string &zip_path) const;
+    // Text found where the address is: the token there and the ones after it,
+    // until the next anchored element or enough has been gathered.
+    std::string text_at(uint32_t spine_index, DocAddr address) const;
 };
 
 #endif

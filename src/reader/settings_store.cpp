@@ -1,4 +1,5 @@
 #include "./settings_store.h"
+#include "./layout_options.h"
 #include "./state_store.h"
 #include "./util/string_serialization.h"
 
@@ -16,8 +17,150 @@ constexpr const char *SETTINGS_KEY_FONT_SIZE = "font_size";
 constexpr const char *SETTINGS_PROGRESS_REPORTING = "progress_reporting";
 constexpr const char *SETTINGS_READING_MODE = "reading_mode";
 constexpr const char *SETTINGS_BROWSER_VIEW = "browser_view";
+constexpr const char *SETTINGS_CLOCK_FORMAT = "clock_format";
+
+const char *bar_slot_key(int slot)
+{
+    switch (slot)
+    {
+        case 0:
+            return "bar_left";
+        case 1:
+            return "bar_middle";
+        default:
+            return "bar_right";
+    }
+}
 
 } // namespace
+
+std::optional<BarItem> settings_get_bar_item(const StateStore &state_store, int slot)
+{
+    const auto &opt = state_store.get_setting(bar_slot_key(slot));
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return decode_bar_item(*opt);
+}
+
+void settings_set_bar_item(StateStore &state_store, int slot, BarItem item)
+{
+    state_store.set_setting(bar_slot_key(slot), encode_bar_item(item));
+}
+
+std::optional<ClockFormat> settings_get_clock_format(const StateStore &state_store)
+{
+    const auto &opt = state_store.get_setting(SETTINGS_CLOCK_FORMAT);
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return decode_clock_format(*opt);
+}
+
+void settings_set_clock_format(StateStore &state_store, ClockFormat format)
+{
+    state_store.set_setting(SETTINGS_CLOCK_FORMAT, encode_clock_format(format));
+}
+
+namespace
+{
+
+std::optional<int> get_level(const StateStore &state_store, const char *key)
+{
+    const auto &opt = state_store.get_setting(key);
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        const int level = std::stoi(*opt);
+        if (level >= 0 && level < LAYOUT_LEVEL_COUNT)
+        {
+            return level;
+        }
+    }
+    catch (...)
+    {
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+std::optional<int> settings_get_margin_level(const StateStore &state_store)
+{
+    return get_level(state_store, "margin_level");
+}
+
+void settings_set_margin_level(StateStore &state_store, int level)
+{
+    state_store.set_setting("margin_level", std::to_string(level));
+}
+
+std::optional<int> settings_get_spacing_level(const StateStore &state_store)
+{
+    return get_level(state_store, "spacing_level");
+}
+
+void settings_set_spacing_level(StateStore &state_store, int level)
+{
+    state_store.set_setting("spacing_level", std::to_string(level));
+}
+
+std::optional<bool> settings_get_justify(const StateStore &state_store)
+{
+    const auto &opt = state_store.get_setting("justify");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "on";
+}
+
+void settings_set_justify(StateStore &state_store, bool justify)
+{
+    state_store.set_setting("justify", justify ? "on" : "off");
+}
+
+std::optional<BrowserSort> settings_get_browser_sort(const StateStore &state_store)
+{
+    const auto &opt = state_store.get_setting("browser_sort");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return decode_browser_sort(*opt);
+}
+
+void settings_set_browser_sort(StateStore &state_store, BrowserSort sort)
+{
+    state_store.set_setting("browser_sort", encode_browser_sort(sort));
+}
+
+std::optional<double> settings_get_reading_speed(const StateStore &state_store)
+{
+    const auto &opt = state_store.get_setting("reading_speed");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return std::stod(*opt);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+void settings_set_reading_speed(StateStore &state_store, double speed)
+{
+    state_store.set_setting("reading_speed", std::to_string(speed));
+}
 
 std::optional<bool> settings_get_browser_grid(const StateStore &state_store)
 {

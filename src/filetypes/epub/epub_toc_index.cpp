@@ -1,5 +1,7 @@
 #include "./epub_toc_index.h"
 
+#include <algorithm>
+
 #include "./epub_doc_addr.h"
 #include "./epub_doc_index.h"
 
@@ -438,6 +440,33 @@ std::pair<uint32_t, uint32_t> EpubTocIndex::get_toc_item_progress(const DocAddr 
         static_cast<uint32_t>(address - progress.spine_to_start_addr[spine_index])
     );
     return {pos, progress.total_size};
+}
+
+DocAddr EpubTocIndex::get_address_at_percent(uint32_t percent) const
+{
+    const auto &offsets = state->spine_to_offset;
+    if (offsets.empty())
+    {
+        return make_address();
+    }
+
+    const uint64_t target = static_cast<uint64_t>(state->book_width) * std::min<uint32_t>(percent, 100) / 100;
+    uint32_t spine = 0;
+    for (uint32_t i = 0; i < offsets.size(); ++i)
+    {
+        if (offsets[i] <= target)
+        {
+            spine = i;
+        }
+    }
+
+    const uint32_t width = state->doc_index.address_width(spine);
+    uint32_t inside = static_cast<uint32_t>(target - offsets[spine]);
+    if (inside >= width)
+    {
+        inside = width > 0 ? width - 1 : 0;
+    }
+    return make_address(spine) + inside;
 }
 
 std::pair<uint32_t, uint32_t> EpubTocIndex::get_global_progress(const DocAddr &address) const

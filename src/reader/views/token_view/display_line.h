@@ -36,6 +36,7 @@ struct TextLine: public DisplayLine
     bool quote = false;
     int slot_span = 1;
     uint32_t address_lead = 0;
+    bool paragraph_end = false; // the last line of its paragraph, which justify leaves short
     std::vector<StyleSpan> spans;
 
     TextLine(DocAddr addr, const std::string& text, bool centered = false);

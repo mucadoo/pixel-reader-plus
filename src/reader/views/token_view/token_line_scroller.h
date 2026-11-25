@@ -31,6 +31,7 @@ class TokenLineScroller
     std::optional<int> global_end_line;
 
     uint32_t line_height_pixels;
+    int side_margin = 4;
     int current_line = 0;
 
     IndexedDequeue<std::unique_ptr<DisplayLine>> lines_buf;
@@ -51,7 +52,8 @@ public:
         DocAddr address,
         std::function<bool(const char *, uint32_t)> line_fits,
         uint32_t line_height_pixels,
-        StyleFontFn style_font
+        StyleFontFn style_font,
+        int side_margin = 4
     );
 
     void collect_token_lines(const DocToken &token, std::vector<DocAddr> &line_addresses);
@@ -62,6 +64,8 @@ public:
     void seek_to_address(DocAddr address);
     void reset_buffer();
     void set_line_height_pixels(uint32_t line_height_pixels);
+    // Space left empty at each side of the text. Call reset_buffer to wrap again.
+    void set_side_margin(int pixels);
 
     std::optional<int> first_line_number() const;
     std::optional<int> end_line_number() const;

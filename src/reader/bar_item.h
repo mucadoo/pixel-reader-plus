@@ -1,0 +1,42 @@
+#ifndef BAR_ITEM_H_
+#define BAR_ITEM_H_
+
+#include <optional>
+#include <string>
+
+// What a slot of the bar under the text can show.
+enum class BarItem {
+    Empty,
+    ChapterTitle,
+    BookTitle,
+    Progress,       // page x / y and the percent the Progress setting asks for
+    Page,           // page x / y
+    ChapterPercent,
+    BookPercent,
+    Time,
+    Date,
+    ChapterTimeLeft,
+    BookTimeLeft,
+    Battery
+};
+
+BarItem get_next_bar_item(BarItem item);
+BarItem get_prev_bar_item(BarItem item);
+std::optional<BarItem> decode_bar_item(const std::string &item);
+std::string encode_bar_item(BarItem item);
+// The name shown in the settings.
+const char *bar_item_label(BarItem item);
+// True for items that change with the time and so need a redraw once a minute.
+bool bar_item_is_live(BarItem item);
+
+enum class ClockFormat {
+    H24,
+    H12
+};
+
+ClockFormat get_next_clock_format(ClockFormat format);
+std::optional<ClockFormat> decode_clock_format(const std::string &format);
+std::string encode_clock_format(ClockFormat format);
+const char *clock_format_label(ClockFormat format);
+
+#endif

@@ -1,6 +1,8 @@
 #include "./config.h"
 #include "./work_pump.h"
 #include "./font_catalog.h"
+#include "./library_log.h"
+#include "./reading_speed.h"
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
 #include "./state_store.h"
@@ -153,6 +155,11 @@ void initialize_views(
             view_stack.push(std::make_shared<DefinitionView>(title, body, sys_styling));
         });
         fs->set_cover_cache_dir(store_path / "covers");
+        fs->set_info_cache_dir(store_path / "info");
+        fs->set_sort(settings_get_browser_sort(state_store).value_or(BrowserSort::Name));
+        fs->set_on_sort_change([&state_store](BrowserSort sort) {
+            settings_set_browser_sort(state_store, sort);
+        });
         fs->set_grid_view(settings_get_browser_grid(state_store).value_or(false));
         fs->set_on_view_mode_change([&state_store](bool grid) {
             settings_set_browser_grid(state_store, grid);
@@ -275,6 +282,7 @@ int main(int argc, char **argv)
 
     auto config = load_config_with_defaults();
     StateStore state_store(config[CONFIG_KEY_STORE_PATH]);
+    library_log().load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "library.log");
 
     // Preload & check fonts
     auto init_font_name = get_valid_font_name(settings_get_font_name(state_store).value_or(DEFAULT_FONT_NAME));
@@ -309,11 +317,32 @@ int main(int argc, char **argv)
         settings_get_progress_reporting(state_store).value_or(DEFAULT_PROGRESS_REPORTING),
         settings_get_reading_mode(state_store).value_or(DEFAULT_READING_MODE)
     );
+    token_view_styling.set_bar_left(settings_get_bar_item(state_store, 0).value_or(token_view_styling.get_bar_left()));
+    token_view_styling.set_bar_middle(settings_get_bar_item(state_store, 1).value_or(token_view_styling.get_bar_middle()));
+    token_view_styling.set_bar_right(settings_get_bar_item(state_store, 2).value_or(token_view_styling.get_bar_right()));
+    token_view_styling.set_clock_format(settings_get_clock_format(state_store).value_or(token_view_styling.get_clock_format()));
+    token_view_styling.set_margin_level(settings_get_margin_level(state_store).value_or(token_view_styling.get_margin_level()));
+    token_view_styling.set_spacing_level(settings_get_spacing_level(state_store).value_or(token_view_styling.get_spacing_level()));
+    token_view_styling.set_justify(settings_get_justify(state_store).value_or(token_view_styling.get_justify()));
+    if (const auto speed = settings_get_reading_speed(state_store))
+    {
+        reading_speed::set_units_per_second(*speed);
+    }
+    reading_speed::set_saver([&state_store](double speed) {
+        settings_set_reading_speed(state_store, speed);
+    });
     token_view_styling.subscribe_to_changes([&token_view_styling, &state_store]() {
         // Persist changes
         settings_set_show_title_bar(state_store, token_view_styling.get_show_title_bar());
         settings_set_progress_reporting(state_store, token_view_styling.get_progress_reporting());
         settings_set_reading_mode(state_store, token_view_styling.get_reading_mode());
+        settings_set_margin_level(state_store, token_view_styling.get_margin_level());
+        settings_set_spacing_level(state_store, token_view_styling.get_spacing_level());
+        settings_set_justify(state_store, token_view_styling.get_justify());
+        settings_set_bar_item(state_store, 0, token_view_styling.get_bar_left());
+        settings_set_bar_item(state_store, 1, token_view_styling.get_bar_middle());
+        settings_set_bar_item(state_store, 2, token_view_styling.get_bar_right());
+        settings_set_clock_format(state_store, token_view_styling.get_clock_format());
     });
 
     // Setup views
@@ -502,12 +531,15 @@ int main(int argc, char **argv)
             // Make sure state is saved in case device auto-powers down. Don't seem
             // to get a signal on miyoo mini when this happens.
             state_store.flush();
+            library_log().flush();
             idle_timer.reset();
         }
     }
 
     view_stack.shutdown();
     state_store.flush();
+    reading_speed::flush();
+    library_log().flush();
 
     SDL_FreeSurface(screen);
     SDL_Quit();

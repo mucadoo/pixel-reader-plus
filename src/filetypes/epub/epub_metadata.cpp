@@ -193,6 +193,44 @@ bool epub_parse_package_contents(const std::string &rootfile_path, const char *p
         }
     }
 
+    // title, first author and language from <metadata><dc:...>
+    {
+        xmlNodePtr metadata = elem_first_by_name(
+            elem_first_child(elem_first_by_name(node, BAD_CAST "package")),
+            BAD_CAST "metadata"
+        );
+        for (xmlNodePtr child = elem_first_child(metadata); child; child = child->next)
+        {
+            if (child->type != XML_ELEMENT_NODE)
+            {
+                continue;
+            }
+            std::string *target = nullptr;
+            if (xmlStrEqual(child->name, BAD_CAST "title"))
+            {
+                target = &out_package.title;
+            }
+            else if (xmlStrEqual(child->name, BAD_CAST "creator"))
+            {
+                target = &out_package.author;
+            }
+            else if (xmlStrEqual(child->name, BAD_CAST "language"))
+            {
+                target = &out_package.language;
+            }
+            if (!target || !target->empty())
+            {
+                continue; // not one we want, or already have the first one
+            }
+            xmlChar *text = xmlNodeGetContent(child);
+            if (text)
+            {
+                *target = (const char *)text;
+                xmlFree(text);
+            }
+        }
+    }
+
     xmlFreeDoc(package_doc);
 
     return true;

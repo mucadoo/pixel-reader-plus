@@ -6,6 +6,7 @@
 #include "util/zip_utils.h"
 
 #include <iostream>
+#include <unordered_set>
 
 #define DEBUG 0
 
@@ -127,6 +128,87 @@ uint32_t EpubDocIndex::address_width(uint32_t spine_index) const
 const std::vector<std::unique_ptr<DocToken>> &EpubDocIndex::tokens(uint32_t spine_index) const
 {
     return ensure_cached(spine_index);
+}
+
+std::optional<uint32_t> EpubDocIndex::spine_index_of(const std::string &zip_path) const
+{
+    for (uint32_t i = 0; i < spine_entries.size(); ++i)
+    {
+        if (!spine_entries[i].zip_path.empty() && spine_entries[i].zip_path.generic_string() == zip_path)
+        {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string EpubDocIndex::text_at(uint32_t spine_index, DocAddr address) const
+{
+    if (spine_index >= spine_entries.size())
+    {
+        return "";
+    }
+    const auto &list = tokens(spine_index);
+    if (list.empty())
+    {
+        return "";
+    }
+
+    std::unordered_set<DocAddr> anchored;
+    for (const auto &item : elem_id_to_address(spine_index))
+    {
+        anchored.insert(item.second);
+    }
+
+    size_t first = 0;
+    while (first + 1 < list.size() && list[first + 1]->address <= address)
+    {
+        ++first;
+    }
+
+    constexpr size_t MAX_CHARS = 700;
+    std::string out;
+    for (size_t i = first; i < list.size() && i < first + 8; ++i)
+    {
+        if (i > first && anchored.count(list[i]->address))
+        {
+            break;
+        }
+        const DocToken *token = list[i].get();
+        const std::string *text = nullptr;
+        if (auto *t = dynamic_cast<const TextDocToken *>(token))
+        {
+            text = &t->text;
+        }
+        else if (auto *h = dynamic_cast<const HeaderDocToken *>(token))
+        {
+            text = &h->text;
+        }
+        else if (auto *l = dynamic_cast<const ListItemDocToken *>(token))
+        {
+            text = &l->text;
+        }
+        if (!text)
+        {
+            break;
+        }
+        if (!out.empty())
+        {
+            out += "\n\n";
+        }
+        out += *text;
+        if (out.size() >= MAX_CHARS)
+        {
+            break;
+        }
+    }
+
+    if (out.size() > MAX_CHARS)
+    {
+        size_t cut = out.rfind(' ', MAX_CHARS);
+        out = out.substr(0, cut == std::string::npos ? MAX_CHARS : cut) + "...";
+    }
+    return out;
 }
 
 const std::unordered_map<std::string, DocAddr> &EpubDocIndex::elem_id_to_address(uint32_t spine_index) const

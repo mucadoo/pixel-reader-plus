@@ -134,11 +134,39 @@ int measure_plain(TTF_Font *font, const char *s, uint32_t len)
     return w;
 }
 
-std::string lookup_key(const std::string &word)
+// Lowercase for dictionary lookup: ASCII, and the accented capitals of the
+// Latin-1 block (such as the E in Ecole) that French and Portuguese use.
+std::string lookup_lowercase(const std::string &word)
 {
     std::string lower = to_lower(word);
+    for (size_t i = 0; i + 1 < lower.size(); ++i)
+    {
+        unsigned char lead = static_cast<unsigned char>(lower[i]);
+        unsigned char next = static_cast<unsigned char>(lower[i + 1]);
+        if (lead == 0xC3 && next >= 0x80 && next <= 0x9E && next != 0x97)
+        {
+            lower[i + 1] = static_cast<char>(next + 0x20);
+            ++i;
+        }
+        else if (lead == 0xC5 && next == 0x92)
+        {
+            lower[i + 1] = static_cast<char>(0x93); // OE ligature
+            ++i;
+        }
+        else if (lead >= 0xC2)
+        {
+            ++i; // skip the rest of this letter
+        }
+    }
+    return lower;
+}
+
+std::string lookup_key(const std::string &word)
+{
+    std::string lower = lookup_lowercase(word);
+    // Bytes of letters outside ASCII belong to the word.
     auto ok = [](unsigned char c) {
-        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'' || c == '-';
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'' || c == '-' || c >= 0x80;
     };
     size_t begin = 0;
     size_t end = lower.size();
@@ -200,6 +228,19 @@ int measure_styled(
         p = q;
     }
     return width;
+}
+
+// The link the text at this byte offset belongs to, if any.
+static std::shared_ptr<const std::string> link_at(uint32_t offset, const std::vector<StyleSpan> &spans)
+{
+    for (const StyleSpan &span : spans)
+    {
+        if (span.href && offset >= span.start && offset < span.end)
+        {
+            return span.href;
+        }
+    }
+    return nullptr;
 }
 
 std::vector<StyleSpan> clip_spans(
@@ -335,6 +376,7 @@ LineLayout layout_line(
                         word = LayoutWord();
                         word.x = cp_x;
                         word.begin = cp_addr;
+                        word.link = link_at(static_cast<uint32_t>(c - base), spans);
                         in_word = true;
                     }
                     word.text.append(c, next);
@@ -355,4 +397,104 @@ LineLayout layout_line(
     finish_word();
     layout.width = x;
     return layout;
+}
+
+namespace
+{
+
+bool piece_is_blank(const DrawnPiece &piece)
+{
+    for (char c : piece.text)
+    {
+        if (!is_whitespace(c))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void justify_layout(LineLayout &layout, int width)
+{
+    const int extra = width - layout.width;
+    if (extra <= 0 || layout.justified)
+    {
+        return;
+    }
+    // A line that falls well short of full is better left alone.
+    if (extra * 4 > layout.width)
+    {
+        return;
+    }
+
+    int first = -1;
+    int last = -1;
+    for (int i = 0; i < static_cast<int>(layout.pieces.size()); ++i)
+    {
+        if (!piece_is_blank(layout.pieces[i]))
+        {
+            if (first < 0)
+            {
+                first = i;
+            }
+            last = i;
+        }
+    }
+    if (first < 0)
+    {
+        return;
+    }
+
+    int gaps = 0;
+    for (int i = first + 1; i < last; ++i)
+    {
+        if (piece_is_blank(layout.pieces[i]))
+        {
+            ++gaps;
+        }
+    }
+    if (gaps == 0)
+    {
+        return;
+    }
+
+    const int share = extra / gaps;
+    const int remainder = extra % gaps;
+    std::vector<std::pair<int, int>> shift_after; // (x where a gap ended, total shift from there on)
+    int total = 0;
+    int gap_index = 0;
+    for (int i = 0; i < static_cast<int>(layout.pieces.size()); ++i)
+    {
+        DrawnPiece &piece = layout.pieces[i];
+        const int original_x = piece.x;
+        const int original_w = piece.w;
+        piece.src_x = original_x;
+        piece.x = original_x + total;
+        if (i > first && i < last && piece_is_blank(piece))
+        {
+            const int add = share + (gap_index < remainder ? 1 : 0);
+            ++gap_index;
+            piece.w = original_w + add;
+            total += add;
+            shift_after.emplace_back(original_x + original_w, total);
+        }
+    }
+
+    for (LayoutWord &word : layout.words)
+    {
+        int shift = 0;
+        for (const auto &entry : shift_after)
+        {
+            if (entry.first <= word.x)
+            {
+                shift = entry.second;
+            }
+        }
+        word.x += shift;
+    }
+
+    layout.width += total;
+    layout.justified = true;
 }

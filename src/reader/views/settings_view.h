@@ -11,6 +11,16 @@ struct TokenViewStyling;
 
 class SettingsView: public View
 {
+    // The rows, in the order they are listed
+    static constexpr uint32_t ROW_BAR_LEFT = 6;
+    static constexpr uint32_t ROW_BAR_RIGHT = 8;
+    static constexpr uint32_t ROW_CLOCK = 9;
+    static constexpr uint32_t ROW_MARGINS = 10;
+    static constexpr uint32_t ROW_SPACING = 11;
+    static constexpr uint32_t ROW_JUSTIFY = 12;
+    static constexpr uint32_t ROW_CONTROLS = 13;
+    static constexpr int ROW_COUNT = 14;
+
     bool _is_done = false;
     bool needs_render = true;
     uint32_t line_selected = 0;
@@ -30,6 +40,7 @@ class SettingsView: public View
     void on_change_shoulder_keymap(int dir);
     void on_change_progress();
     void on_change_reading();
+    void on_change_bar(int slot, int dir);
 
 public:
     SettingsView(

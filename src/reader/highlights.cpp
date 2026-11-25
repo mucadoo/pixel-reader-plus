@@ -4,19 +4,33 @@
 
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 
 std::vector<Highlight> load_highlights(const std::filesystem::path &path)
 {
     std::vector<Highlight> highlights;
     std::ifstream in(path);
-    DocAddr begin = 0;
-    DocAddr end = 0;
-    while (in >> begin >> end)
+    std::string line;
+    while (std::getline(in, line))
     {
-        if (end > begin)
+        if (!line.empty() && line.back() == '\r')
         {
-            highlights.emplace_back(begin, end);
+            line.pop_back();
         }
+        std::istringstream fields(line);
+        DocAddr begin = 0;
+        DocAddr end = 0;
+        if (!(fields >> begin >> end) || end <= begin)
+        {
+            continue;
+        }
+        std::string text;
+        std::getline(fields, text);
+        if (!text.empty() && text.front() == ' ')
+        {
+            text.erase(0, 1);
+        }
+        highlights.emplace_back(begin, end, text);
     }
     return highlights;
 }
@@ -26,7 +40,12 @@ void save_highlights(const std::filesystem::path &path, const std::vector<Highli
     std::ofstream out(path, std::ios::trunc);
     for (const Highlight &highlight : highlights)
     {
-        out << highlight.first << ' ' << highlight.second << '\n';
+        out << highlight.first << ' ' << highlight.second;
+        if (!highlight.text.empty())
+        {
+            out << ' ' << highlight.text;
+        }
+        out << '\n';
     }
 }
 
@@ -58,7 +77,7 @@ bool highlight_covers_range(const std::vector<Highlight> &highlights, DocAddr be
     return false;
 }
 
-void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr end)
+void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr end, const std::string &text)
 {
     if (end <= begin)
     {
@@ -78,5 +97,5 @@ void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr
         );
         return;
     }
-    highlights.emplace_back(begin, end);
+    highlights.emplace_back(begin, end, text);
 }

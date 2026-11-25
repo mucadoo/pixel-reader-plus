@@ -40,6 +40,10 @@ struct PackageContents
     std::string toc_id;
     // Manifest id the package names as its cover picture (EPUB 2 meta element). May be empty.
     std::string cover_id;
+    // From the dc:title, dc:creator and dc:language elements. Empty when absent.
+    std::string title;
+    std::string author;
+    std::string language;
 };
 
 std::string epub_parse_rootfile_path(const char *container_xml);

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,9 @@ struct StyleSpan
     bool italic = false;
     // 0 inherits the line size. Otherwise this is the size relative to the user's font (1 = body).
     float scale = 0;
+    // Where the text links to: a path inside the book with an optional #fragment,
+    // or an outside address. Null when the text is not a link.
+    std::shared_ptr<const std::string> href;
 };
 
 enum class TokenType

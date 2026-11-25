@@ -1,10 +1,11 @@
-﻿#include "./token_view.h"
+#include "./token_view.h"
 
 #include "./token_line_scroller.h"
 #include "./token_view_styling.h"
 
 #include "doc_api/doc_reader.h"
 #include "reader/highlights.h"
+#include "reader/layout_options.h"
 #include "reader/page_index.h"
 #include "reader/reading_mode.h"
 #include "reader/system_styling.h"
@@ -18,7 +19,10 @@
 
 #include <algorithm>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <map>
 #include <stdexcept>
 namespace {
 
@@ -51,6 +55,8 @@ struct TokenViewState
     TTF_Font *current_font = nullptr;
 
     const int line_padding = 4;
+    int side_margin;    // pixels left empty at each side of the text
+    int spacing_extra;  // pixels added to every line on top of the font's own
     int line_height;
 
     TokenLineScroller line_scroller;
@@ -58,9 +64,15 @@ struct TokenViewState
     bool needs_render = true;
 
     std::string title;
+    std::string book_title;
     int title_progress_percent = 0;
+    int title_chapter_percent = 0;
+    int title_book_percent = 0;
+    int title_chapter_minutes = -1; // minutes left, -1 when unknown
+    int title_book_minutes = -1;
     uint32_t title_page = 0;
     uint32_t title_pages = 0;
+    long long shown_minute = -1; // the minute the clock in the bar was drawn for
 
     std::function<void(DocAddr)> on_scroll;
 
@@ -70,6 +82,8 @@ struct TokenViewState
 
     std::filesystem::path highlights_path;
     std::vector<Highlight> highlights;
+    // Every word laid out on a page so far, by address, so a highlight can keep its text.
+    std::map<DocAddr, std::string> seen_words;
     bool selecting = false;
     bool aligning_page = false;
     // Set when a page turn back left a chapter: once the count of the chapter
@@ -190,24 +204,27 @@ struct TokenViewState
               if (change_id == SystemStyling::ChangeId::FONT_SIZE || change_id == SystemStyling::ChangeId::FONT_NAME)
               {
                   current_font = this->sys_styling.get_loaded_font();
-                  line_height = detect_line_height(current_font) + line_padding;
+                  line_height = detect_line_height(current_font) + line_padding + spacing_extra;
                   line_scroller.set_line_height_pixels(line_height);
                   line_scroller.reset_buffer();  // need to re-wrap lines if font-size changed
               }
               needs_render = true;
           })),
           token_view_styling_sub_id(token_view_styling.subscribe_to_changes([this]() {
+              apply_layout_options();
               needs_render = true;
           })),
           current_font(sys_styling.get_loaded_font()),
-          line_height(detect_line_height(sys_styling.get_font_name(), sys_styling.get_font_size()) + line_padding),
+          side_margin(margin_pixels(token_view_styling.get_margin_level())),
+          spacing_extra(spacing_pixels(token_view_styling.get_spacing_level())),
+          line_height(detect_line_height(sys_styling.get_font_name(), sys_styling.get_font_size()) + line_padding + spacing_extra),
           line_scroller(
               doc_reader,
               address,
               [this](const char *s, uint32_t len) {
                   return line_fits_on_screen(
                       current_font,
-                      SCREEN_WIDTH - line_padding * 2,
+                      SCREEN_WIDTH - side_margin * 2,
                       s,
                       len
                   );
@@ -215,12 +232,31 @@ struct TokenViewState
               line_height,
               [this](float scale, bool pre, int style) {
                   return this->font_for(scale, pre, style);
-              }
+              },
+              side_margin
           ),
           line_scroll_throttle(250, 50),
           page_scroll_throttle(750, 150),
           word_move_throttle(180, 40)
     {
+    }
+
+    // Margin or line spacing changed: lay the text out again.
+    void apply_layout_options()
+    {
+        const int margin = margin_pixels(token_view_styling.get_margin_level());
+        const int spacing = spacing_pixels(token_view_styling.get_spacing_level());
+        if (margin == side_margin && spacing == spacing_extra)
+        {
+            return;
+        }
+        side_margin = margin;
+        spacing_extra = spacing;
+        line_height = detect_line_height(current_font) + line_padding + spacing_extra;
+        line_scroller.set_line_height_pixels(line_height);
+        line_scroller.set_side_margin(side_margin);
+        line_scroller.reset_buffer();
+        needs_render = true;
     }
 
     ~TokenViewState()
@@ -229,6 +265,124 @@ struct TokenViewState
         token_view_styling.unsubscribe_from_changes(token_view_styling_sub_id);
     }
 };
+
+// The charge of the battery in percent, or -1 when the system does not say.
+static int read_battery_percent()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator("/sys/class/power_supply", ec))
+    {
+        std::ifstream type(entry.path() / "type");
+        std::string kind;
+        if (!(type >> kind) || kind != "Battery")
+        {
+            continue;
+        }
+        std::ifstream capacity(entry.path() / "capacity");
+        int level = -1;
+        if (capacity >> level && level >= 0 && level <= 100)
+        {
+            return level;
+        }
+    }
+    return -1;
+}
+
+// The text of one slot of the bar under the text. Empty when there is nothing to show.
+static std::string bar_text(const TokenViewState &state, BarItem item)
+{
+    char text[64];
+    switch (item)
+    {
+        case BarItem::ChapterTitle:
+            return state.title;
+        case BarItem::BookTitle:
+            return state.book_title;
+        case BarItem::Progress:
+            if (state.title_pages > 0)
+            {
+                snprintf(text, sizeof(text), "%u / %u  %d%%", state.title_page, state.title_pages, state.title_progress_percent);
+            }
+            else
+            {
+                snprintf(text, sizeof(text), "%d%%", state.title_progress_percent);
+            }
+            return text;
+        case BarItem::Page:
+            if (state.title_pages == 0)
+            {
+                return "";
+            }
+            snprintf(text, sizeof(text), "%u / %u", state.title_page, state.title_pages);
+            return text;
+        case BarItem::ChapterPercent:
+            snprintf(text, sizeof(text), "Ch %d%%", state.title_chapter_percent);
+            return text;
+        case BarItem::BookPercent:
+            snprintf(text, sizeof(text), "Book %d%%", state.title_book_percent);
+            return text;
+        case BarItem::ChapterTimeLeft:
+        case BarItem::BookTimeLeft:
+        {
+            const int minutes = item == BarItem::ChapterTimeLeft ? state.title_chapter_minutes : state.title_book_minutes;
+            if (minutes < 0)
+            {
+                return "";
+            }
+            const char *prefix = item == BarItem::ChapterTimeLeft ? "Ch" : "Book";
+            if (minutes >= 60)
+            {
+                snprintf(text, sizeof(text), "%s %dh %02dm", prefix, minutes / 60, minutes % 60);
+            }
+            else
+            {
+                snprintf(text, sizeof(text), "%s %dm", prefix, minutes);
+            }
+            return text;
+        }
+        case BarItem::Battery:
+        {
+            const int level = read_battery_percent();
+            if (level < 0)
+            {
+                return "";
+            }
+            snprintf(text, sizeof(text), "Bat %d%%", level);
+            return text;
+        }
+        case BarItem::Time:
+        case BarItem::Date:
+        {
+            const std::time_t now = std::time(nullptr);
+            std::tm local {};
+            if (!localtime_r(&now, &local))
+            {
+                return "";
+            }
+            if (item == BarItem::Date)
+            {
+                std::strftime(text, sizeof(text), "%a %d %b", &local);
+            }
+            else if (state.token_view_styling.get_clock_format() == ClockFormat::H12)
+            {
+                std::strftime(text, sizeof(text), "%I:%M %p", &local);
+                if (text[0] == '0')
+                {
+                    return std::string(text + 1); // 2:32 PM, not 02:32 PM
+                }
+            }
+            else
+            {
+                std::strftime(text, sizeof(text), "%H:%M", &local);
+            }
+            return text;
+        }
+        case BarItem::Empty:
+        default:
+            return "";
+    }
+}
 
 TokenView::TokenView(
     std::shared_ptr<DocReader> reader,
@@ -288,14 +442,19 @@ static void layout_visible_words(TokenViewState &state)
                     text_line->address_lead
                 );
                 int indent = text_line->quote ? 18 : 0;
-                int avail = SCREEN_WIDTH - line_padding * 2 - indent;
-                int origin = line_padding + indent;
+                int avail = SCREEN_WIDTH - state.side_margin * 2 - indent;
+                if (state.token_view_styling.get_justify() && !text_line->centered && !text_line->pre
+                    && text_line->header_level == 0 && !text_line->paragraph_end && text_line->slot_span <= 1)
+                {
+                    justify_layout(layout, avail);
+                }
+                int origin = state.side_margin + indent;
                 if (text_line->centered)
                 {
                     origin += std::max(0, (avail - layout.width) / 2);
                 }
                 int box_h = std::max(1, text_line->slot_span) * line_height;
-                int text_h = line_height - line_padding;
+                int text_h = line_height - line_padding - state.spacing_extra;
                 for (const DrawnPiece &piece : layout.pieces)
                 {
                     text_h = std::max(text_h, piece.h);
@@ -316,6 +475,7 @@ static void layout_visible_words(TokenViewState &state)
                 {
                     word.x += origin;
                     word.line_index = i;
+                    state.seen_words.emplace(word.begin, word.text);
                     state.page_words.push_back(word);
                 }
                 state.visible[i] = std::move(visual);
@@ -445,13 +605,41 @@ static void draw_text_line(
             SDL_Surface *surface = TTF_RenderUTF8_Shaded(font, text_line->text.c_str(), theme.main_text, theme.background);
             if (surface)
             {
-                SDL_Rect dest = {
-                    static_cast<Sint16>(visual.origin),
-                    static_cast<Sint16>(visual.text_y),
-                    0,
-                    0
-                };
-                SDL_BlitSurface(surface, nullptr, dest_surface, &dest);
+                if (visual.layout.justified)
+                {
+                    // The line was drawn as one string, so cut it into words and
+                    // set each where the wider gaps put it.
+                    for (const DrawnPiece &piece : visual.layout.pieces)
+                    {
+                        if (piece.src_x < 0 || piece.w <= 0 || piece.text.empty() || whitespace_only(piece.text))
+                        {
+                            continue;
+                        }
+                        SDL_Rect from = {
+                            static_cast<Sint16>(piece.src_x),
+                            0,
+                            static_cast<Uint16>(piece.w),
+                            static_cast<Uint16>(surface->h)
+                        };
+                        SDL_Rect to = {
+                            static_cast<Sint16>(piece.x + visual.origin),
+                            static_cast<Sint16>(visual.text_y),
+                            0,
+                            0
+                        };
+                        SDL_BlitSurface(surface, &from, dest_surface, &to);
+                    }
+                }
+                else
+                {
+                    SDL_Rect dest = {
+                        static_cast<Sint16>(visual.origin),
+                        static_cast<Sint16>(visual.text_y),
+                        0,
+                        0
+                    };
+                    SDL_BlitSurface(surface, nullptr, dest_surface, &dest);
+                }
                 SDL_FreeSurface(surface);
             }
         }
@@ -676,49 +864,58 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         line_y = padding_y + state->num_text_display_lines() * line_height;
         SDL_Rect title_crop_rect = {0, 0, 0, (Uint16)line_height};
 
-        // Progress
+        // The three slots of the bar. The right and middle slots take the room
+        // they need and the left one gets what is left, cut short if it must.
+        const BarItem items[3] = {
+            state->token_view_styling.get_bar_left(),
+            state->token_view_styling.get_bar_middle(),
+            state->token_view_styling.get_bar_right()
+        };
+        surface_unique_ptr slot[3];
+        for (int i = 0; i < 3; ++i)
         {
-            char percent_str[48];
-            if (state->title_pages > 0)
+            const std::string text = bar_text(*state, items[i]);
+            if (!text.empty())
             {
-                snprintf(
-                    percent_str,
-                    sizeof(percent_str),
-                    " %u / %u  %d%%",
-                    state->title_page,
-                    state->title_pages,
-                    state->title_progress_percent
-                );
+                slot[i].reset(TTF_RenderUTF8_Shaded(font, text.c_str(), theme.secondary_text, theme.background));
             }
-            else
-            {
-                snprintf(percent_str, sizeof(percent_str), " %d%%", state->title_progress_percent);
-            }
-
-            SDL_Surface *page_surface = TTF_RenderUTF8_Shaded(font, percent_str, theme.secondary_text, theme.background);
-
-            SDL_Rect dest_rect = {
-                static_cast<Sint16>(SCREEN_WIDTH - page_surface->w - line_padding),
-                static_cast<Sint16>(line_y + line_padding / 2),
-                0, 0
-            };
-            title_crop_rect.w = SCREEN_WIDTH - line_padding * 2 - page_surface->w;
-
-            SDL_BlitSurface(page_surface, nullptr, dest_surface, &dest_rect);
-            SDL_FreeSurface(page_surface);
         }
 
-        // Toc item
-        if (state->title.size() > 0)
+        const int bar_y = line_y + line_padding / 2;
+        const int bar_gap = line_padding * 3;
+        const int full_w = static_cast<int>(SCREEN_WIDTH) - line_padding * 2;
+        auto draw_slot = [&](SDL_Surface *surface, int x, int max_w) {
+            if (!surface || max_w <= 0)
+            {
+                return;
+            }
+            SDL_Rect crop = {0, 0, static_cast<Uint16>(std::min(surface->w, max_w)), static_cast<Uint16>(line_height)};
+            SDL_Rect dest_rect = {static_cast<Sint16>(x), static_cast<Sint16>(bar_y), 0, 0};
+            SDL_BlitSurface(surface, &crop, dest_surface, &dest_rect);
+        };
+
+        int limit = static_cast<int>(SCREEN_WIDTH) - line_padding; // where the next slot to the left must end
+        if (slot[2])
         {
-            SDL_Rect dest_rect = {
-                static_cast<Sint16>(line_padding),
-                static_cast<Sint16>(line_y + line_padding / 2),
-                0, 0
-            };
-            SDL_Surface *surface = TTF_RenderUTF8_Shaded(font, state->title.c_str(), theme.secondary_text, theme.background);
-            SDL_BlitSurface(surface, &title_crop_rect, dest_surface, &dest_rect);
-            SDL_FreeSurface(surface);
+            const int w = std::min(slot[2]->w, full_w);
+            draw_slot(slot[2].get(), static_cast<int>(SCREEN_WIDTH) - line_padding - w, w);
+            limit = static_cast<int>(SCREEN_WIDTH) - line_padding - w - bar_gap;
+        }
+        if (slot[1])
+        {
+            const int w = std::min(slot[1]->w, full_w);
+            int x = (static_cast<int>(SCREEN_WIDTH) - w) / 2;
+            if (x + w > limit)
+            {
+                x = limit - w;
+            }
+            x = std::max(x, line_padding);
+            draw_slot(slot[1].get(), x, std::min(w, limit - x));
+            limit = x - bar_gap;
+        }
+        if (slot[0])
+        {
+            draw_slot(slot[0].get(), line_padding, limit - line_padding);
         }
     }
 
@@ -982,15 +1179,51 @@ void TokenView::set_title(const std::string &title)
     }
 }
 
-void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages)
+void TokenView::set_book_title(const std::string &title)
 {
-    if (percent != state->title_progress_percent || page != state->title_page || pages != state->title_pages)
+    if (title != state->book_title)
+    {
+        state->book_title = title;
+        state->needs_render = true;
+    }
+}
+
+void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent, int chapter_minutes, int book_minutes)
+{
+    if (percent != state->title_progress_percent || page != state->title_page || pages != state->title_pages
+        || chapter_percent != state->title_chapter_percent || book_percent != state->title_book_percent
+        || chapter_minutes != state->title_chapter_minutes || book_minutes != state->title_book_minutes)
     {
         state->title_progress_percent = percent;
         state->title_page = page;
         state->title_pages = pages;
+        state->title_chapter_percent = chapter_percent;
+        state->title_book_percent = book_percent;
+        state->title_chapter_minutes = chapter_minutes;
+        state->title_book_minutes = book_minutes;
         state->needs_render = true;
     }
+}
+
+bool TokenView::tick(uint32_t)
+{
+    const auto &styling = state->token_view_styling;
+    if (!styling.get_show_title_bar()
+        || !(bar_item_is_live(styling.get_bar_left())
+             || bar_item_is_live(styling.get_bar_middle())
+             || bar_item_is_live(styling.get_bar_right())))
+    {
+        return false;
+    }
+
+    const long long minute = static_cast<long long>(std::time(nullptr)) / 60;
+    if (minute == state->shown_minute)
+    {
+        return false;
+    }
+    state->shown_minute = minute;
+    state->needs_render = true;
+    return true;
 }
 
 static std::string page_index_key(TokenViewState &state, bool chapter)
@@ -998,6 +1231,8 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     std::string key = state.sys_styling.get_font_name();
     key.push_back('\n');
     key += std::to_string(state.sys_styling.get_font_size());
+    key.push_back('\n');
+    key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
     key.push_back('\n');
     if (!chapter)
     {
@@ -1314,6 +1549,16 @@ std::string TokenView::selected_lookup() const
     return state->page_words[index].lookup;
 }
 
+std::shared_ptr<const std::string> TokenView::selected_link() const
+{
+    const int index = word_index(*state, state->selected_begin);
+    if (index < 0)
+    {
+        return nullptr;
+    }
+    return state->page_words[index].link;
+}
+
 bool TokenView::selected_is_highlighted() const
 {
     auto bounds = selection_bounds(*state);
@@ -1327,7 +1572,40 @@ void TokenView::toggle_selected_highlight()
     {
         return;
     }
-    toggle_highlight(state->highlights, bounds.first, bounds.second);
+    toggle_highlight(state->highlights, bounds.first, bounds.second, selected_text());
+    state->remember_highlights();
+    state->needs_render = true;
+}
+
+std::string TokenView::selected_text() const
+{
+    const auto bounds = selection_bounds(*state);
+    std::string text;
+    for (auto it = state->seen_words.lower_bound(bounds.first);
+         it != state->seen_words.end() && it->first < bounds.second;
+         ++it)
+    {
+        if (!text.empty())
+        {
+            text += ' ';
+        }
+        text += it->second;
+    }
+    return text;
+}
+
+const std::vector<Highlight> &TokenView::highlights() const
+{
+    return state->highlights;
+}
+
+void TokenView::remove_highlight(size_t index)
+{
+    if (index >= state->highlights.size())
+    {
+        return;
+    }
+    state->highlights.erase(state->highlights.begin() + static_cast<std::ptrdiff_t>(index));
     state->remember_highlights();
     state->needs_render = true;
 }

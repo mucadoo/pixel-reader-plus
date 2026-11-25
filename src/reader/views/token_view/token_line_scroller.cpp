@@ -129,9 +129,16 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
         {
             scale = header_level == 1 ? 1.5f : header_level == 2 ? 1.25f : 1.15f;
         }
-        const bool base_bold = token.bold || header_level > 0;
+        const bool base_bold = token.bold || header_level > 0 || (bold_body && !pre);
         const bool base_italic = token.italic || quote;
         const bool centered = token.centered || (!token.center_set && header_level > 0 && header_level <= 2);
+        const int indent_px = (token.type == TokenType::Text && !pre && !centered && !quote && !text.empty())
+            ? first_line_indent
+            : 0;
+        if (!paragraph_gap && token.type == TokenType::Text && text.empty() && !pre)
+        {
+            return {}; // the blank line between paragraphs is switched off
+        }
         const uint32_t span_shift = static_cast<uint32_t>(text.size() - (
             token.type == TokenType::ListItem
                 ? static_cast<const ListItemDocToken &>(token).text.size()
@@ -163,7 +170,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             {
                 return line_fits(s, len);
             }
-            int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0);
+            int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0) - (s == full ? indent_px : 0);
             int width = measure_styled(
                 full,
                 static_cast<uint32_t>(s - full),
@@ -205,6 +212,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             line->italic = base_italic;
             line->pre = pre;
             line->quote = quote;
+            line->first_indent = lines.empty() ? indent_px : 0;
             line->address_lead = lines.empty() ? extra_text_width : 0;
             line->spans = clip_spans(
                 token.spans,
@@ -244,6 +252,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
                 full,
                 fits,
                 [&](const char *s, uint32_t len) {
+                    const int line_avail = avail - (s == full ? indent_px : 0);
                     return measure_styled(
                                full,
                                static_cast<uint32_t>(s - full),
@@ -253,7 +262,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
                                base_italic,
                                scale,
                                font_for
-                           ) + hyphen_w <= avail;
+                           ) + hyphen_w <= line_avail;
                 },
                 [this](const char *word, uint32_t len) {
                     return hyphenator->points(std::string(word, len));
@@ -455,6 +464,13 @@ void TokenLineScroller::reset_buffer()
 void TokenLineScroller::set_line_height_pixels(uint32_t new_height)
 {
     line_height_pixels = new_height;
+}
+
+void TokenLineScroller::set_text_options(int first_line_indent_pixels, bool blank_between_paragraphs, bool bold_text)
+{
+    first_line_indent = first_line_indent_pixels;
+    paragraph_gap = blank_between_paragraphs;
+    bold_body = bold_text;
 }
 
 void TokenLineScroller::set_hyphenator(const Hyphenator *new_hyphenator)

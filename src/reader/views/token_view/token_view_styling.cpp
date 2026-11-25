@@ -18,6 +18,12 @@ struct TokenViewStylingState
     int spacing_level = DEFAULT_SPACING_LEVEL;
     bool justify = false;
     bool hyphenate = false;
+    int indent_level = DEFAULT_INDENT_LEVEL;
+    bool paragraph_gap = true;
+    std::string night_theme;
+    int night_from = 21;
+    int night_until = 7;
+    bool bold_text = false;
     int auto_exit_minutes = 0;
 
     uint32_t next_subscriber_id = 1;
@@ -183,6 +189,93 @@ void TokenViewStyling::set_justify(bool justify)
     if (state->justify != justify)
     {
         state->justify = justify;
+        notify_subscribers();
+    }
+}
+
+const std::string &TokenViewStyling::get_night_theme() const
+{
+    return state->night_theme;
+}
+
+void TokenViewStyling::set_night_theme(const std::string &name)
+{
+    if (state->night_theme != name)
+    {
+        state->night_theme = name;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_night_from() const
+{
+    return state->night_from;
+}
+
+void TokenViewStyling::set_night_from(int hour)
+{
+    hour = ((hour % 24) + 24) % 24;
+    if (state->night_from != hour)
+    {
+        state->night_from = hour;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_night_until() const
+{
+    return state->night_until;
+}
+
+void TokenViewStyling::set_night_until(int hour)
+{
+    hour = ((hour % 24) + 24) % 24;
+    if (state->night_until != hour)
+    {
+        state->night_until = hour;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_indent_level() const
+{
+    return state->indent_level;
+}
+
+void TokenViewStyling::set_indent_level(int level)
+{
+    level = std::clamp(level, 0, LAYOUT_LEVEL_COUNT - 1);
+    if (state->indent_level != level)
+    {
+        state->indent_level = level;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_paragraph_gap() const
+{
+    return state->paragraph_gap;
+}
+
+void TokenViewStyling::set_paragraph_gap(bool gap)
+{
+    if (state->paragraph_gap != gap)
+    {
+        state->paragraph_gap = gap;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_bold_text() const
+{
+    return state->bold_text;
+}
+
+void TokenViewStyling::set_bold_text(bool bold)
+{
+    if (state->bold_text != bold)
+    {
+        state->bold_text = bold;
         notify_subscribers();
     }
 }

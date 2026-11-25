@@ -34,6 +34,9 @@ class TokenLineScroller
 
     uint32_t line_height_pixels;
     int side_margin = 4;
+    int first_line_indent = 0;
+    bool paragraph_gap = true;
+    bool bold_body = false;
     const Hyphenator *hyphenator = nullptr;
     int current_line = 0;
 
@@ -69,6 +72,9 @@ public:
     void set_line_height_pixels(uint32_t line_height_pixels);
     // Space left empty at each side of the text. Call reset_buffer to wrap again.
     void set_side_margin(int pixels);
+    // First-line indent in pixels, whether blank lines separate paragraphs, and bold body text.
+    // Call reset_buffer to wrap again.
+    void set_text_options(int first_line_indent_pixels, bool blank_between_paragraphs, bool bold_text);
     // Words may be split at the end of a line, with these patterns. Null for never.
     // Call reset_buffer to wrap again.
     void set_hyphenator(const Hyphenator *hyphenator);

@@ -12,8 +12,14 @@ struct BookInfo
     std::string title;
     std::string author;
     std::string language;
+    std::string series;
+    // The number in the series as the book writes it, such as "2" or "1.5". Empty when there is none.
+    std::string series_index;
 
-    bool empty() const { return title.empty() && author.empty() && language.empty(); }
+    bool empty() const { return title.empty() && author.empty() && language.empty() && series.empty(); }
+
+    // The series number as a number, for sorting. 0 when there is none.
+    double series_number() const;
 };
 
 // Reads the title, first author and language from an epub's package file.

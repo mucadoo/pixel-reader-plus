@@ -7,6 +7,8 @@
 #include "reader/book_info.h"
 #include "reader/browser_sort.h"
 #include "reader/library_log.h"
+#include "reader/progress_screen.h"
+#include "./text_input_view.h"
 #include "reader/system_styling.h"
 #include "sys/filesystem.h"
 #include "sys/keymap.h"
@@ -38,6 +40,11 @@ struct FSState
     SystemStyling &styling;
     std::function<void(std::shared_ptr<View>)> on_open_view;
     std::function<void(bool)> on_hide_finished_change;
+    std::function<void(const std::string &)> on_book_deleted;
+
+    bool search_active = false;
+    std::string search_query;
+    std::vector<std::filesystem::path> search_hits;
 
     SelectionMenu menu;
     std::unique_ptr<BookCovers> covers;
@@ -210,6 +217,28 @@ void apply_sort(FSState *s)
                 }
                 return lowercase(entry_title(s, a)) < lowercase(entry_title(s, b));
             }
+            case BrowserSort::Series:
+            {
+                const BookInfo *info_a = s->info ? s->info->get(s->path / a.name) : nullptr;
+                const BookInfo *info_b = s->info ? s->info->get(s->path / b.name) : nullptr;
+                const std::string series_a = info_a ? lowercase(info_a->series) : std::string();
+                const std::string series_b = info_b ? lowercase(info_b->series) : std::string();
+                if (series_a.empty() != series_b.empty())
+                {
+                    return !series_a.empty(); // books in no series last
+                }
+                if (series_a != series_b)
+                {
+                    return series_a < series_b;
+                }
+                const double number_a = info_a ? info_a->series_number() : 0.0;
+                const double number_b = info_b ? info_b->series_number() : 0.0;
+                if (number_a != number_b)
+                {
+                    return number_a < number_b;
+                }
+                return lowercase(entry_title(s, a)) < lowercase(entry_title(s, b));
+            }
             case BrowserSort::Recent:
                 return opened_at(a) > opened_at(b);
             case BrowserSort::Name:
@@ -223,6 +252,21 @@ void refresh_path_entries(FSState *s)
 {
     s->path_entries.clear();
     s->continue_name.clear();
+    if (s->search_active)
+    {
+        // The way out of the search, then the books found. Their names are whole paths.
+        s->path_entries.push_back(FSEntry::directory(".."));
+        s->pinned_count = s->search_hits.size();
+        s->pinned_prefix.clear();
+        for (const auto &hit : s->search_hits)
+        {
+            std::error_code ec;
+            const auto size = std::filesystem::file_size(hit, ec);
+            s->path_entries.push_back({hit.string(), false, ec ? 0ull : static_cast<unsigned long long>(size)});
+        }
+        rebuild_views(s);
+        return;
+    }
     if (s->path.has_parent_path() && s->path != s->path.root_path() && s->path != s->top_folder)
     {
         s->path_entries.push_back(FSEntry::directory(".."));
@@ -304,10 +348,11 @@ void rebuild_views(FSState *s)
 
         if (entry.is_dir && entry.name == "..")
         {
-            menu_entries.push_back("Up one folder");
+            const char *up_label = s->search_active ? "Clear search" : "Up one folder";
+            menu_entries.push_back(up_label);
             menu_details.push_back("");
             item.kind = BookGrid::Item::Kind::Up;
-            item.label = "Up one folder";
+            item.label = up_label;
             grid_items.push_back(item);
             continue;
         }
@@ -348,13 +393,17 @@ void rebuild_views(FSState *s)
         grid_items.push_back(item);
     }
 
-    std::string folder = folder_title(s->path);
-    if (*browser_sort_suffix(s->sort) != 0)
+    std::string folder = s->search_active
+        ? "Search: " + s->search_query + "  (" + std::to_string(s->search_hits.size()) + ")"
+        : folder_title(s->path);
+    if (!s->search_active && *browser_sort_suffix(s->sort) != 0)
     {
         folder += std::string("  (") + browser_sort_suffix(s->sort) + ")";
     }
     const auto hints = hints_for(s, has_way_up(s));
-    const std::string empty_message = has_items ? "" : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS";
+    const std::string empty_message = has_items
+        ? ""
+        : (s->search_active ? "No book matches" : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
 
     s->menu.set_title(folder);
     s->menu.set_entries(menu_entries);
@@ -401,7 +450,8 @@ bool load_book_info(FSState *s)
         {
             break;
         }
-        if (entry.is_dir || book_kind(entry.name) != "EPUB")
+        const std::string kind = book_kind(entry.name);
+        if (entry.is_dir || (kind != "EPUB" && kind != "FB2" && kind != "HTML" && kind != "HTM" && kind != "MD" && kind != "MARKDOWN"))
         {
             continue;
         }
@@ -437,6 +487,10 @@ std::string properties_text(const FSState *s, const FSEntry &entry)
             if (!info->author.empty())
             {
                 body += "Author\n" + info->author + "\n\n";
+            }
+            if (!info->series.empty())
+            {
+                body += "Series\n" + info->series + (info->series_index.empty() ? std::string() : " #" + info->series_index) + "\n\n";
             }
             if (!info->language.empty())
             {
@@ -476,6 +530,178 @@ void refresh_keeping_cursor(FSState *s)
     }
 }
 
+// Looks through every book under the top folder for the words typed, by file name,
+// title, author and series, and lists the matches.
+void run_search(FSState *s, const std::string &query)
+{
+    std::vector<std::string> words;
+    {
+        std::string word;
+        for (char c : lowercase(query) + " ")
+        {
+            if (c == ' ')
+            {
+                if (!word.empty())
+                {
+                    words.push_back(word);
+                    word.clear();
+                }
+            }
+            else
+            {
+                word.push_back(c);
+            }
+        }
+    }
+    if (words.empty())
+    {
+        return;
+    }
+
+    const std::filesystem::path root = s->top_folder.empty() ? s->path : s->top_folder;
+    std::vector<std::filesystem::path> files;
+    {
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
+        const std::filesystem::recursive_directory_iterator end;
+        for (; !ec && it != end; it.increment(ec))
+        {
+            std::error_code ec_file;
+            if (it->is_regular_file(ec_file) && file_type_is_supported(it->path().filename().string()))
+            {
+                files.push_back(it->path());
+            }
+        }
+    }
+
+    constexpr size_t MAX_HITS = 500;
+    std::vector<std::pair<std::string, std::filesystem::path>> hits; // sort key and path
+    for (size_t i = 0; i < files.size() && hits.size() < MAX_HITS; ++i)
+    {
+        progress_screen::show(s->styling, "Searching library", query, static_cast<int>(i * 100 / files.size()));
+        const std::filesystem::path &book = files[i];
+        std::string text = book.stem().string();
+        std::string title = text;
+        if (s->info)
+        {
+            s->info->load(book);
+            if (const BookInfo *info = s->info->get(book))
+            {
+                text += " " + info->title + " " + info->author + " " + info->series;
+                if (!info->title.empty())
+                {
+                    title = info->title;
+                }
+            }
+        }
+        text = lowercase(text);
+        bool all = true;
+        for (const auto &word : words)
+        {
+            if (text.find(word) == std::string::npos)
+            {
+                all = false;
+                break;
+            }
+        }
+        if (all)
+        {
+            hits.emplace_back(lowercase(title), book);
+        }
+    }
+    std::stable_sort(hits.begin(), hits.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+
+    s->search_query = query;
+    s->search_hits.clear();
+    for (const auto &hit : hits)
+    {
+        s->search_hits.push_back(hit.second);
+    }
+    s->search_active = true;
+    refresh_path_entries(s);
+    focus_first_item(s);
+}
+
+// Renames the book file, keeping its extension. What is known about the book follows it.
+void rename_book(FSState *s, const std::filesystem::path &book, const std::string &new_stem)
+{
+    std::string stem = new_stem;
+    while (!stem.empty() && stem.back() == ' ')
+    {
+        stem.pop_back();
+    }
+    if (stem.empty() || stem == book.stem().string())
+    {
+        return;
+    }
+    if (stem.find_first_of("/\\:*?\"<>|") != std::string::npos || stem[0] == '.')
+    {
+        if (s->on_info)
+        {
+            s->on_info("Rename", "A file name cannot be empty, start with a dot, or contain / \\ : * ? \" < > |");
+        }
+        return;
+    }
+    const std::filesystem::path target = book.parent_path() / (stem + book.extension().string());
+    std::error_code ec;
+    if (std::filesystem::exists(target, ec))
+    {
+        if (s->on_info)
+        {
+            s->on_info("Rename", "A file with that name already exists.");
+        }
+        return;
+    }
+    std::filesystem::rename(book, target, ec);
+    if (ec)
+    {
+        if (s->on_info)
+        {
+            s->on_info("Rename", "The file could not be renamed.");
+        }
+        return;
+    }
+    library_log().rename(book, target);
+    library_log().flush();
+    for (auto &hit : s->search_hits)
+    {
+        if (hit == book)
+        {
+            hit = target;
+        }
+    }
+    refresh_path_entries(s);
+    if (!focus_entry(s, s->search_active ? target.string() : target.filename().string()) && !focus_entry(s, target.string()))
+    {
+        focus_first_item(s);
+    }
+}
+
+// Deletes the book file and everything the reader kept for it.
+void delete_book(FSState *s, const std::filesystem::path &book)
+{
+    const LibraryLog::Entry *log = library_log().get(book);
+    const std::string book_id = log ? log->book_id : std::string();
+    std::error_code ec;
+    std::filesystem::remove(book, ec);
+    if (ec)
+    {
+        if (s->on_info)
+        {
+            s->on_info("Delete", "The book could not be deleted.");
+        }
+        return;
+    }
+    library_log().remove(book);
+    library_log().flush();
+    if (!book_id.empty() && s->on_book_deleted)
+    {
+        s->on_book_deleted(book_id);
+    }
+    s->search_hits.erase(std::remove(s->search_hits.begin(), s->search_hits.end(), book), s->search_hits.end());
+    refresh_keeping_cursor(s);
+}
+
 // The Y menu: properties, and for a book its favorite and finished marks, plus
 // whether finished books are listed at all.
 void open_options(FSState *s)
@@ -493,7 +719,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Finished, HideFinished };
+    enum class Act { Properties, Favorite, Finished, HideFinished, Search, ClearSearch, Rename, Delete };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -505,6 +731,20 @@ void open_options(FSState *s)
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
+    acts.push_back(Act::Search);
+    names.push_back("Search library");
+    if (s->search_active)
+    {
+        acts.push_back(Act::ClearSearch);
+        names.push_back("Clear search");
+    }
+    if (!entry.is_dir)
+    {
+        acts.push_back(Act::Rename);
+        names.push_back("Rename file");
+        acts.push_back(Act::Delete);
+        names.push_back("Delete book");
+    }
 
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title(entry.is_dir ? folder_title(book) : entry_title(s, entry));
@@ -538,6 +778,44 @@ void open_options(FSState *s)
                 library_log().flush();
                 refresh_keeping_cursor(s);
                 break;
+            case Act::Search:
+                s->on_open_view(std::make_shared<TextInputView>(
+                    "Search library",
+                    s->search_query,
+                    [s](const std::string &query) { run_search(s, query); },
+                    s->styling
+                ));
+                break;
+            case Act::ClearSearch:
+                s->search_active = false;
+                s->search_hits.clear();
+                refresh_path_entries(s);
+                focus_first_item(s);
+                break;
+            case Act::Rename:
+                s->on_open_view(std::make_shared<TextInputView>(
+                    "Rename file",
+                    book.stem().string(),
+                    [s, book](const std::string &name) { rename_book(s, book, name); },
+                    s->styling,
+                    120
+                ));
+                break;
+            case Act::Delete:
+            {
+                auto confirm = std::make_shared<SelectionMenu>(std::vector<std::string> {"Keep the book", "Delete it for good"}, s->styling);
+                confirm->set_title("Delete " + book.filename().string() + "?");
+                confirm->set_compact(true);
+                confirm->set_close_on_select();
+                confirm->set_on_selection([s, book](uint32_t choice) {
+                    if (choice == 1)
+                    {
+                        delete_book(s, book);
+                    }
+                });
+                s->on_open_view(confirm);
+                break;
+            }
             case Act::HideFinished:
                 s->hide_finished = !s->hide_finished;
                 if (s->on_hide_finished_change)
@@ -568,6 +846,14 @@ void show_info(FSState *s)
 // Go to the parent folder, with the cursor on the folder we came from.
 void go_up(FSState *s)
 {
+    if (s->search_active)
+    {
+        s->search_active = false;
+        s->search_hits.clear();
+        refresh_path_entries(s);
+        focus_first_item(s);
+        return;
+    }
     std::string highlight_name = s->path.filename().string();
 
     s->path = s->path.parent_path();
@@ -829,6 +1115,11 @@ void FileSelector::set_hide_finished(bool hide)
 void FileSelector::set_on_hide_finished_change(std::function<void(bool)> callback)
 {
     state->on_hide_finished_change = callback;
+}
+
+void FileSelector::set_on_book_deleted(std::function<void(const std::string &)> callback)
+{
+    state->on_book_deleted = callback;
 }
 
 void FileSelector::set_on_info(std::function<void(const std::string &, const std::string &)> callback)

@@ -205,6 +205,52 @@ bool epub_parse_package_contents(const std::string &rootfile_path, const char *p
             {
                 continue;
             }
+            if (xmlStrEqual(child->name, BAD_CAST "meta"))
+            {
+                xmlChar *name_attr = xmlGetProp(child, BAD_CAST "name");
+                xmlChar *property_attr = xmlGetProp(child, BAD_CAST "property");
+                xmlChar *content_attr = xmlGetProp(child, BAD_CAST "content");
+                std::string *series_target = nullptr;
+                bool from_content = false;
+                if (name_attr && xmlStrEqual(name_attr, BAD_CAST "calibre:series"))
+                {
+                    series_target = &out_package.series;
+                    from_content = true;
+                }
+                else if (name_attr && xmlStrEqual(name_attr, BAD_CAST "calibre:series_index"))
+                {
+                    series_target = &out_package.series_index;
+                    from_content = true;
+                }
+                else if (property_attr && xmlStrEqual(property_attr, BAD_CAST "belongs-to-collection"))
+                {
+                    series_target = &out_package.series;
+                }
+                else if (property_attr && xmlStrEqual(property_attr, BAD_CAST "group-position"))
+                {
+                    series_target = &out_package.series_index;
+                }
+                if (series_target && series_target->empty())
+                {
+                    if (from_content && content_attr)
+                    {
+                        *series_target = (const char *)content_attr;
+                    }
+                    else if (!from_content)
+                    {
+                        xmlChar *text = xmlNodeGetContent(child);
+                        if (text)
+                        {
+                            *series_target = (const char *)text;
+                            xmlFree(text);
+                        }
+                    }
+                }
+                if (name_attr) xmlFree(name_attr);
+                if (property_attr) xmlFree(property_attr);
+                if (content_attr) xmlFree(content_attr);
+                continue;
+            }
             std::string *target = nullptr;
             if (xmlStrEqual(child->name, BAD_CAST "title"))
             {

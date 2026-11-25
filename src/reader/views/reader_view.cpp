@@ -2,6 +2,8 @@
 
 #include "./definition_view.h"
 #include "./goto_view.h"
+#include "./book_map_view.h"
+#include "./image_view.h"
 #include "./popup_view.h"
 #include "./selection_menu.h"
 #include "./menu_draw.h"
@@ -70,6 +72,9 @@ struct ReaderViewState
     std::filesystem::path bookmarks_path;
     std::vector<Bookmark> bookmarks;
     std::vector<DocAddr> jump_stack;
+    // After Next mark or Previous mark: the mark that was reached and where the view stood on landing.
+    std::optional<DocAddr> landed_mark;
+    DocAddr landed_view = 0;
     std::unique_ptr<TokenView> token_view;
     // The count of pages is on screen instead of the text, and the percent drawn.
     bool counting_shown = false;
@@ -194,6 +199,99 @@ void add_bookmark(ReaderViewState &state)
     });
     save_bookmarks(state.bookmarks_path, state.bookmarks);
     show_message(state, "Bookmark added");
+}
+
+// Goes to the next or previous bookmark or highlight in book order.
+void go_to_mark(ReaderView &reader_view, ReaderViewState &state, bool forward)
+{
+    std::vector<DocAddr> marks;
+    for (const Bookmark &bookmark : state.bookmarks)
+    {
+        marks.push_back(bookmark.address);
+    }
+    for (const Highlight &highlight : state.token_view->highlights())
+    {
+        marks.push_back(highlight.first);
+    }
+    if (marks.empty())
+    {
+        show_message(state, "No bookmarks or highlights yet");
+        return;
+    }
+    std::sort(marks.begin(), marks.end());
+
+    // Landing on a mark leaves the view a little before it, so measure from the
+    // mark itself while the view has not moved since.
+    const DocAddr here = get_current_address(state);
+    const DocAddr from = (state.landed_mark && here == state.landed_view) ? *state.landed_mark : here;
+    std::optional<DocAddr> target;
+    if (forward)
+    {
+        const auto it = std::upper_bound(marks.begin(), marks.end(), from);
+        if (it != marks.end())
+        {
+            target = *it;
+        }
+    }
+    else
+    {
+        const auto it = std::lower_bound(marks.begin(), marks.end(), from);
+        if (it != marks.begin())
+        {
+            target = *(it - 1);
+        }
+    }
+    if (!target)
+    {
+        show_message(state, forward ? "No later bookmark or highlight" : "No earlier bookmark or highlight");
+        return;
+    }
+    reader_view.jump_to(*target);
+    state.landed_mark = *target;
+    state.landed_view = get_current_address(state);
+}
+
+// Opens one of the book's pictures full screen.
+void open_picture(ReaderViewState &state, const std::filesystem::path &path)
+{
+    std::string extension = path.extension().string();
+    if (!extension.empty() && extension[0] == '.')
+    {
+        extension.erase(0, 1);
+    }
+    auto view = std::make_shared<ImageView>(state.reader->load_resource(path), extension, state.sys_styling);
+    if (!view->valid())
+    {
+        show_message(state, "This picture cannot be shown");
+        return;
+    }
+    state.view_stack.push(view);
+}
+
+// The pictures on the page: opens the only one, or lists them to choose from.
+void open_pictures(ReaderViewState &state, const std::vector<std::filesystem::path> &pictures)
+{
+    if (pictures.size() == 1)
+    {
+        open_picture(state, pictures[0]);
+        return;
+    }
+    std::vector<std::string> names;
+    for (size_t i = 0; i < pictures.size(); ++i)
+    {
+        names.push_back("Picture " + std::to_string(i + 1) + " of " + std::to_string(pictures.size()));
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, state.sys_styling);
+    menu->set_title("Pictures");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([&state, pictures](uint32_t index) {
+        if (index < pictures.size())
+        {
+            open_picture(state, pictures[index]);
+        }
+    });
+    state.view_stack.push(menu);
 }
 
 void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
@@ -445,6 +543,31 @@ void ReaderView::open_book_menu()
         "Bookmarks (" + std::to_string(state->bookmarks.size()) + ")",
         [this]() { open_bookmarks_menu(*this, *state); }
     });
+    if (!state->bookmarks.empty() || !state->token_view->highlights().empty())
+    {
+        actions->push_back({"Next mark", [this]() { go_to_mark(*this, *state, true); }});
+        actions->push_back({"Previous mark", [this]() { go_to_mark(*this, *state, false); }});
+    }
+    actions->push_back({"Book map", [this]() {
+        std::vector<DocAddr> bookmark_addresses;
+        for (const Bookmark &bookmark : state->bookmarks)
+        {
+            bookmark_addresses.push_back(bookmark.address);
+        }
+        std::vector<DocAddr> highlight_addresses;
+        for (const Highlight &highlight : state->token_view->highlights())
+        {
+            highlight_addresses.push_back(highlight.first);
+        }
+        state->view_stack.push(std::make_shared<BookMapView>(
+            state->reader,
+            get_current_address(*state),
+            bookmark_addresses,
+            highlight_addresses,
+            [this](DocAddr address) { jump_to(address); },
+            state->sys_styling
+        ));
+    }});
     actions->push_back({"Go to %", [this]() {
         const uint32_t now = state->reader->get_global_progress_percent(get_current_address(*state));
         state->view_stack.push(std::make_shared<GotoView>(
@@ -467,6 +590,16 @@ void ReaderView::open_book_menu()
                     state->sys_styling
                 ));
             }});
+        }
+    }
+    {
+        const auto pictures = state->token_view->images_on_screen();
+        if (!pictures.empty())
+        {
+            actions->push_back({
+                pictures.size() == 1 ? std::string("View picture") : "View pictures (" + std::to_string(pictures.size()) + ")",
+                [this, pictures]() { open_pictures(*state, pictures); }
+            });
         }
     }
     if (can_jump_back())

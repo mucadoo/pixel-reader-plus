@@ -49,6 +49,22 @@ public:
     bool get_justify() const;
     void set_justify(bool justify);
 
+    // Automatic night theme: the theme to use between two hours of the day. Empty name for off.
+    const std::string &get_night_theme() const;
+    void set_night_theme(const std::string &name);
+    int get_night_from() const;
+    void set_night_from(int hour);
+    int get_night_until() const;
+    void set_night_until(int hour);
+
+    // First-line indent step (see layout_options.h), the blank line between paragraphs, and bold body text
+    int get_indent_level() const;
+    void set_indent_level(int level);
+    bool get_paragraph_gap() const;
+    void set_paragraph_gap(bool gap);
+    bool get_bold_text() const;
+    void set_bold_text(bool bold);
+
     // Break long words at the end of a line
     bool get_hyphenate() const;
     void set_hyphenate(bool hyphenate);

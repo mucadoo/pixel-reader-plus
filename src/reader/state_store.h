@@ -54,6 +54,9 @@ public:
     const string_unordered_map &get_reader_cache(const std::string &book_id) const;
     void set_reader_cache(const std::string &book_id, const string_unordered_map &cache);
 
+    // Drops everything kept for a book, in memory and on disk, such as when the book is deleted.
+    void forget_book(const std::string &book_id);
+
     // generic settings
     std::optional<std::string> get_setting(const std::string &name) const;
     void set_setting(const std::string &name, const std::string &value);

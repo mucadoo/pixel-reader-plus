@@ -74,6 +74,7 @@ void ReaderBootstrapView::load_reader()
 
     auto book_id = reader->get_id();
     const DocAddr resume_address = state_store.get_book_address(book_id).value_or(0);
+    library_log().set_book_id(book_path, book_id);
     library_log().touch(book_path, static_cast<long long>(std::time(nullptr)));
     library_log().set_percent(book_path, static_cast<int>(reader->get_global_progress_percent(resume_address)));
     book_layout::open(state_store.book_data_dir() / (book_id + ".layout"));

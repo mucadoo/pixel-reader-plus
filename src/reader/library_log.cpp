@@ -23,22 +23,22 @@ void LibraryLog::load(std::filesystem::path path)
         {
             line.pop_back();
         }
-        // percent, time, status, favorite, path, separated by tabs. Older files
-        // have only percent, time and path.
+        // percent, time, status, favorite, book id, path, separated by tabs. Older
+        // files lack the book id, or have only percent, time and path.
         std::vector<std::string> parts;
         size_t from = 0;
-        for (int field = 0; field < 4; ++field)
+        while (true)
         {
             const size_t tab = line.find('\t', from);
             if (tab == std::string::npos)
             {
+                parts.push_back(line.substr(from));
                 break;
             }
             parts.push_back(line.substr(from, tab - from));
             from = tab + 1;
         }
-        const bool current = parts.size() == 4;
-        if (!current && parts.size() < 2)
+        if (parts.size() != 3 && parts.size() < 5)
         {
             continue;
         }
@@ -48,16 +48,25 @@ void LibraryLog::load(std::filesystem::path path)
             entry.percent = std::clamp(std::stoi(parts[0]), 0, 100);
             entry.last_opened = std::stoll(parts[1]);
             std::string path;
-            if (current)
+            if (parts.size() >= 5)
             {
                 const int status = std::stoi(parts[2]);
                 entry.status = status == 1 ? Status::Finished : (status == 2 ? Status::Reading : Status::Auto);
                 entry.favorite = parts[3] == "1";
-                path = line.substr(from);
+                size_t path_at = 4;
+                if (parts.size() >= 6)
+                {
+                    entry.book_id = parts[4];
+                    path_at = 5;
+                }
+                for (size_t i = path_at; i < parts.size(); ++i)
+                {
+                    path += (i > path_at ? "\t" : "") + parts[i];
+                }
             }
             else
             {
-                path = line.substr(parts[0].size() + 1 + parts[1].size() + 1);
+                path = parts[2];
             }
             entries[path] = entry;
         }
@@ -82,7 +91,7 @@ void LibraryLog::flush()
         const Entry &e = item.second;
         out << e.percent << '\t' << e.last_opened << '\t'
             << (e.status == Status::Finished ? 1 : (e.status == Status::Reading ? 2 : 0)) << '\t'
-            << (e.favorite ? 1 : 0) << '\t' << item.first << '\n';
+            << (e.favorite ? 1 : 0) << '\t' << e.book_id << '\t' << item.first << '\n';
     }
     dirty = false;
 }
@@ -123,6 +132,37 @@ void LibraryLog::set_favorite(const std::filesystem::path &book, bool favorite)
         entry.favorite = favorite;
         dirty = true;
     }
+}
+
+void LibraryLog::set_book_id(const std::filesystem::path &book, const std::string &book_id)
+{
+    Entry &entry = entries[book.string()];
+    if (entry.book_id != book_id)
+    {
+        entry.book_id = book_id;
+        dirty = true;
+    }
+}
+
+void LibraryLog::remove(const std::filesystem::path &book)
+{
+    if (entries.erase(book.string()) > 0)
+    {
+        dirty = true;
+    }
+}
+
+void LibraryLog::rename(const std::filesystem::path &from, const std::filesystem::path &to)
+{
+    const auto it = entries.find(from.string());
+    if (it == entries.end())
+    {
+        return;
+    }
+    Entry entry = it->second;
+    entries.erase(it);
+    entries[to.string()] = entry;
+    dirty = true;
 }
 
 int LibraryLog::started_count() const

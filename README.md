@@ -1,14 +1,25 @@
 # Spruce E-Reader
 
-An ebook reader for the Miyoo Flip on spruceOS. It opens epub and txt books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
+An ebook reader for the Miyoo Flip on spruceOS. It opens epub, FB2, HTML, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
 On spruce the app is **E-Reader**. This build replaces the stock Pixel Reader binary. Your books, reading position, and highlights stay on the card.
 
 ## Put a book on the card
 
-Copy `.epub` or `.txt` files to `Roms/EBOOKS` on the SD card. Open **E-Reader**, pick the folder if it is not already there, and press **A** on the book.
+Copy `.epub`, `.fb2`, `.html`, `.md` or `.txt` files to `Roms/EBOOKS` on the SD card. Open **E-Reader**, pick the folder if it is not already there, and press **A** on the book.
 
 The reader remembers the folder and the position in the book. The next time you open that book, it returns to the same place.
+
+## Other book formats
+
+Besides epub, the reader opens:
+
+- **FB2** (FictionBook): paragraphs, titles, emphasis, poems and epigraphs. Titles become the chapters, and the title, author, language and series are read from the file. Pictures inside an FB2 are not shown.
+- **HTML** (`.html`, `.htm`, `.xhtml`): the text of the page, with headings, lists, quotes, preformatted text and bold and italic. Headings become the chapters. Scripts, styles and pictures are left out. The `<title>` and the author and language `<meta>` tags are read.
+- **Markdown** (`.md`, `.markdown`): headings, paragraphs, bold and italic, lists, quotes, code blocks and rules. A link shows its text. Headings become the chapters and the first heading is the title.
+- **Text** (`.txt`): every line is a paragraph, as before. Text in UTF-8, UTF-16 (with a byte order mark) and Latin-1 or Windows-1252 is read correctly: a file that is not valid UTF-8 is taken as Latin-1.
+
+These books work with everything else: bookmarks, highlights, the dictionary, search, per-book layout, favorites and the book list.
 
 ## The book list
 
@@ -20,14 +31,19 @@ A name that is too long for its row slides once the row is selected: it waits a 
 
 **Y** opens a small menu for the selected entry:
 
-- **Properties** shows the name, title, author, language, type, size, and the folder it is in. Any button closes it.
+- **Properties** shows the name, title, author, series, language, type, size, and the folder it is in. Any button closes it.
 - **Add to favorites** or **Remove from favorites**, for a book. A favorite has `* ` in front of its name. Favorites in other folders are listed at the top of every folder, under **Continue**, so they are one press away.
 - **Mark as finished** or **Mark as not finished**, for a book. A book at 99% or more counts as finished by itself, shows **Done**, and has a **Done** label on its cover. Marking it as not finished overrides that, and marking an unfinished book as finished overrides the percent.
 - **Hide finished books** or **Show finished books**, for the whole list. Hidden books stay on the card and come back when you show them. A favorite is never hidden. The choice is saved.
+- **Search library** opens an on-screen keyboard. The words you type are looked for in the file name, title, author and series of every book under the top folder, in all its subfolders. A **Searching library** screen with a bar shows how far it has got. The matches replace the list, with the title and the folder they are in; **A** opens one, and **Clear search** (the first row, **B**, or the same entry in the Y menu) goes back to the folders. A search shows up to 500 books.
+- **Rename file**, for a book, asks for a new name with the keyboard. The extension stays, and the progress, favorite mark, highlights and bookmarks go with the book.
+- **Delete book**, for a book, asks you to confirm and then removes the file together with its progress, highlights, bookmarks and layout.
+
+The **on-screen keyboard** has five pages: lower case, capitals, accented lower case, accented capitals, and symbols. The D-pad moves over the keys, **A** types one, **B** deletes, **Y** types a space, **Select** (or **L1** and **R1**) changes the page, **Start** accepts, and **X** cancels.
 
 A book you have opened has a progress bar along the bottom of its cover. In every folder except the one holding the book you read last, the first row is **Continue: <title>**, which opens that book.
 
-**Start** changes the order of the books: by file name (the default), by title, by author, or most recently read first. Folders always stay first, and the order is saved. The folder name in the top bar says which order is active.
+**Start** changes the order of the books: by file name (the default), by title, by author, by series (series name, then the number in the series), or most recently read first. Folders always stay first, and the order is saved. The folder name in the top bar says which order is active.
 
 | Button | In the book list and the grid |
 | --- | --- |
@@ -35,9 +51,9 @@ A book you have opened has a progress bar along the bottom of its cover. In ever
 | D-pad left / right | List: move half a screen. Grid: move one cover. |
 | L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. Settings can move this to L2 / R2. |
 | A | Open the book or folder. |
-| Y | The options of the selected entry: properties, favorite, finished, hide finished. |
+| Y | The options of the selected entry: properties, favorite, finished, hide finished, search, rename, delete. |
 | Select | Switch between the list and the grid. |
-| Start | Change the order: name, title, author, recent. |
+| Start | Change the order: name, title, author, series, recent. |
 | X | Settings. |
 | B | Go up one folder. In the top folder it does nothing. |
 | Menu | Quit the app. |
@@ -55,7 +71,7 @@ These are the printed buttons on the Flip.
 | B | Close the book and return to the file list. |
 | X | Settings. |
 | Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
-| Select | The book menu: chapters, bookmarks, go to a percent, go to a page, jump back, reading stats, word list, highlights. Press Select again to close it. |
+| Select | The book menu: chapters, bookmarks, next and previous mark, book map, go to a percent, go to a page, view pictures, jump back, reading stats, word list, highlights. Press Select again to close it. |
 | Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
@@ -123,6 +139,9 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 
 - **Chapters** is the book's table of contents, opened on the chapter you are reading. A mark stays on that chapter while you move. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. A book with no table of contents does not show this row. There is no separate next-chapter button.
 - **Add bookmark** saves the place under the name of its chapter. **Bookmarks** lists them with their place as a percent, **A** goes there, **X** deletes one. They are saved with the book.
+- **Next mark** and **Previous mark** go to the next or previous bookmark or highlight in book order, from where you are. They appear when the book has any, and say so when there is none further on.
+- **Book map** shows the whole book as one bar: the part you have read is filled, thin lines cut the bar at each chapter start, small squares above it are bookmarks and below it are highlights, and a tall marker is the place the map points at. Left and right move it by 1%, **L1** and **R1** by 10%, up and down jump to the previous or next chapter, and the chapter name is shown below the bar. **A** goes there, **B** closes the map.
+- **View picture** or **View pictures** appears when a picture is on the screen. It opens the picture full screen, or a short list to choose from when there are several. **A** zooms in step by step (100%, 150%, 200%, 300%, 400% of the size that fits the screen) and then returns, **L1** and **R1** zoom out and in, **Y** fits the picture to the screen, the D-pad moves around a zoomed picture (hold to keep moving), and **B** closes it.
 - **Go to %** is a small picker, starting at where you are. Left and right move 1, up and down move 10, **A** goes, **B** cancels. The percent is of the whole book.
 - **Go to page** appears in Page mode once the pages are counted. It works like Go to %, starting at the current page, and goes to the top of the chosen page. The page count follows the Progress row, so in Chapter mode the pages are the chapter's.
 - **Jump back** appears once you have used the chapter list, a bookmark, a highlight, a link, Go to %, or Go to page. It returns to where you were, and a second use goes one jump further back, up to 20.
@@ -143,6 +162,10 @@ Press **X**. The book stays behind the menu. Each row has the name on the left a
 - **Clock.** 24-hour or 12-hour, for the time in the bar. The time and date are the ones the device keeps, and the line redraws when the minute changes.
 - **Margins.** The empty space at each side of the text: Narrow (the default), Medium, Wide, or Extra wide.
 - **Line spacing.** Tight, Normal (the default), Relaxed, or Loose. It changes the height of every line.
+- **Indent.** None (the default), Small, Medium or Large: the space before the first line of each paragraph.
+- **Paragraph gap.** On (the default) keeps the empty line between paragraphs. Off removes it, which looks best together with an indent. Changing these counts the pages again.
+- **Bold text.** Draws all body text in bold. Off is the default.
+- **Night theme, Night from, Night until.** Night theme is Off or any of the themes. When it is set, the reader switches to it from the hour in Night from until the hour in Night until (for example 21:00 to 07:00), using the clock of the device, and goes back to your own theme afterwards. A theme you pick by hand during the night is kept.
 - **Hyphenate.** On splits a word that does not fit at the end of a line, with a hyphen, so lines are fuller and justified lines have smaller gaps. The patterns for English, French and Portuguese follow the language of the book, and a book in another language uses the English ones. The hyphen is not part of the book, so highlights and bookmarks stay in the same place with Hyphenate on or off. Off is the default. Changing it counts the pages again.
 - **Auto exit.** Off, or 5, 10, 15, 30 or 60 minutes. When no button has been pressed for that long, the reader saves its place and quits, so a book left open does not run the battery down.
 - **Justify.** On spreads the words of each line so it fills the width, except the last line of a paragraph, headings, centered text, and preformatted text. A line that falls well short of full is left alone. Off is the default.
@@ -150,7 +173,7 @@ Press **X**. The book stays behind the menu. Each row has the name on the left a
 
 Margins and line spacing re-wrap the book, so the page count is made again, as it is for the font size.
 
-Margins, Line spacing, Justify, Hyphenate and Reading are kept for each book. Open Settings while a book is open and the change belongs to that book only, and the next time you open it the same layout comes back. Open Settings in the book list and the change sets the defaults every other book starts with. A book you never changed uses the defaults. The layout of a book is in a `.layout` file beside its highlights.
+Margins, Line spacing, Justify, Indent, Paragraph gap, Bold text, Hyphenate and Reading are kept for each book. Open Settings while a book is open and the change belongs to that book only, and the next time you open it the same layout comes back. Open Settings in the book list and the change sets the defaults every other book starts with. A book you never changed uses the defaults. The layout of a book is in a `.layout` file beside its highlights.
 
 **A** while reading shows or hides the progress line. That choice is saved too.
 
@@ -162,7 +185,7 @@ The reader writes under `App/PixelReader/.pixel_reader_store`.
 - Theme, font, font size, shoulder buttons, whether the progress line is shown, the bar, clock, margins, line spacing, justify, the book list order, and your reading speed.
 - Highlights, bookmarks and the layout, one file for each of them per book, named from the book file.
 - `stats.log` and `vocabulary.tsv`: the reading time for each day and book, and the words you looked up.
-- `library.log`: for each book you opened, how far you got and when, and whether it is a favorite or marked finished. The list uses it for progress, sorting by recent, Continue, favorites and finished.
+- `library.log`: for each book you opened, how far you got and when, whether it is a favorite or marked finished, and the name of its saved data. The list uses it for progress, sorting by recent, Continue, favorites and finished.
 - `info` and `covers`: the titles and the cover pictures read from your books. They can be deleted at any time and are made again.
 
 Books themselves are not copied or modified. A later install of this reader replaces the program and the dictionary, and leaves the store alone.

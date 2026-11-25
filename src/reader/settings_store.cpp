@@ -199,6 +199,90 @@ void settings_set_auto_exit_minutes(StateStore &state_store, int minutes)
     state_store.set_setting("auto_exit_minutes", std::to_string(minutes));
 }
 
+std::optional<std::string> settings_get_night_theme(const StateStore &state_store)
+{
+    return state_store.get_setting("night_theme");
+}
+
+void settings_set_night_theme(StateStore &state_store, const std::string &name)
+{
+    state_store.set_setting("night_theme", name);
+}
+
+std::optional<int> settings_get_night_hour(const StateStore &state_store, bool from)
+{
+    const auto opt = state_store.get_setting(from ? "night_from" : "night_until");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return std::stoi(*opt);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+void settings_set_night_hour(StateStore &state_store, bool from, int hour)
+{
+    state_store.set_setting(from ? "night_from" : "night_until", std::to_string(hour));
+}
+
+std::optional<int> settings_get_indent_level(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("indent_level");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return std::stoi(*opt);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+void settings_set_indent_level(StateStore &state_store, int level)
+{
+    state_store.set_setting("indent_level", std::to_string(level));
+}
+
+std::optional<bool> settings_get_paragraph_gap(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("paragraph_gap");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "1";
+}
+
+void settings_set_paragraph_gap(StateStore &state_store, bool gap)
+{
+    state_store.set_setting("paragraph_gap", gap ? "1" : "0");
+}
+
+std::optional<bool> settings_get_bold_text(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("bold_text");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "1";
+}
+
+void settings_set_bold_text(StateStore &state_store, bool bold)
+{
+    state_store.set_setting("bold_text", bold ? "1" : "0");
+}
+
 std::optional<bool> settings_get_hyphenate(const StateStore &state_store)
 {
     const auto opt = state_store.get_setting("hyphenate");

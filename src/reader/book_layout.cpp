@@ -21,6 +21,9 @@ struct Layout
     int spacing = DEFAULT_SPACING_LEVEL;
     bool justify = false;
     bool hyphenate = false;
+    int indent = DEFAULT_INDENT_LEVEL;
+    bool gap = true;
+    bool bold = false;
     ReadingMode reading = ReadingMode::Scroll;
 };
 
@@ -37,6 +40,9 @@ Layout current()
     layout.spacing = styling->get_spacing_level();
     layout.justify = styling->get_justify();
     layout.hyphenate = styling->get_hyphenate();
+    layout.indent = styling->get_indent_level();
+    layout.gap = styling->get_paragraph_gap();
+    layout.bold = styling->get_bold_text();
     layout.reading = styling->get_reading_mode();
     return layout;
 }
@@ -48,6 +54,9 @@ void apply(const Layout &layout)
     styling->set_spacing_level(layout.spacing);
     styling->set_justify(layout.justify);
     styling->set_hyphenate(layout.hyphenate);
+    styling->set_indent_level(layout.indent);
+    styling->set_paragraph_gap(layout.gap);
+    styling->set_bold_text(layout.bold);
     styling->set_reading_mode(layout.reading);
     applying = false;
 }
@@ -79,6 +88,9 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
             else if (key == "spacing") layout.spacing = std::stoi(value);
             else if (key == "justify") layout.justify = value == "1";
             else if (key == "hyphenate") layout.hyphenate = value == "1";
+            else if (key == "indent") layout.indent = std::stoi(value);
+            else if (key == "gap") layout.gap = value == "1";
+            else if (key == "bold") layout.bold = value == "1";
             else if (key == "reading") layout.reading = value == "page" ? ReadingMode::Page : ReadingMode::Scroll;
         }
         catch (...)
@@ -140,6 +152,9 @@ void save_if_active()
         << "spacing=" << layout.spacing << "\n"
         << "justify=" << (layout.justify ? 1 : 0) << "\n"
         << "hyphenate=" << (layout.hyphenate ? 1 : 0) << "\n"
+        << "indent=" << layout.indent << "\n"
+        << "gap=" << (layout.gap ? 1 : 0) << "\n"
+        << "bold=" << (layout.bold ? 1 : 0) << "\n"
         << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n";
 }
 

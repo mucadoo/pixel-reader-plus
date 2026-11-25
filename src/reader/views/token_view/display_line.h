@@ -34,6 +34,7 @@ struct TextLine: public DisplayLine
     bool italic = false;
     bool pre = false;
     bool quote = false;
+    int first_indent = 0;       // extra space before the first line of a paragraph, in pixels
     int slot_span = 1;
     uint32_t address_lead = 0;
     bool hyphenated = false;    // the line ends in a hyphen that the book text does not have

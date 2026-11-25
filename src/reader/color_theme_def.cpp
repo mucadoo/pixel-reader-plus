@@ -76,6 +76,16 @@ int get_theme_index(const std::string &name)
 
 } // namespace
 
+int theme_count()
+{
+    return static_cast<int>(theme_defs.size());
+}
+
+std::string theme_name_at(int index)
+{
+    return theme_defs[static_cast<size_t>(index)].first;
+}
+
 const ColorTheme& get_color_theme(const std::string &name)
 {
     int i = get_theme_index(name);

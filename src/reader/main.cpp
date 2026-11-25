@@ -11,6 +11,7 @@
 #include "./state_store.h"
 #include "./system_styling.h"
 #include "./color_theme_def.h"
+#include <ctime>
 #include "./view_stack.h"
 #include "./views/definition_view.h"
 #include "./views/file_selector.h"
@@ -164,6 +165,9 @@ void initialize_views(
         fs->set_on_info([&view_stack, &sys_styling](const std::string &title, const std::string &body) {
             view_stack.push(std::make_shared<DefinitionView>(title, body, sys_styling));
         });
+        fs->set_on_book_deleted([&state_store](const std::string &book_id) {
+            state_store.forget_book(book_id);
+        });
         fs->set_cover_cache_dir(store_path / "covers");
         fs->set_info_cache_dir(store_path / "info");
         fs->set_sort(settings_get_browser_sort(state_store).value_or(BrowserSort::Name));
@@ -315,9 +319,14 @@ int main(int argc, char **argv)
         get_valid_theme(settings_get_color_theme(state_store).value_or(DEFAULT_COLOR_THEME)),
         get_valid_shoulder_keymap(settings_get_shoulder_keymap(state_store).value_or(DEFAULT_SHOULDER_KEYMAP))
     );
-    sys_styling.subscribe_to_changes([&state_store, &sys_styling](SystemStyling::ChangeId) {
+    // True while the automatic night theme is being applied, so it is not saved as the chosen theme.
+    bool applying_night_theme = false;
+    sys_styling.subscribe_to_changes([&state_store, &sys_styling, &applying_night_theme](SystemStyling::ChangeId) {
         // Persist changes
-        settings_set_color_theme(state_store, sys_styling.get_color_theme());
+        if (!applying_night_theme)
+        {
+            settings_set_color_theme(state_store, sys_styling.get_color_theme());
+        }
         settings_set_font_name(state_store, sys_styling.get_font_name());
         settings_set_font_size(state_store, sys_styling.get_font_size());
         settings_set_shoulder_keymap(state_store, sys_styling.get_shoulder_keymap());
@@ -337,6 +346,12 @@ int main(int argc, char **argv)
     token_view_styling.set_spacing_level(settings_get_spacing_level(state_store).value_or(token_view_styling.get_spacing_level()));
     token_view_styling.set_justify(settings_get_justify(state_store).value_or(token_view_styling.get_justify()));
     token_view_styling.set_hyphenate(settings_get_hyphenate(state_store).value_or(token_view_styling.get_hyphenate()));
+    token_view_styling.set_indent_level(settings_get_indent_level(state_store).value_or(token_view_styling.get_indent_level()));
+    token_view_styling.set_paragraph_gap(settings_get_paragraph_gap(state_store).value_or(token_view_styling.get_paragraph_gap()));
+    token_view_styling.set_bold_text(settings_get_bold_text(state_store).value_or(token_view_styling.get_bold_text()));
+    token_view_styling.set_night_theme(settings_get_night_theme(state_store).value_or(std::string()));
+    token_view_styling.set_night_from(settings_get_night_hour(state_store, true).value_or(21));
+    token_view_styling.set_night_until(settings_get_night_hour(state_store, false).value_or(7));
     token_view_styling.set_auto_exit_minutes(settings_get_auto_exit_minutes(state_store).value_or(0));
     book_layout::attach(token_view_styling);
     if (const auto speed = settings_get_reading_speed(state_store))
@@ -362,6 +377,12 @@ int main(int argc, char **argv)
             settings_set_spacing_level(state_store, token_view_styling.get_spacing_level());
             settings_set_justify(state_store, token_view_styling.get_justify());
             settings_set_hyphenate(state_store, token_view_styling.get_hyphenate());
+            settings_set_night_theme(state_store, token_view_styling.get_night_theme());
+            settings_set_night_hour(state_store, true, token_view_styling.get_night_from());
+            settings_set_night_hour(state_store, false, token_view_styling.get_night_until());
+            settings_set_indent_level(state_store, token_view_styling.get_indent_level());
+            settings_set_paragraph_gap(state_store, token_view_styling.get_paragraph_gap());
+            settings_set_bold_text(state_store, token_view_styling.get_bold_text());
         }
         settings_set_auto_exit_minutes(state_store, token_view_styling.get_auto_exit_minutes());
         settings_set_bar_item(state_store, 0, token_view_styling.get_bar_left());
@@ -436,6 +457,57 @@ int main(int argc, char **argv)
     Timer idle_timer;
     Timer save_timer;
     Timer quiet_timer; // time since the last key press, for Auto exit
+    Timer night_timer;
+    bool night_active = false;
+    std::string day_theme;
+    std::string night_theme_applied;
+
+    // Switches to the night theme when the night hours begin, and back when they end.
+    auto update_night_theme = [&]() {
+        const std::string night = token_view_styling.get_night_theme();
+        bool is_night = false;
+        if (!night.empty())
+        {
+            const std::time_t now = std::time(nullptr);
+            std::tm local {};
+            if (localtime_r(&now, &local))
+            {
+                const int from = token_view_styling.get_night_from();
+                const int until = token_view_styling.get_night_until();
+                const int hour = local.tm_hour;
+                if (from != until)
+                {
+                    is_night = from < until ? (hour >= from && hour < until) : (hour >= from || hour < until);
+                }
+            }
+        }
+        if (is_night && !night_active)
+        {
+            day_theme = sys_styling.get_color_theme();
+            night_active = true;
+            if (day_theme != night)
+            {
+                applying_night_theme = true;
+                sys_styling.set_color_theme(night);
+                applying_night_theme = false;
+            }
+        }
+        else if (!is_night && night_active)
+        {
+            night_active = false;
+            // A theme chosen by hand during the night is kept.
+            if (sys_styling.get_color_theme() == night_theme_applied && !day_theme.empty())
+            {
+                sys_styling.set_color_theme(day_theme);
+            }
+        }
+        if (night_active)
+        {
+            night_theme_applied = night;
+        }
+    };
+    update_night_theme();
+    night_timer.reset();
 
     // Returns true when the key ran view code.
     auto handle_key_down = [&](SDLKey raw_key) {
@@ -567,6 +639,12 @@ int main(int argc, char **argv)
             reading_stats::flush();
             idle_timer.reset();
             save_timer.reset();
+        }
+
+        if (night_timer.elapsed_sec() >= 5)
+        {
+            update_night_theme();
+            night_timer.reset();
         }
 
         const int auto_exit = token_view_styling.get_auto_exit_minutes();

@@ -215,6 +215,22 @@ void StateStore::set_reader_cache(const std::string &book_id, const string_unord
     }
 }
 
+void StateStore::forget_book(const std::string &book_id)
+{
+    if (book_id.empty())
+    {
+        return;
+    }
+    book_addresses.erase(book_id);
+    book_reader_caches.erase(book_id);
+    reader_cache_dirty.erase(book_id);
+    std::error_code ec;
+    for (const char *extension : {".address", ".cache", ".layout", ".highlights", ".bookmarks"})
+    {
+        std::filesystem::remove(book_data_root_path / (book_id + extension), ec);
+    }
+}
+
 std::optional<std::string> StateStore::get_setting(const std::string &name) const
 {
     auto it = settings.find(name);

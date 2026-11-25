@@ -61,6 +61,20 @@ void settings_set_browser_grid(StateStore &state_store, bool grid);
 std::optional<int> settings_get_auto_exit_minutes(const StateStore &state_store);
 void settings_set_auto_exit_minutes(StateStore &state_store, int minutes);
 
+// Automatic night theme
+std::optional<std::string> settings_get_night_theme(const StateStore &state_store);
+void settings_set_night_theme(StateStore &state_store, const std::string &name);
+std::optional<int> settings_get_night_hour(const StateStore &state_store, bool from);
+void settings_set_night_hour(StateStore &state_store, bool from, int hour);
+
+// First-line indent step, the blank line between paragraphs, and bold body text
+std::optional<int> settings_get_indent_level(const StateStore &state_store);
+void settings_set_indent_level(StateStore &state_store, int level);
+std::optional<bool> settings_get_paragraph_gap(const StateStore &state_store);
+void settings_set_paragraph_gap(StateStore &state_store, bool gap);
+std::optional<bool> settings_get_bold_text(const StateStore &state_store);
+void settings_set_bold_text(StateStore &state_store, bool bold);
+
 // Hyphenation of words at the end of a line
 std::optional<bool> settings_get_hyphenate(const StateStore &state_store);
 void settings_set_hyphenate(StateStore &state_store, bool hyphenate);

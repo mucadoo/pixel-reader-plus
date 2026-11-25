@@ -47,6 +47,13 @@ SDL_Color quiet_text(const ColorTheme &theme)
     };
 }
 
+std::string hour_label(int hour)
+{
+    char text[8];
+    std::snprintf(text, sizeof(text), "%02d:00", hour);
+    return text;
+}
+
 const char *theme_display_name(const std::string &name)
 {
     if (name == "spruce") return "Spruce";
@@ -123,6 +130,12 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
 
     const char *theme_name = theme_display_name(sys_styling.get_color_theme());
     std::string theme_value = theme_name ? theme_name : sys_styling.get_color_theme();
+    std::string night_value = "Off";
+    if (!token_view_styling.get_night_theme().empty())
+    {
+        const char *night_name = theme_display_name(token_view_styling.get_night_theme());
+        night_value = night_name ? night_name : token_view_styling.get_night_theme();
+    }
     std::string font_value = std::filesystem::path(sys_styling.get_font_name()).filename().stem().string();
 
     struct Row
@@ -156,7 +169,13 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Margins", margin_label(token_view_styling.get_margin_level()), true, sys_font},
         {"Line spacing", spacing_label(token_view_styling.get_spacing_level()), true, sys_font},
         {"Justify", token_view_styling.get_justify() ? "On" : "Off", true, sys_font},
+        {"Indent", indent_label(token_view_styling.get_indent_level()), true, sys_font},
+        {"Paragraph gap", token_view_styling.get_paragraph_gap() ? "On" : "Off", true, sys_font},
+        {"Bold text", token_view_styling.get_bold_text() ? "On" : "Off", true, sys_font},
         {"Hyphenate", token_view_styling.get_hyphenate() ? "On" : "Off", true, sys_font},
+        {"Night theme", night_value, true, sys_font},
+        {"Night from", hour_label(token_view_styling.get_night_from()), true, sys_font},
+        {"Night until", hour_label(token_view_styling.get_night_until()), true, sys_font},
         {"Auto exit", auto_exit_label(token_view_styling.get_auto_exit_minutes()), true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
@@ -467,9 +486,46 @@ void SettingsView::on_keypress(SDLKey key)
                 {
                     token_view_styling.set_justify(!token_view_styling.get_justify());
                 }
+                else if (line_selected == ROW_INDENT)
+                {
+                    token_view_styling.set_indent_level(
+                        (token_view_styling.get_indent_level() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_GAP)
+                {
+                    token_view_styling.set_paragraph_gap(!token_view_styling.get_paragraph_gap());
+                }
+                else if (line_selected == ROW_BOLD)
+                {
+                    token_view_styling.set_bold_text(!token_view_styling.get_bold_text());
+                }
                 else if (line_selected == ROW_HYPHEN)
                 {
                     token_view_styling.set_hyphenate(!token_view_styling.get_hyphenate());
+                }
+                else if (line_selected == ROW_NIGHT)
+                {
+                    // Off, then each theme in turn
+                    int index = -1;
+                    for (int i = 0; i < theme_count(); ++i)
+                    {
+                        if (theme_name_at(i) == token_view_styling.get_night_theme())
+                        {
+                            index = i;
+                        }
+                    }
+                    const int span = theme_count() + 1;
+                    index = (index + 1 + dir + span) % span - 1;
+                    token_view_styling.set_night_theme(index < 0 ? std::string() : theme_name_at(index));
+                }
+                else if (line_selected == ROW_NIGHT_FROM)
+                {
+                    token_view_styling.set_night_from(token_view_styling.get_night_from() + dir);
+                }
+                else if (line_selected == ROW_NIGHT_UNTIL)
+                {
+                    token_view_styling.set_night_until(token_view_styling.get_night_until() + dir);
                 }
                 else if (line_selected == ROW_AUTO_EXIT)
                 {

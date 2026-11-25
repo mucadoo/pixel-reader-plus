@@ -79,6 +79,9 @@ public:
     // The words between the first and last selected word, as they were on the pages.
     std::string selected_text() const;
 
+    // Paths of the pictures that show on the screen now, top to bottom.
+    std::vector<std::filesystem::path> images_on_screen() const;
+
     const std::vector<Highlight> &highlights() const;
     void remove_highlight(size_t index);
 };

@@ -44,6 +44,9 @@ struct PackageContents
     std::string title;
     std::string author;
     std::string language;
+    // The series the book belongs to and its number in it, from Calibre or EPUB 3 metadata. Empty when absent.
+    std::string series;
+    std::string series_index;
 };
 
 std::string epub_parse_rootfile_path(const char *container_xml);

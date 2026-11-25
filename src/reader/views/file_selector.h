@@ -41,6 +41,8 @@ public:
     // Leave finished books out of the list.
     void set_hide_finished(bool hide);
     void set_on_hide_finished_change(std::function<void(bool)> callback);
+    // Called with the book id when a book is deleted, so the data kept for it can go too.
+    void set_on_book_deleted(std::function<void(const std::string &book_id)> callback);
     void set_on_info(std::function<void(const std::string &, const std::string &)> on_info);
 
     // Where cover thumbnails are kept. Without it the grid shows plain covers only.

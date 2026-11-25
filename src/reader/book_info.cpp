@@ -1,6 +1,7 @@
 #include "./book_info.h"
 
 #include "filetypes/epub/epub_metadata.h"
+#include "filetypes/text/markup.h"
 #include "util/zip_utils.h"
 
 #include "extern/hash-library/md5.h"
@@ -15,13 +16,51 @@
 namespace
 {
 
-constexpr const char *CACHE_MAGIC = "PXI1";
+constexpr const char *CACHE_MAGIC = "PXI2";
 
 bool is_epub(const std::filesystem::path &book)
 {
     std::string ext = book.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext == ".epub";
+}
+
+// Markdown, HTML and FB2 books say what they are in their text.
+bool is_markup(const std::filesystem::path &book, markup::Format &format)
+{
+    return markup::format_for_extension(book.extension().string(), format);
+}
+
+bool has_info(const std::filesystem::path &book)
+{
+    markup::Format format;
+    return is_epub(book) || is_markup(book, format);
+}
+
+std::string tidy(const std::string &text);
+
+std::optional<BookInfo> read_markup_book_info(const std::filesystem::path &book, markup::Format format)
+{
+    std::ifstream in(book, std::ios::binary);
+    if (!in)
+    {
+        return std::nullopt;
+    }
+    std::string head(256 * 1024, 0);
+    in.read(&head[0], static_cast<std::streamsize>(head.size()));
+    head.resize(static_cast<size_t>(in.gcount()));
+    const markup::Info found = markup::read_info(markup::to_utf8(head), format);
+    BookInfo info;
+    info.title = tidy(found.title);
+    info.author = tidy(found.author);
+    info.language = tidy(found.language);
+    info.series = tidy(found.series);
+    info.series_index = tidy(found.series_index);
+    if (info.empty())
+    {
+        return std::nullopt;
+    }
+    return info;
 }
 
 // One line: no line breaks, no runs of spaces, no spaces at the ends.
@@ -54,6 +93,11 @@ std::string tidy(const std::string &text)
 
 std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
 {
+    markup::Format format;
+    if (is_markup(book, format))
+    {
+        return read_markup_book_info(book, format);
+    }
     if (!is_epub(book))
     {
         return std::nullopt;
@@ -80,6 +124,8 @@ std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
             info.title = tidy(package.title);
             info.author = tidy(package.author);
             info.language = tidy(package.language);
+            info.series = tidy(package.series);
+            info.series_index = tidy(package.series_index);
             if (!info.empty())
             {
                 result = info;
@@ -93,6 +139,18 @@ std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
 
     zip_close(zip);
     return result;
+}
+
+double BookInfo::series_number() const
+{
+    try
+    {
+        return series_index.empty() ? 0.0 : std::stod(series_index);
+    }
+    catch (...)
+    {
+        return 0.0;
+    }
 }
 
 std::string book_display_title(const std::optional<BookInfo> &info, const std::filesystem::path &book)
@@ -155,7 +213,7 @@ void BookInfoCache::load(const std::filesystem::path &book)
     }
 
     const std::string key = cache_key(book);
-    if (key.empty() || !is_epub(book))
+    if (key.empty() || !has_info(book))
     {
         known[path] = std::nullopt;
         return;
@@ -171,6 +229,8 @@ void BookInfoCache::load(const std::filesystem::path &book)
             std::getline(in, info.title);
             std::getline(in, info.author);
             std::getline(in, info.language);
+            std::getline(in, info.series);
+            std::getline(in, info.series_index);
             known[path] = info.empty() ? std::nullopt : std::optional<BookInfo>(info);
             return;
         }
@@ -188,7 +248,7 @@ void BookInfoCache::load(const std::filesystem::path &book)
             return;
         }
         BookInfo shown = info.value_or(BookInfo {});
-        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n';
+        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n' << shown.series << '\n' << shown.series_index << '\n';
         if (!out)
         {
             return;

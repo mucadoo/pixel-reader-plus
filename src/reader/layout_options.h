@@ -33,6 +33,19 @@ inline const char *spacing_label(int level)
     return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
 }
 
+// First-line indent of a paragraph, in pixels.
+inline int indent_pixels(int level)
+{
+    static const int values[LAYOUT_LEVEL_COUNT] = {0, 14, 24, 36};
+    return values[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+inline const char *indent_label(int level)
+{
+    static const char *labels[LAYOUT_LEVEL_COUNT] = {"None", "Small", "Medium", "Large"};
+    return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
 // Minutes of no key presses before the reader saves and quits. 0 is never.
 constexpr int AUTO_EXIT_STEP_COUNT = 6;
 
@@ -61,5 +74,6 @@ inline std::string auto_exit_label(int minutes)
 
 constexpr int DEFAULT_MARGIN_LEVEL = 0;
 constexpr int DEFAULT_SPACING_LEVEL = 1;
+constexpr int DEFAULT_INDENT_LEVEL = 0;
 
 #endif

@@ -18,10 +18,16 @@ class SettingsView: public View
     static constexpr uint32_t ROW_MARGINS = 10;
     static constexpr uint32_t ROW_SPACING = 11;
     static constexpr uint32_t ROW_JUSTIFY = 12;
-    static constexpr uint32_t ROW_HYPHEN = 13;
-    static constexpr uint32_t ROW_AUTO_EXIT = 14;
-    static constexpr uint32_t ROW_CONTROLS = 15;
-    static constexpr int ROW_COUNT = 16;
+    static constexpr uint32_t ROW_INDENT = 13;
+    static constexpr uint32_t ROW_GAP = 14;
+    static constexpr uint32_t ROW_BOLD = 15;
+    static constexpr uint32_t ROW_HYPHEN = 16;
+    static constexpr uint32_t ROW_NIGHT = 17;
+    static constexpr uint32_t ROW_NIGHT_FROM = 18;
+    static constexpr uint32_t ROW_NIGHT_UNTIL = 19;
+    static constexpr uint32_t ROW_AUTO_EXIT = 20;
+    static constexpr uint32_t ROW_CONTROLS = 21;
+    static constexpr int ROW_COUNT = 22;
 
     bool _is_done = false;
     bool needs_render = true;

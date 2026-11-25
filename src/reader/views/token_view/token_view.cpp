@@ -59,6 +59,9 @@ struct TokenViewState
     Hyphenator hyphenator;
     std::string hyphenation_language = "english";
     bool hyphenating = false; // whether the scroller currently splits words
+    int first_line_indent = 0;
+    bool paragraph_gap = true;
+    bool bold_text = false;
     int side_margin;    // pixels left empty at each side of the text
     int spacing_extra;  // pixels added to every line on top of the font's own
     int line_height;
@@ -243,6 +246,10 @@ struct TokenViewState
           page_scroll_throttle(750, 150),
           word_move_throttle(180, 40)
     {
+        first_line_indent = indent_pixels(token_view_styling.get_indent_level());
+        paragraph_gap = token_view_styling.get_paragraph_gap();
+        bold_text = token_view_styling.get_bold_text();
+        line_scroller.set_text_options(first_line_indent, paragraph_gap, bold_text);
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -281,6 +288,18 @@ struct TokenViewState
         {
             hyphenating = hyphenate_now;
             line_scroller.set_hyphenator(hyphenating ? &hyphenator : nullptr);
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        const int indent = indent_pixels(token_view_styling.get_indent_level());
+        const bool gap = token_view_styling.get_paragraph_gap();
+        const bool bold = token_view_styling.get_bold_text();
+        if (indent != first_line_indent || gap != paragraph_gap || bold != bold_text)
+        {
+            first_line_indent = indent;
+            paragraph_gap = gap;
+            bold_text = bold;
+            line_scroller.set_text_options(indent, gap, bold);
             line_scroller.reset_buffer();
             needs_render = true;
         }
@@ -479,7 +498,7 @@ static void layout_visible_words(TokenViewState &state)
                     text_line->address,
                     text_line->address_lead
                 );
-                int indent = text_line->quote ? 18 : 0;
+                int indent = (text_line->quote ? 18 : 0) + text_line->first_indent;
                 int avail = SCREEN_WIDTH - state.side_margin * 2 - indent;
                 if (state.token_view_styling.get_justify() && !text_line->centered && !text_line->pre
                     && text_line->header_level == 0 && !text_line->paragraph_end && text_line->slot_span <= 1)
@@ -1319,6 +1338,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
+    key += ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');
     if (!chapter)
     {
@@ -1596,6 +1616,38 @@ bool TokenView::go_to_page(bool chapter, uint32_t page)
         scroll(target - line);
     }
     return true;
+}
+
+std::vector<std::filesystem::path> TokenView::images_on_screen() const
+{
+    std::vector<std::filesystem::path> found;
+    const int shown = visible_text_lines(*state);
+    for (int i = 0; i < shown; ++i)
+    {
+        const DisplayLine *line = state->line_scroller.get_line_relative(i);
+        if (!line)
+        {
+            continue;
+        }
+        const ImageLine *image_line = nullptr;
+        if (line->type == DisplayLine::Type::Image)
+        {
+            image_line = static_cast<const ImageLine *>(line);
+        }
+        else if (line->type == DisplayLine::Type::ImageRef && i == 0)
+        {
+            const DisplayLine *ref = state->line_scroller.get_line_relative(-static_cast<int>(static_cast<const ImageRefLine *>(line)->offset));
+            if (ref && ref->type == DisplayLine::Type::Image)
+            {
+                image_line = static_cast<const ImageLine *>(ref);
+            }
+        }
+        if (image_line && std::find(found.begin(), found.end(), image_line->image_path) == found.end())
+        {
+            found.push_back(image_line->image_path);
+        }
+    }
+    return found;
 }
 
 void TokenView::set_hyphenation_language(const std::string &language)

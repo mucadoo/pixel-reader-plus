@@ -72,6 +72,10 @@ struct TokenViewState
     std::vector<Highlight> highlights;
     bool selecting = false;
     bool aligning_page = false;
+    // Set when a page turn back left a chapter: once the count of the chapter
+    // it entered is done, the view goes to that chapter's last page.
+    bool land_on_last_page = false;
+    std::string left_page_key;
     bool extending = false;
     bool has_selection = false;
     DocAddr selected_begin = 0;
@@ -964,6 +968,7 @@ DocAddr TokenView::get_address() const
 
 void TokenView::seek_to_address(DocAddr address)
 {
+    state->land_on_last_page = false;
     state->line_scroller.seek_to_address(address);
     state->needs_render = true;
 }
@@ -1160,6 +1165,20 @@ bool TokenView::align_to_page(bool chapter)
     int line = absolute_line(*state);
     int content = state->page_index.line_for_navigation(line, size);
     int start = state->page_index.first_line_of_page(state->page_index.page_of_line(content, size), size);
+    if (state->land_on_last_page)
+    {
+        state->land_on_last_page = false;
+        if (page_index_key(*state, chapter) != state->left_page_key)
+        {
+            // Going back from a chapter's first page leads to the last page of
+            // the one before it, not to the page that happened to be on screen.
+            const int pages = state->page_index.page_count(size);
+            if (pages > 0)
+            {
+                start = state->page_index.first_line_of_page(pages - 1, size);
+            }
+        }
+    }
     if (line == start)
     {
         return false;
@@ -1174,6 +1193,7 @@ bool TokenView::align_to_page(bool chapter)
 
 void TokenView::turn_page(int direction)
 {
+    state->land_on_last_page = false;
     bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
     int size = std::max(1, state->num_text_display_lines());
     if (!page_index_ready(chapter))
@@ -1205,6 +1225,8 @@ void TokenView::turn_page(int direction)
             }
             else
             {
+                state->left_page_key = page_index_key(*state, chapter);
+                state->land_on_last_page = true;
                 scroll(-size);
             }
         }

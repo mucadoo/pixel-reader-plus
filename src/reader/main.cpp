@@ -1,4 +1,7 @@
 #include "./config.h"
+#include "./book_layout.h"
+#include "./reading_stats.h"
+#include "./vocabulary.h"
 #include "./work_pump.h"
 #include "./font_catalog.h"
 #include "./library_log.h"
@@ -151,6 +154,13 @@ void initialize_views(
         fs->set_on_view_focus([&state_store]() {
             state_store.remove_current_book_path();
         });
+        fs->set_on_open_view([&view_stack](std::shared_ptr<View> view) {
+            view_stack.push(view);
+        });
+        fs->set_hide_finished(settings_get_hide_finished(state_store).value_or(false));
+        fs->set_on_hide_finished_change([&state_store](bool hide) {
+            settings_set_hide_finished(state_store, hide);
+        });
         fs->set_on_info([&view_stack, &sys_styling](const std::string &title, const std::string &body) {
             view_stack.push(std::make_shared<DefinitionView>(title, body, sys_styling));
         });
@@ -283,6 +293,8 @@ int main(int argc, char **argv)
     auto config = load_config_with_defaults();
     StateStore state_store(config[CONFIG_KEY_STORE_PATH]);
     library_log().load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "library.log");
+    reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
+    vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
     // Preload & check fonts
     auto init_font_name = get_valid_font_name(settings_get_font_name(state_store).value_or(DEFAULT_FONT_NAME));
@@ -324,6 +336,9 @@ int main(int argc, char **argv)
     token_view_styling.set_margin_level(settings_get_margin_level(state_store).value_or(token_view_styling.get_margin_level()));
     token_view_styling.set_spacing_level(settings_get_spacing_level(state_store).value_or(token_view_styling.get_spacing_level()));
     token_view_styling.set_justify(settings_get_justify(state_store).value_or(token_view_styling.get_justify()));
+    token_view_styling.set_hyphenate(settings_get_hyphenate(state_store).value_or(token_view_styling.get_hyphenate()));
+    token_view_styling.set_auto_exit_minutes(settings_get_auto_exit_minutes(state_store).value_or(0));
+    book_layout::attach(token_view_styling);
     if (const auto speed = settings_get_reading_speed(state_store))
     {
         reading_speed::set_units_per_second(*speed);
@@ -335,10 +350,20 @@ int main(int argc, char **argv)
         // Persist changes
         settings_set_show_title_bar(state_store, token_view_styling.get_show_title_bar());
         settings_set_progress_reporting(state_store, token_view_styling.get_progress_reporting());
-        settings_set_reading_mode(state_store, token_view_styling.get_reading_mode());
-        settings_set_margin_level(state_store, token_view_styling.get_margin_level());
-        settings_set_spacing_level(state_store, token_view_styling.get_spacing_level());
-        settings_set_justify(state_store, token_view_styling.get_justify());
+        if (book_layout::active())
+        {
+            // Inside a book these belong to that book alone.
+            book_layout::save_if_active();
+        }
+        else
+        {
+            settings_set_reading_mode(state_store, token_view_styling.get_reading_mode());
+            settings_set_margin_level(state_store, token_view_styling.get_margin_level());
+            settings_set_spacing_level(state_store, token_view_styling.get_spacing_level());
+            settings_set_justify(state_store, token_view_styling.get_justify());
+            settings_set_hyphenate(state_store, token_view_styling.get_hyphenate());
+        }
+        settings_set_auto_exit_minutes(state_store, token_view_styling.get_auto_exit_minutes());
         settings_set_bar_item(state_store, 0, token_view_styling.get_bar_left());
         settings_set_bar_item(state_store, 1, token_view_styling.get_bar_middle());
         settings_set_bar_item(state_store, 2, token_view_styling.get_bar_right());
@@ -409,10 +434,13 @@ int main(int argc, char **argv)
 
     // Timing
     Timer idle_timer;
+    Timer save_timer;
+    Timer quiet_timer; // time since the last key press, for Auto exit
 
     // Returns true when the key ran view code.
     auto handle_key_down = [&](SDLKey raw_key) {
         idle_timer.reset();
+        quiet_timer.reset();
 
         SDLKey key = chord_tracker.on_keypress(raw_key);
 
@@ -422,10 +450,12 @@ int main(int argc, char **argv)
             return false;
         }
 
+        const auto top_before = view_stack.top_view();
+        const bool x_taken = top_before && top_before->consumes_x();
         view_stack.on_keypress(key);
 
         auto top = view_stack.top_view();
-        if (key == SW_BTN_X && top && !top->is_done())
+        if (key == SW_BTN_X && !x_taken && top && !top->is_done())
         {
             if (top != settings_view)
             {
@@ -526,13 +556,23 @@ int main(int argc, char **argv)
             limit_fps();
         }
 
-        if (idle_timer.elapsed_sec() >= IDLE_SAVE_TIME_SEC)
+        if (idle_timer.elapsed_sec() >= IDLE_SAVE_TIME_SEC || save_timer.elapsed_sec() >= IDLE_SAVE_TIME_SEC)
         {
-            // Make sure state is saved in case device auto-powers down. Don't seem
-            // to get a signal on miyoo mini when this happens.
+            // Make sure state is saved in case device auto-powers down, or the
+            // battery runs out while reading. Don't seem to get a signal on
+            // miyoo mini when this happens.
             state_store.flush();
             library_log().flush();
+            reading_speed::flush();
+            reading_stats::flush();
             idle_timer.reset();
+            save_timer.reset();
+        }
+
+        const int auto_exit = token_view_styling.get_auto_exit_minutes();
+        if (auto_exit > 0 && quiet_timer.elapsed_sec() >= static_cast<uint32_t>(auto_exit) * 60u)
+        {
+            quit = true; // the normal exit below saves everything
         }
     }
 
@@ -540,6 +580,7 @@ int main(int argc, char **argv)
     state_store.flush();
     reading_speed::flush();
     library_log().flush();
+    reading_stats::flush();
 
     SDL_FreeSurface(screen);
     SDL_Quit();

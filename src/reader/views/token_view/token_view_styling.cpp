@@ -17,6 +17,8 @@ struct TokenViewStylingState
     int margin_level = DEFAULT_MARGIN_LEVEL;
     int spacing_level = DEFAULT_SPACING_LEVEL;
     bool justify = false;
+    bool hyphenate = false;
+    int auto_exit_minutes = 0;
 
     uint32_t next_subscriber_id = 1;
     std::unordered_map<uint32_t, std::function<void()>> subscribers;
@@ -181,6 +183,35 @@ void TokenViewStyling::set_justify(bool justify)
     if (state->justify != justify)
     {
         state->justify = justify;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_hyphenate() const
+{
+    return state->hyphenate;
+}
+
+void TokenViewStyling::set_hyphenate(bool hyphenate)
+{
+    if (state->hyphenate != hyphenate)
+    {
+        state->hyphenate = hyphenate;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_auto_exit_minutes() const
+{
+    return state->auto_exit_minutes;
+}
+
+void TokenViewStyling::set_auto_exit_minutes(int minutes)
+{
+    minutes = std::max(0, minutes);
+    if (state->auto_exit_minutes != minutes)
+    {
+        state->auto_exit_minutes = minutes;
         notify_subscribers();
     }
 }

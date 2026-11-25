@@ -5,6 +5,7 @@
 
 #include "doc_api/doc_reader.h"
 #include "reader/highlights.h"
+#include "reader/hyphenation.h"
 #include "reader/layout_options.h"
 #include "reader/page_index.h"
 #include "reader/reading_mode.h"
@@ -55,6 +56,9 @@ struct TokenViewState
     TTF_Font *current_font = nullptr;
 
     const int line_padding = 4;
+    Hyphenator hyphenator;
+    std::string hyphenation_language = "english";
+    bool hyphenating = false; // whether the scroller currently splits words
     int side_margin;    // pixels left empty at each side of the text
     int spacing_extra;  // pixels added to every line on top of the font's own
     int line_height;
@@ -241,11 +245,45 @@ struct TokenViewState
     {
     }
 
-    // Margin or line spacing changed: lay the text out again.
+    // Whether words are split now: the setting is on and the language has patterns.
+    bool want_hyphenation()
+    {
+        return token_view_styling.get_hyphenate() && hyphenator.ready();
+    }
+
+    // Load the patterns of the book language and wrap again if they are in use.
+    void set_hyphenation_language(const std::string &language)
+    {
+        const bool was = hyphenating;
+        hyphenation_language = language;
+        hyphenator.load(language);
+        hyphenating = want_hyphenation();
+        line_scroller.set_hyphenator(hyphenating ? &hyphenator : nullptr);
+        if (was || hyphenating)
+        {
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+    }
+
+    // Margin, line spacing or hyphenation changed: lay the text out again.
     void apply_layout_options()
     {
         const int margin = margin_pixels(token_view_styling.get_margin_level());
         const int spacing = spacing_pixels(token_view_styling.get_spacing_level());
+        if (token_view_styling.get_hyphenate() && !hyphenator.ready())
+        {
+            hyphenator.load(hyphenation_language);
+        }
+        const bool hyphenate_now = want_hyphenation();
+        const bool hyphenation_changed = hyphenate_now != hyphenating;
+        if (hyphenation_changed)
+        {
+            hyphenating = hyphenate_now;
+            line_scroller.set_hyphenator(hyphenating ? &hyphenator : nullptr);
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
         if (margin == side_margin && spacing == spacing_extra)
         {
             return;
@@ -473,6 +511,7 @@ static void layout_visible_words(TokenViewState &state)
                 visual.layout = layout;
                 for (LayoutWord &word : visual.layout.words)
                 {
+                    word.hyphen_end = text_line->hyphenated && &word == &visual.layout.words.back();
                     word.x += origin;
                     word.line_index = i;
                     state.seen_words.emplace(word.begin, word.text);
@@ -485,7 +524,7 @@ static void layout_visible_words(TokenViewState &state)
     }
 }
 
-static void draw_text_line(
+static void draw_text_line_body(
     TokenViewState &state,
     SDL_Surface *dest_surface,
     const TextLine *text_line,
@@ -514,7 +553,7 @@ static void draw_text_line(
         DocAddr range_begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
         DocAddr range_end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
         bool selected = state.selecting && state.has_selection && word.begin >= range_begin && word.begin < range_end;
-        bool marked = highlights_cover(state.highlights, word.begin);
+        bool marked = highlights_cover_style(state.highlights, word.begin, HighlightStyle::Marker);
         if (!selected && !marked)
         {
             continue;
@@ -563,7 +602,7 @@ static void draw_text_line(
             {
                 return theme.highlight_background;
             }
-            if (highlights_cover(state.highlights, word.begin))
+            if (highlights_cover_style(state.highlights, word.begin, HighlightStyle::Marker))
             {
                 bg = marker;
             }
@@ -681,6 +720,52 @@ static void draw_text_line(
         };
         SDL_BlitSurface(surface, nullptr, dest_surface, &dest);
         SDL_FreeSurface(surface);
+    }
+}
+
+// The text, then a line under or through the words of underlined and struck highlights.
+static void draw_text_line(
+    TokenViewState &state,
+    SDL_Surface *dest_surface,
+    const TextLine *text_line,
+    int line_index,
+    int slot,
+    const ColorTheme &theme
+)
+{
+    draw_text_line_body(state, dest_surface, text_line, line_index, slot, theme);
+    if (line_index < 0 || line_index >= static_cast<int>(state.visible.size()) || state.highlights.empty())
+    {
+        return;
+    }
+    const TokenViewState::VisibleText &visual = state.visible[line_index];
+    if (!visual.present)
+    {
+        return;
+    }
+    const Uint32 ink = SDL_MapRGB(dest_surface->format, theme.main_text.r, theme.main_text.g, theme.main_text.b);
+    for (const LayoutWord &word : visual.layout.words)
+    {
+        int y = -1;
+        if (highlights_cover_style(state.highlights, word.begin, HighlightStyle::Underline))
+        {
+            y = visual.text_y + visual.text_h - 2;
+        }
+        else if (highlights_cover_style(state.highlights, word.begin, HighlightStyle::Strikeout))
+        {
+            y = visual.text_y + visual.text_h / 2;
+        }
+        if (y < 0)
+        {
+            continue;
+        }
+        SDL_Rect rect = {
+            static_cast<Sint16>(word.x),
+            static_cast<Sint16>(y),
+            static_cast<Uint16>(std::max(1, word.w)),
+            2
+        };
+        SDL_FillRect(dest_surface, &rect, ink);
     }
 }
 
@@ -1233,6 +1318,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key += std::to_string(state.sys_styling.get_font_size());
     key.push_back('\n');
     key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
+    key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
     key.push_back('\n');
     if (!chapter)
     {
@@ -1512,6 +1598,16 @@ bool TokenView::go_to_page(bool chapter, uint32_t page)
     return true;
 }
 
+void TokenView::set_hyphenation_language(const std::string &language)
+{
+    state->set_hyphenation_language(language);
+}
+
+void TokenView::invalidate()
+{
+    state->needs_render = true;
+}
+
 void TokenView::set_on_scroll(std::function<void(DocAddr)> callback)
 {
     state->on_scroll = callback;
@@ -1584,7 +1680,25 @@ std::string TokenView::selected_lookup() const
     {
         return "";
     }
-    return state->page_words[index].lookup;
+    const LayoutWord &word = state->page_words[index];
+    // A word split over two lines is looked up whole.
+    const auto join = [](const std::string &front, const std::string &back) {
+        std::string head = front;
+        if (!head.empty() && head.back() == '-')
+        {
+            head.pop_back();
+        }
+        return head + back;
+    };
+    if (word.hyphen_end && index + 1 < static_cast<int>(state->page_words.size()))
+    {
+        return join(word.lookup, state->page_words[index + 1].lookup);
+    }
+    if (index > 0 && state->page_words[index - 1].hyphen_end)
+    {
+        return join(state->page_words[index - 1].lookup, word.lookup);
+    }
+    return word.lookup;
 }
 
 std::shared_ptr<const std::string> TokenView::selected_link() const
@@ -1603,14 +1717,14 @@ bool TokenView::selected_is_highlighted() const
     return highlight_covers_range(state->highlights, bounds.first, bounds.second);
 }
 
-void TokenView::toggle_selected_highlight()
+void TokenView::toggle_selected_highlight(HighlightStyle style)
 {
     auto bounds = selection_bounds(*state);
     if (bounds.second <= bounds.first)
     {
         return;
     }
-    toggle_highlight(state->highlights, bounds.first, bounds.second, selected_text());
+    toggle_highlight(state->highlights, bounds.first, bounds.second, selected_text(), style);
     state->remember_highlights();
     state->needs_render = true;
 }

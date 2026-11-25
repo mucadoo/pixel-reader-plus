@@ -28,6 +28,7 @@ class SelectionMenu: public View
     menu_draw::Marquee marquee;
     bool close_on_select = false;
     bool compact = false;
+    bool x_is_used = false;
 
     SystemStyling &styling;
     const uint32_t styling_sub_id;
@@ -60,6 +61,9 @@ public:
     // Define fallback keypress handler
     void set_default_on_keypress(std::function<void(SDLKey, SelectionMenu &)> callback);
     void set_close_on_select();
+    // The menu uses the X button itself, for example to delete a row.
+    void set_uses_x(bool uses) { x_is_used = uses; }
+    bool consumes_x() const override { return x_is_used; }
     void set_title(std::string title);
     // A short menu drawn over the screen behind it.
     void set_compact(bool compact);

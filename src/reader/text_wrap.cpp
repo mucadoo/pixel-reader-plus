@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -72,6 +73,83 @@ const char *find_last_character(const char *start_pos, str_filter_func &fits_on_
 
 } // namespace
 
+void wrap_lines_hyphenated(
+    const char *str,
+    std::function<bool(const char *, uint32_t)> fits_on_line,
+    std::function<bool(const char *, uint32_t)> fits_with_hyphen,
+    HyphenPointsFn hyphen_points,
+    std::function<void(const char *, uint32_t, bool)> on_next_line,
+    uint32_t max_line_search_chars
+)
+{
+    uint32_t n = strlen(str);
+    if (n == 0)
+    {
+        on_next_line(str, 0, false);
+        return;
+    }
+
+    // The largest split of the word at word_start that leaves a first piece, with
+    // the text before it on the line, that fits along with a hyphen.
+    auto split_word = [&](const char *line_start, const char *word_start) -> const char * {
+        if (!hyphen_points || !fits_with_hyphen)
+        {
+            return nullptr;
+        }
+        const char *word_end = find_first_break(word_start, static_cast<int>(max_line_search_chars));
+        if (!word_end || word_end <= word_start)
+        {
+            return nullptr;
+        }
+        const std::vector<uint32_t> points = hyphen_points(word_start, static_cast<uint32_t>(word_end - word_start));
+        for (auto it = points.rbegin(); it != points.rend(); ++it)
+        {
+            const char *at = word_start + *it;
+            if (at > line_start && at < word_end && fits_with_hyphen(line_start, static_cast<uint32_t>(at - line_start)))
+            {
+                return at;
+            }
+        }
+        return nullptr;
+    };
+
+    const char *cur_pos = str;
+    const char *string_end_pos = cur_pos + n;
+    while (cur_pos < string_end_pos)
+    {
+        const char *break_pos = find_last_whitespace(cur_pos, fits_on_line, max_line_search_chars);
+        if (break_pos && (*break_pos == 0 || *break_pos == '\n'))
+        {
+            on_next_line(cur_pos, static_cast<uint32_t>(break_pos - cur_pos), false);
+            cur_pos = break_pos + 1;
+            continue;
+        }
+
+        // The next word did not fit. Maybe the front of it does.
+        const char *next_word = break_pos ? break_pos + 1 : cur_pos;
+        if (const char *split = split_word(cur_pos, next_word))
+        {
+            on_next_line(cur_pos, static_cast<uint32_t>(split - cur_pos), true);
+            cur_pos = split;
+            continue;
+        }
+
+        if (break_pos)
+        {
+            on_next_line(cur_pos, static_cast<uint32_t>(break_pos - cur_pos), false);
+            cur_pos = break_pos + 1;
+        }
+        else if ((break_pos = find_last_character(cur_pos, fits_on_line, max_line_search_chars)))
+        {
+            on_next_line(cur_pos, static_cast<uint32_t>(break_pos - cur_pos), false);
+            cur_pos = break_pos;
+        }
+        else
+        {
+            throw std::runtime_error("Failed to wrap line");
+        }
+    }
+}
 void wrap_lines(
     const char *str,
     std::function<bool(const char *, uint32_t)> fits_on_line,

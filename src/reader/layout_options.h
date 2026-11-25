@@ -1,6 +1,8 @@
 #ifndef LAYOUT_OPTIONS_H_
 #define LAYOUT_OPTIONS_H_
 
+#include <string>
+
 // The steps of the margin and line spacing settings. Level 0 is the first listed.
 
 constexpr int LAYOUT_LEVEL_COUNT = 4;
@@ -29,6 +31,32 @@ inline const char *spacing_label(int level)
 {
     static const char *labels[LAYOUT_LEVEL_COUNT] = {"Tight", "Normal", "Relaxed", "Loose"};
     return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+// Minutes of no key presses before the reader saves and quits. 0 is never.
+constexpr int AUTO_EXIT_STEP_COUNT = 6;
+
+inline int auto_exit_minutes_for_step(int step)
+{
+    static const int values[AUTO_EXIT_STEP_COUNT] = {0, 5, 10, 15, 30, 60};
+    return values[step < 0 ? 0 : (step >= AUTO_EXIT_STEP_COUNT ? AUTO_EXIT_STEP_COUNT - 1 : step)];
+}
+
+inline int auto_exit_step_for_minutes(int minutes)
+{
+    for (int step = 0; step < AUTO_EXIT_STEP_COUNT; ++step)
+    {
+        if (auto_exit_minutes_for_step(step) == minutes)
+        {
+            return step;
+        }
+    }
+    return 0;
+}
+
+inline std::string auto_exit_label(int minutes)
+{
+    return minutes <= 0 ? std::string("Off") : std::to_string(minutes) + " min";
 }
 
 constexpr int DEFAULT_MARGIN_LEVEL = 0;

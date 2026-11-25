@@ -49,6 +49,14 @@ public:
     bool get_justify() const;
     void set_justify(bool justify);
 
+    // Break long words at the end of a line
+    bool get_hyphenate() const;
+    void set_hyphenate(bool hyphenate);
+
+    // Minutes without a key press after which the reader saves and quits. 0 is never.
+    int get_auto_exit_minutes() const;
+    void set_auto_exit_minutes(int minutes);
+
     // Subscribe to any changes
     uint32_t subscribe_to_changes(std::function<void()> callback);
     void unsubscribe_from_changes(uint32_t sub_id);

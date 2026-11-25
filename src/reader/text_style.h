@@ -12,6 +12,10 @@
 
 int style_flags(bool bold, bool italic);
 
+// Lowercase for dictionary lookup and search: ASCII, and the accented capitals of
+// the Latin-1 block. The text keeps its length.
+std::string lookup_lowercase(const std::string &word);
+
 using RunFontFn = std::function<TTF_Font *(int style, float scale)>;
 
 // Width of text[offset, offset+len), applying bold, italic, and size runs.
@@ -55,6 +59,8 @@ struct LayoutWord
     int x = 0;
     int w = 0;
     int line_index = 0;
+    // The last word of a line that was split with a hyphen.
+    bool hyphen_end = false;
     // Where the word links to, when it is part of a link.
     std::shared_ptr<const std::string> link;
 };

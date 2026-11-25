@@ -1,6 +1,7 @@
 #include "./token_line_scroller.h"
 
 #include "doc_api/token_addressing.h"
+#include "reader/hyphenation.h"
 #include "reader/text_style.h"
 #include "reader/text_wrap.h"
 #include "sys/screen.h"
@@ -193,9 +194,11 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
 
         DocAddr address = token.address;
         std::vector<std::unique_ptr<DisplayLine>> lines;
-        wrap_lines(full, fits, [&](const char *str, uint32_t len) {
+        auto on_line = [&](const char *str, uint32_t len, bool hyphenated) {
             std::string line_text(str, len);
-            auto line = std::make_unique<TextLine>(address, line_text, centered);
+            // The hyphen is drawn but is not part of the book text, so it takes no address.
+            auto line = std::make_unique<TextLine>(address, hyphenated ? line_text + "-" : line_text, centered);
+            line->hyphenated = hyphenated;
             line->header_level = header_level;
             line->font_scale = scale;
             line->bold = base_bold;
@@ -232,7 +235,36 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             {
                 address -= extra_text_width;
             }
-        });
+        };
+        if (hyphenator && hyphenator->ready() && style_font && !pre && header_level == 0 && !centered)
+        {
+            const int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0);
+            const int hyphen_w = measure_styled("-", 0, 1, {}, base_bold, base_italic, scale, font_for);
+            wrap_lines_hyphenated(
+                full,
+                fits,
+                [&](const char *s, uint32_t len) {
+                    return measure_styled(
+                               full,
+                               static_cast<uint32_t>(s - full),
+                               len,
+                               shifted_spans,
+                               base_bold,
+                               base_italic,
+                               scale,
+                               font_for
+                           ) + hyphen_w <= avail;
+                },
+                [this](const char *word, uint32_t len) {
+                    return hyphenator->points(std::string(word, len));
+                },
+                on_line
+            );
+        }
+        else
+        {
+            wrap_lines(full, fits, [&](const char *str, uint32_t len) { on_line(str, len, false); });
+        }
 
         for (auto it = lines.rbegin(); it != lines.rend(); ++it)
         {
@@ -423,6 +455,11 @@ void TokenLineScroller::reset_buffer()
 void TokenLineScroller::set_line_height_pixels(uint32_t new_height)
 {
     line_height_pixels = new_height;
+}
+
+void TokenLineScroller::set_hyphenator(const Hyphenator *new_hyphenator)
+{
+    hyphenator = new_hyphenator;
 }
 
 void TokenLineScroller::set_side_margin(int pixels)

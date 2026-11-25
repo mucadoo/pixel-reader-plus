@@ -162,6 +162,58 @@ void settings_set_reading_speed(StateStore &state_store, double speed)
     state_store.set_setting("reading_speed", std::to_string(speed));
 }
 
+std::optional<bool> settings_get_hide_finished(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("hide_finished");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "1";
+}
+
+void settings_set_hide_finished(StateStore &state_store, bool hide)
+{
+    state_store.set_setting("hide_finished", hide ? "1" : "0");
+}
+
+std::optional<int> settings_get_auto_exit_minutes(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("auto_exit_minutes");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return std::stoi(*opt);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+void settings_set_auto_exit_minutes(StateStore &state_store, int minutes)
+{
+    state_store.set_setting("auto_exit_minutes", std::to_string(minutes));
+}
+
+std::optional<bool> settings_get_hyphenate(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("hyphenate");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "1";
+}
+
+void settings_set_hyphenate(StateStore &state_store, bool hyphenate)
+{
+    state_store.set_setting("hyphenate", hyphenate ? "1" : "0");
+}
+
 std::optional<bool> settings_get_browser_grid(const StateStore &state_store)
 {
     const auto &opt = state_store.get_setting(SETTINGS_BROWSER_VIEW);

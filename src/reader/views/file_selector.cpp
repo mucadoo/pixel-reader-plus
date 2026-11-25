@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <vector>
 
 struct FSState
@@ -31,6 +32,12 @@ struct FSState
     std::function<void(BrowserSort)> on_sort_change;
     BrowserSort sort = BrowserSort::Name;
     std::string continue_name; // name of the Continue reading row, empty when there is none
+    size_t pinned_count = 0; // rows after the way up that are not part of the folder: Continue and favorites
+    std::map<std::string, std::string> pinned_prefix; // name of a pinned row to the text put in front of it
+    bool hide_finished = false;
+    SystemStyling &styling;
+    std::function<void(std::shared_ptr<View>)> on_open_view;
+    std::function<void(bool)> on_hide_finished_change;
 
     SelectionMenu menu;
     std::unique_ptr<BookCovers> covers;
@@ -41,6 +48,7 @@ struct FSState
 
     FSState(std::filesystem::path path, SystemStyling &styling)
         : path(path),
+          styling(styling),
           menu(styling),
           grid(styling)
     {
@@ -131,7 +139,7 @@ void focus_first_item(FSState *s)
 
 std::vector<std::string> hints_for(const FSState *s, bool way_up)
 {
-    std::vector<std::string> hints = {"A  Open", "Y  Info", s->grid_mode ? "Select  List" : "Select  Grid", "Start  Sort"};
+    std::vector<std::string> hints = {"A  Open", "Y  Options", s->grid_mode ? "Select  List" : "Select  Grid", "Start  Sort"};
     if (way_up)
     {
         hints.push_back("B  Back");
@@ -161,9 +169,12 @@ std::string lowercase(std::string text)
 // row and the folders stay where they are.
 void apply_sort(FSState *s)
 {
-    auto first = std::find_if(s->path_entries.begin(), s->path_entries.end(), [s](const FSEntry &entry) {
-        return entry.name != ".." && entry.name != s->continue_name;
-    });
+    auto first = s->path_entries.begin();
+    if (first != s->path_entries.end() && first->name == "..")
+    {
+        ++first;
+    }
+    first += static_cast<std::ptrdiff_t>(std::min<size_t>(s->pinned_count, static_cast<size_t>(s->path_entries.end() - first)));
     auto books = std::find_if(first, s->path_entries.end(), [](const FSEntry &entry) {
         return !entry.is_dir;
     });
@@ -217,20 +228,49 @@ void refresh_path_entries(FSState *s)
         s->path_entries.push_back(FSEntry::directory(".."));
     }
 
-    // The book read last, one press away from any folder it is not in.
+    // The book read last, and the favorites, one press away from any folder
+    // they are not in.
+    s->pinned_count = 0;
+    s->pinned_prefix.clear();
+    const auto pin = [s](const std::filesystem::path &book, const std::string &prefix) {
+        if (book.parent_path() == s->path || !file_type_is_supported(book.filename().string()))
+        {
+            return;
+        }
+        if (s->pinned_prefix.count(book.string()))
+        {
+            return;
+        }
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(book, ec);
+        s->pinned_prefix[book.string()] = prefix;
+        s->path_entries.push_back({book.string(), false, ec ? 0ull : static_cast<unsigned long long>(size)});
+        ++s->pinned_count;
+    };
     if (const auto recent = library_log().most_recent())
     {
-        if (recent->parent_path() != s->path && file_type_is_supported(recent->filename().string()))
+        const LibraryLog::Entry *log = library_log().get(*recent);
+        if (!(s->hide_finished && log && log->finished()))
         {
-            std::error_code ec;
-            const auto size = std::filesystem::file_size(*recent, ec);
-            s->continue_name = recent->string();
-            s->path_entries.push_back({s->continue_name, false, ec ? 0ull : static_cast<unsigned long long>(size)});
+            pin(*recent, "Continue: ");
+            if (s->pinned_prefix.count(recent->string()))
+            {
+                s->continue_name = recent->string();
+            }
         }
     }
-
+    for (const auto &favorite : library_log().favorites())
+    {
+        pin(favorite, "* ");
+    }
     for (const auto &entry : directory_listing(s->path)) {
-        if (entry.is_dir || file_type_is_supported(entry.name)) {
+        if (entry.is_dir) {
+            s->path_entries.push_back(entry);
+        } else if (file_type_is_supported(entry.name)) {
+            const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
+            if (s->hide_finished && log && log->finished() && !log->favorite) {
+                continue;
+            }
             s->path_entries.push_back(entry);
         }
     }
@@ -282,22 +322,28 @@ void rebuild_views(FSState *s)
         }
         else
         {
-            const std::string prefix = entry.name == s->continue_name ? "Continue: " : "";
+            const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
+            const auto pinned = s->pinned_prefix.find(entry.name);
+            std::string prefix = pinned != s->pinned_prefix.end() ? pinned->second : std::string();
+            if (prefix.empty() && log && log->favorite)
+            {
+                prefix = "* ";
+            }
             const std::string title = entry_title(s, entry);
             const BookInfo *info = s->info ? s->info->get(s->path / entry.name) : nullptr;
             menu_entries.push_back(prefix + (info && !info->author.empty() ? title + " - " + info->author : title));
             std::string kind = book_kind(entry.name);
             std::string detail = kind.empty() ? format_size(entry.size) : kind + ", " + format_size(entry.size);
-            const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
             if (log)
             {
-                detail = (log->percent >= 99 ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
+                detail = (log->finished() ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
             }
             menu_details.push_back(detail);
             item.kind = BookGrid::Item::Kind::Book;
             item.label = prefix + title;
             item.tag = kind;
-            item.progress = log ? log->percent : -1;
+            item.progress = log ? (log->finished() ? 100 : log->percent) : -1;
+            item.finished = log && log->finished();
         }
         grid_items.push_back(item);
     }
@@ -410,6 +456,99 @@ std::string properties_text(const FSState *s, const FSEntry &entry)
     }
     body += "Location\n" + s->path.string();
     return body;
+}
+
+void show_info(FSState *s);
+
+// Read the folder again, with the cursor staying on the same entry when it is still listed.
+void refresh_keeping_cursor(FSState *s)
+{
+    const uint32_t keep = s->cursor;
+    const std::string name = keep < s->path_entries.size() ? s->path_entries[keep].name : std::string();
+    refresh_path_entries(s);
+    if (s->path_entries.empty())
+    {
+        return;
+    }
+    if (name.empty() || !focus_entry(s, name))
+    {
+        sync_cursor(s, std::min<uint32_t>(keep, static_cast<uint32_t>(s->path_entries.size()) - 1));
+    }
+}
+
+// The Y menu: properties, and for a book its favorite and finished marks, plus
+// whether finished books are listed at all.
+void open_options(FSState *s)
+{
+    if (!s->on_open_view || s->path_entries.empty() || s->cursor >= s->path_entries.size())
+    {
+        show_info(s);
+        return;
+    }
+    const FSEntry entry = s->path_entries[s->cursor];
+    if (entry.is_dir && entry.name == "..")
+    {
+        return;
+    }
+    const std::filesystem::path book = s->path / entry.name;
+    const LibraryLog::Entry *log = library_log().get(book);
+
+    enum class Act { Properties, Favorite, Finished, HideFinished };
+    std::vector<Act> acts = {Act::Properties};
+    std::vector<std::string> names = {"Properties"};
+    if (!entry.is_dir)
+    {
+        acts.push_back(Act::Favorite);
+        names.push_back(log && log->favorite ? "Remove from favorites" : "Add to favorites");
+        acts.push_back(Act::Finished);
+        names.push_back(log && log->finished() ? "Mark as not finished" : "Mark as finished");
+    }
+    acts.push_back(Act::HideFinished);
+    names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
+
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title(entry.is_dir ? folder_title(book) : entry_title(s, entry));
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, acts, book](uint32_t index) {
+        if (index >= acts.size())
+        {
+            return;
+        }
+        const LibraryLog::Entry *now = library_log().get(book);
+        switch (acts[index])
+        {
+            case Act::Properties:
+                show_info(s);
+                break;
+            case Act::Favorite:
+                library_log().set_favorite(book, !(now && now->favorite));
+                library_log().flush();
+                refresh_keeping_cursor(s);
+                break;
+            case Act::Finished:
+                if (now && now->finished())
+                {
+                    library_log().set_status(book, now->percent >= 99 ? LibraryLog::Status::Reading : LibraryLog::Status::Auto);
+                }
+                else
+                {
+                    library_log().set_status(book, LibraryLog::Status::Finished);
+                }
+                library_log().flush();
+                refresh_keeping_cursor(s);
+                break;
+            case Act::HideFinished:
+                s->hide_finished = !s->hide_finished;
+                if (s->on_hide_finished_change)
+                {
+                    s->on_hide_finished_change(s->hide_finished);
+                }
+                refresh_keeping_cursor(s);
+                break;
+        }
+    });
+    s->on_open_view(menu);
 }
 
 void show_info(FSState *s)
@@ -594,7 +733,7 @@ void FileSelector::on_keypress(SDLKey key)
     }
     if (key == SW_BTN_Y)
     {
-        show_info(state.get());
+        open_options(state.get());
         return;
     }
     if (key == SW_BTN_SELECT)
@@ -673,6 +812,23 @@ bool FileSelector::grid_view() const
 void FileSelector::set_on_view_mode_change(std::function<void(bool)> callback)
 {
     state->on_view_mode_change = callback;
+}
+
+void FileSelector::set_on_open_view(std::function<void(std::shared_ptr<View>)> callback)
+{
+    state->on_open_view = callback;
+}
+
+void FileSelector::set_hide_finished(bool hide)
+{
+    state->hide_finished = hide;
+    refresh_path_entries(state.get());
+    focus_first_item(state.get());
+}
+
+void FileSelector::set_on_hide_finished_change(std::function<void(bool)> callback)
+{
+    state->on_hide_finished_change = callback;
 }
 
 void FileSelector::set_on_info(std::function<void(const std::string &, const std::string &)> callback)

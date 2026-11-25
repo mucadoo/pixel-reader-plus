@@ -57,6 +57,18 @@ void settings_set_font_name(StateStore &state_store, const std::string &font_nam
 std::optional<bool> settings_get_browser_grid(const StateStore &state_store);
 void settings_set_browser_grid(StateStore &state_store, bool grid);
 
+// Minutes without a key press after which the reader saves and quits. 0 is never.
+std::optional<int> settings_get_auto_exit_minutes(const StateStore &state_store);
+void settings_set_auto_exit_minutes(StateStore &state_store, int minutes);
+
+// Hyphenation of words at the end of a line
+std::optional<bool> settings_get_hyphenate(const StateStore &state_store);
+void settings_set_hyphenate(StateStore &state_store, bool hyphenate);
+
+// Whether finished books are left out of the book list
+std::optional<bool> settings_get_hide_finished(const StateStore &state_store);
+void settings_set_hide_finished(StateStore &state_store, bool hide);
+
 // How the book list is ordered
 std::optional<BrowserSort> settings_get_browser_sort(const StateStore &state_store);
 void settings_set_browser_sort(StateStore &state_store, BrowserSort sort);

@@ -156,6 +156,8 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Margins", margin_label(token_view_styling.get_margin_level()), true, sys_font},
         {"Line spacing", spacing_label(token_view_styling.get_spacing_level()), true, sys_font},
         {"Justify", token_view_styling.get_justify() ? "On" : "Off", true, sys_font},
+        {"Hyphenate", token_view_styling.get_hyphenate() ? "On" : "Off", true, sys_font},
+        {"Auto exit", auto_exit_label(token_view_styling.get_auto_exit_minutes()), true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -464,6 +466,17 @@ void SettingsView::on_keypress(SDLKey key)
                 else if (line_selected == ROW_JUSTIFY)
                 {
                     token_view_styling.set_justify(!token_view_styling.get_justify());
+                }
+                else if (line_selected == ROW_HYPHEN)
+                {
+                    token_view_styling.set_hyphenate(!token_view_styling.get_hyphenate());
+                }
+                else if (line_selected == ROW_AUTO_EXIT)
+                {
+                    const int step = auto_exit_step_for_minutes(token_view_styling.get_auto_exit_minutes());
+                    token_view_styling.set_auto_exit_minutes(
+                        auto_exit_minutes_for_step((step + AUTO_EXIT_STEP_COUNT + dir) % AUTO_EXIT_STEP_COUNT)
+                    );
                 }
                 needs_render = true;
             }

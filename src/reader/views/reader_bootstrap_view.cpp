@@ -5,6 +5,7 @@
 #include "doc_api/open_progress.h"
 #include "filetypes/open_doc.h"
 #include "reader/progress_screen.h"
+#include "reader/book_layout.h"
 #include "reader/config.h"
 #include "reader/library_log.h"
 #include "reader/ss_doc_reader_cache.h"
@@ -75,6 +76,7 @@ void ReaderBootstrapView::load_reader()
     const DocAddr resume_address = state_store.get_book_address(book_id).value_or(0);
     library_log().touch(book_path, static_cast<long long>(std::time(nullptr)));
     library_log().set_percent(book_path, static_cast<int>(reader->get_global_progress_percent(resume_address)));
+    book_layout::open(state_store.book_data_dir() / (book_id + ".layout"));
     auto reader_view = std::make_shared<ReaderView>(
         book_path,
         reader,

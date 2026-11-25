@@ -30,7 +30,15 @@ std::vector<Highlight> load_highlights(const std::filesystem::path &path)
         {
             text.erase(0, 1);
         }
-        highlights.emplace_back(begin, end, text);
+        // An optional {u} or {s} in front of the text names the style.
+        HighlightStyle style = HighlightStyle::Marker;
+        if (text.size() >= 3 && text[0] == '{' && text[2] == '}' && (text[1] == 'u' || text[1] == 's')
+            && (text.size() == 3 || text[3] == ' '))
+        {
+            style = text[1] == 'u' ? HighlightStyle::Underline : HighlightStyle::Strikeout;
+            text.erase(0, text.size() == 3 ? 3 : 4);
+        }
+        highlights.emplace_back(begin, end, text, style);
     }
     return highlights;
 }
@@ -41,6 +49,14 @@ void save_highlights(const std::filesystem::path &path, const std::vector<Highli
     for (const Highlight &highlight : highlights)
     {
         out << highlight.first << ' ' << highlight.second;
+        if (highlight.style == HighlightStyle::Underline)
+        {
+            out << " {u}";
+        }
+        else if (highlight.style == HighlightStyle::Strikeout)
+        {
+            out << " {s}";
+        }
         if (!highlight.text.empty())
         {
             out << ' ' << highlight.text;
@@ -54,6 +70,18 @@ bool highlights_cover(const std::vector<Highlight> &highlights, DocAddr begin)
     for (const Highlight &highlight : highlights)
     {
         if (begin >= highlight.first && begin < highlight.second)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool highlights_cover_style(const std::vector<Highlight> &highlights, DocAddr begin, HighlightStyle style)
+{
+    for (const Highlight &highlight : highlights)
+    {
+        if (highlight.style == style && begin >= highlight.first && begin < highlight.second)
         {
             return true;
         }
@@ -77,7 +105,7 @@ bool highlight_covers_range(const std::vector<Highlight> &highlights, DocAddr be
     return false;
 }
 
-void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr end, const std::string &text)
+void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr end, const std::string &text, HighlightStyle style)
 {
     if (end <= begin)
     {
@@ -97,5 +125,5 @@ void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr
         );
         return;
     }
-    highlights.emplace_back(begin, end, text);
+    highlights.emplace_back(begin, end, text, style);
 }

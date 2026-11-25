@@ -134,6 +134,8 @@ int measure_plain(TTF_Font *font, const char *s, uint32_t len)
     return w;
 }
 
+} // namespace
+
 // Lowercase for dictionary lookup: ASCII, and the accented capitals of the
 // Latin-1 block (such as the E in Ecole) that French and Portuguese use.
 std::string lookup_lowercase(const std::string &word)
@@ -160,6 +162,9 @@ std::string lookup_lowercase(const std::string &word)
     }
     return lower;
 }
+
+namespace
+{
 
 std::string lookup_key(const std::string &word)
 {

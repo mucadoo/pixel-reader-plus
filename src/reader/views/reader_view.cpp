@@ -7,6 +7,7 @@
 #include "./menu_draw.h"
 #include "reader/progress_screen.h"
 #include "reader/book_info.h"
+#include "reader/book_layout.h"
 #include "reader/bookmarks.h"
 #include "reader/controls_guide.h"
 #include "./token_view/token_view.h"
@@ -15,6 +16,9 @@
 #include "reader/dictionary.h"
 #include "reader/library_log.h"
 #include "reader/reading_speed.h"
+#include "reader/book_search.h"
+#include "reader/reading_stats.h"
+#include "reader/vocabulary.h"
 #include "reader/reading_mode.h"
 #include "reader/system_styling.h"
 #include "reader/work_pump.h"
@@ -210,6 +214,7 @@ void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
     menu->set_title("Bookmarks");
     menu->set_empty_message("No bookmarks yet\nChoose Add bookmark in the book menu");
     menu->set_hints({"A  Go", "X  Delete", "B  Close"});
+    menu->set_uses_x(true);
     menu->set_close_on_select();
     menu->set_on_selection([&reader_view, &state](uint32_t index) {
         if (index < state.bookmarks.size())
@@ -271,6 +276,7 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
     menu->set_title("Highlights");
     menu->set_empty_message("No highlights yet\nPress Y, pick words, then A");
     menu->set_hints({"A  Go", "X  Delete", "B  Close"});
+    menu->set_uses_x(true);
     menu->set_close_on_select();
     menu->set_on_selection([&reader_view, &state, order](uint32_t index) {
         if (index < order->size())
@@ -293,6 +299,88 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
         m.set_cursor_pos(std::min<uint32_t>(index, order->empty() ? 0 : static_cast<uint32_t>(order->size()) - 1));
     });
     state.view_stack.push(menu);
+}
+
+void open_word_list(ReaderViewState &state)
+{
+    auto menu = std::make_shared<SelectionMenu>(state.sys_styling);
+    auto fill = [](SelectionMenu &m) {
+        std::vector<std::string> names;
+        std::vector<std::string> details;
+        for (const vocabulary::Entry &entry : vocabulary::entries())
+        {
+            names.push_back(entry.word);
+            details.push_back(entry.book);
+        }
+        m.set_entries(names);
+        m.set_details(details);
+    };
+    fill(*menu);
+    menu->set_title("Word list");
+    menu->set_empty_message("No words yet\nLook a word up and it is kept here");
+    menu->set_hints({"A  Meaning", "X  Delete", "B  Close"});
+    menu->set_uses_x(true);
+    menu->set_on_selection([&state](uint32_t index) {
+        const auto &list = vocabulary::entries();
+        if (index < list.size())
+        {
+            state.view_stack.push(std::make_shared<DefinitionView>(
+                list[index].word,
+                list[index].gloss + (list[index].book.empty() ? std::string() : "\n\nFrom: " + list[index].book),
+                state.sys_styling
+            ));
+        }
+    });
+    menu->set_default_on_keypress([fill](SDLKey key, SelectionMenu &m) {
+        if (key != SW_BTN_X)
+        {
+            return;
+        }
+        const uint32_t index = m.get_cursor_pos();
+        if (index >= vocabulary::entries().size())
+        {
+            return;
+        }
+        vocabulary::remove(index);
+        fill(m);
+        const size_t left = vocabulary::entries().size();
+        m.set_cursor_pos(std::min<uint32_t>(index, left == 0 ? 0 : static_cast<uint32_t>(left) - 1));
+    });
+    state.view_stack.push(menu);
+}
+
+// Writes the word list next to the book as a text file.
+void export_word_list(ReaderViewState &state)
+{
+    const auto &list = vocabulary::entries();
+    if (list.empty())
+    {
+        show_message(state, "No words to export");
+        return;
+    }
+    const std::filesystem::path out_path = state.book_path.parent_path() / "Word list.txt";
+    std::ofstream out(out_path, std::ios::trunc);
+    out << "Word list\n\n";
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+    {
+        out << it->word << " - " << it->gloss;
+        if (!it->book.empty())
+        {
+            out << "  (" << it->book << ")";
+        }
+        out << "\n\n";
+    }
+    out.close();
+    if (!out)
+    {
+        show_message(state, "Could not write the file");
+        return;
+    }
+    state.view_stack.push(std::make_shared<DefinitionView>(
+        "Word list exported",
+        "Saved " + std::to_string(list.size()) + " words to\n" + out_path.string(),
+        state.sys_styling
+    ));
 }
 
 // Writes the highlights next to the book as a text file, which the book list can open too.
@@ -386,6 +474,26 @@ void ReaderView::open_book_menu()
         actions->push_back({"Jump back", [this]() { jump_back(); }});
     }
     actions->push_back({
+        "Word list (" + std::to_string(vocabulary::entries().size()) + ")",
+        [this]() { open_word_list(*state); }
+    });
+    if (!vocabulary::entries().empty())
+    {
+        actions->push_back({"Export word list", [this]() { export_word_list(*state); }});
+    }
+    actions->push_back({"Reading stats", [this]() {
+        state->view_stack.push(std::make_shared<DefinitionView>(
+            "Reading stats",
+            reading_stats::report(
+                state->book_path,
+                static_cast<long long>(std::time(nullptr)),
+                library_log().started_count(),
+                library_log().finished_count()
+            ),
+            state->sys_styling
+        ));
+    }});
+    actions->push_back({
         "Highlights (" + std::to_string(state->token_view->highlights().size()) + ")",
         [this]() { open_highlights_menu(*this, *state); }
     });
@@ -441,12 +549,14 @@ ReaderView::ReaderView(
     ))
 {
     reading_speed::reset_position();
+    reading_stats::reset();
     const auto book_info = read_epub_info(path);
     state->book_title = book_display_title(book_info, path);
     if (book_info)
     {
         state->dictionary_name = dictionary_name_for_language(book_info->language);
     }
+    state->token_view->set_hyphenation_language(state->dictionary_name);
     state->token_view->set_book_title(state->book_title);
     state->bookmarks_path = state->highlights_path;
     state->bookmarks_path.replace_extension(".bookmarks");
@@ -476,6 +586,7 @@ ReaderView::~ReaderView()
     state->token_view_styling.unsubscribe_from_changes(
         state->token_view_styling_sub_id
     );
+    book_layout::close();
 }
 
 void ReaderView::update_token_view_title(DocAddr address)
@@ -633,6 +744,54 @@ static void open_controls_guide(ReaderViewState &state)
     ));
 }
 
+// Finds the word everywhere in the book and lists the places. The scan reads the
+// whole book, so a bar shows how far it has got.
+static void run_search(ReaderView &reader_view, ReaderViewState &state, const std::string &word)
+{
+    SystemStyling &styling = state.sys_styling;
+    constexpr size_t MAX_HITS = 300;
+    const auto hits = std::make_shared<std::vector<SearchHit>>(search_book(
+        *state.reader,
+        word,
+        MAX_HITS,
+        [&styling, &word](int percent) {
+            progress_screen::show(styling, "Searching", word, percent);
+        }
+    ));
+    // The search screen was drawn straight to the display, so draw the page again.
+    state.token_view->invalidate();
+
+    if (hits->empty())
+    {
+        show_message(state, "No match for \"" + word + "\"");
+        return;
+    }
+
+    auto menu = std::make_shared<SelectionMenu>(state.sys_styling);
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const SearchHit &hit : *hits)
+    {
+        names.push_back(hit.snippet);
+        details.push_back(percent_label(state, hit.address));
+    }
+    menu->set_entries(names);
+    menu->set_details(details);
+    menu->set_title(
+        "Search: " + word + " (" + std::to_string(hits->size()) + (hits->size() >= MAX_HITS ? "+" : "") + ")"
+    );
+    menu->set_hints({"A  Go", "B  Close"});
+    menu->set_close_on_select();
+    menu->set_on_selection([&reader_view, &state, hits](uint32_t index) {
+        if (index < hits->size())
+        {
+            state.token_view->cancel_word_select();
+            reader_view.jump_to((*hits)[index].address);
+        }
+    });
+    state.view_stack.push(menu);
+}
+
 static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
 {
     std::string lookup = state.token_view->selected_lookup();
@@ -640,7 +799,7 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
     const auto link = state.token_view->selected_link();
 
     // What the menu offers, in order. The footnote and link rows only appear on a link.
-    enum class Act { Note, GoTo, LookUp, Highlight };
+    enum class Act { Note, GoTo, LookUp, Search, Highlight, Underline, Strikeout };
     std::vector<Act> acts;
     std::vector<std::string> entries;
     std::optional<LinkTarget> target;
@@ -660,8 +819,20 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
     }
     acts.push_back(Act::LookUp);
     entries.push_back("Look up");
+    if (!lookup.empty())
+    {
+        acts.push_back(Act::Search);
+        entries.push_back("Search book");
+    }
     acts.push_back(Act::Highlight);
     entries.push_back(marked ? "Remove highlight" : "Highlight");
+    if (!marked)
+    {
+        acts.push_back(Act::Underline);
+        entries.push_back("Underline");
+        acts.push_back(Act::Strikeout);
+        entries.push_back("Strike out");
+    }
 
     auto menu = std::make_shared<SelectionMenu>(entries, state.sys_styling);
     menu->set_title(lookup.empty() ? std::string("Word") : lookup);
@@ -717,6 +888,7 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
                 else if (auto gloss = dictionary->lookup(lookup))
                 {
                     body = *gloss;
+                    vocabulary::add(lookup, *gloss, state.book_title, static_cast<long long>(std::time(nullptr)));
                 }
                 else
                 {
@@ -732,12 +904,22 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
             case Act::Highlight:
                 state.token_view->toggle_selected_highlight();
                 break;
+            case Act::Search:
+                run_search(reader_view, state, lookup);
+                break;
+            case Act::Underline:
+                state.token_view->toggle_selected_highlight(HighlightStyle::Underline);
+                break;
+            case Act::Strikeout:
+                state.token_view->toggle_selected_highlight(HighlightStyle::Strikeout);
+                break;
         }
     });
     state.view_stack.push(menu);
 }
 void ReaderView::on_keypress(SDLKey key)
 {
+    reading_stats::note_activity(state->book_path, static_cast<long long>(std::time(nullptr)));
     if (counting_pages())
     {
         // Nothing to read until the count is done. B still leaves the book.

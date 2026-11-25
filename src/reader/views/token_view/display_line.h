@@ -36,6 +36,7 @@ struct TextLine: public DisplayLine
     bool quote = false;
     int slot_span = 1;
     uint32_t address_lead = 0;
+    bool hyphenated = false;    // the line ends in a hyphen that the book text does not have
     bool paragraph_end = false; // the last line of its paragraph, which justify leaves short
     std::vector<StyleSpan> spans;
 

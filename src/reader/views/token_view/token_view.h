@@ -57,6 +57,10 @@ public:
     // Returns true when the view actually moved.
     bool align_to_page(bool chapter);
     void turn_page(int direction);
+    // Draw the page again on the next frame, after something else used the screen.
+    void invalidate();
+    // The dictionary name of the book language, which picks the hyphenation patterns.
+    void set_hyphenation_language(const std::string &language);
     // Moves to the top of the given page (counting from 1). False when the count is not ready.
     bool go_to_page(bool chapter, uint32_t page);
 
@@ -71,7 +75,7 @@ public:
     // The link the first selected word belongs to, or null.
     std::shared_ptr<const std::string> selected_link() const;
     bool selected_is_highlighted() const;
-    void toggle_selected_highlight();
+    void toggle_selected_highlight(HighlightStyle style = HighlightStyle::Marker);
     // The words between the first and last selected word, as they were on the pages.
     std::string selected_text() const;
 

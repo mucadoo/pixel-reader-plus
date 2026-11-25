@@ -36,6 +36,11 @@ public:
     void set_on_file_focus(std::function<void(const std::filesystem::path &)> on_file_focus);
     void set_on_view_focus(std::function<void()> on_view_focus);
     // Called with a title and a text when the user asks for the properties of an entry.
+    // Where menus the browser opens itself, such as the book options, are shown.
+    void set_on_open_view(std::function<void(std::shared_ptr<View>)> on_open_view);
+    // Leave finished books out of the list.
+    void set_hide_finished(bool hide);
+    void set_on_hide_finished_change(std::function<void(bool)> callback);
     void set_on_info(std::function<void(const std::string &, const std::string &)> on_info);
 
     // Where cover thumbnails are kept. Without it the grid shows plain covers only.

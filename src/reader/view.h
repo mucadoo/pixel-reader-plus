@@ -29,6 +29,9 @@ public:
     // This view has been popped from the stack (now defunct).
     virtual void on_pop() {}
 
+    // True when the view uses the X button itself, so Settings should not open on it.
+    virtual bool consumes_x() const { return false; }
+
     // When the view is now on top of the stack.
     virtual void on_focus() {}
 };

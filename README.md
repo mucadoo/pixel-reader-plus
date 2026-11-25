@@ -1,6 +1,6 @@
 # Spruce E-Reader
 
-An ebook reader for the Miyoo Flip on spruceOS. It opens epub and txt books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, and show footnotes.
+An ebook reader for the Miyoo Flip on spruceOS. It opens epub and txt books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
 On spruce the app is **E-Reader**. This build replaces the stock Pixel Reader binary. Your books, reading position, and highlights stay on the card.
 
@@ -18,7 +18,12 @@ A name that is too long for its row slides once the row is selected: it waits a 
 
 **Select** switches between the list and the cover grid. The choice is saved. The grid shows one to four rows of covers, depending on the screen height, with the title under each cover. A book's cover is taken from the book itself (EPUB only) and shrunk in the background, so the grid never waits on it. The small pictures are kept in a `covers` folder inside the reader's store, so they appear at once the next time. A book with no cover, or a `.txt` file, gets a plain colored cover with its title and type. Folders and **Up one folder** get their own tiles.
 
-**Y** shows the properties of the selected entry: name, title, author, language, type, size, and the folder it is in. Any button closes it.
+**Y** opens a small menu for the selected entry:
+
+- **Properties** shows the name, title, author, language, type, size, and the folder it is in. Any button closes it.
+- **Add to favorites** or **Remove from favorites**, for a book. A favorite has `* ` in front of its name. Favorites in other folders are listed at the top of every folder, under **Continue**, so they are one press away.
+- **Mark as finished** or **Mark as not finished**, for a book. A book at 99% or more counts as finished by itself, shows **Done**, and has a **Done** label on its cover. Marking it as not finished overrides that, and marking an unfinished book as finished overrides the percent.
+- **Hide finished books** or **Show finished books**, for the whole list. Hidden books stay on the card and come back when you show them. A favorite is never hidden. The choice is saved.
 
 A book you have opened has a progress bar along the bottom of its cover. In every folder except the one holding the book you read last, the first row is **Continue: <title>**, which opens that book.
 
@@ -30,7 +35,7 @@ A book you have opened has a progress bar along the bottom of its cover. In ever
 | D-pad left / right | List: move half a screen. Grid: move one cover. |
 | L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. Settings can move this to L2 / R2. |
 | A | Open the book or folder. |
-| Y | Properties of the selected entry. |
+| Y | The options of the selected entry: properties, favorite, finished, hide finished. |
 | Select | Switch between the list and the grid. |
 | Start | Change the order: name, title, author, recent. |
 | X | Settings. |
@@ -50,7 +55,7 @@ These are the printed buttons on the Flip.
 | B | Close the book and return to the file list. |
 | X | Settings. |
 | Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
-| Select | The book menu: chapters, bookmarks, go to a percent, jump back, highlights. Press Select again to close it. |
+| Select | The book menu: chapters, bookmarks, go to a percent, go to a page, jump back, reading stats, word list, highlights. Press Select again to close it. |
 | Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
@@ -70,7 +75,7 @@ Press **Y** on a page. A cursor sits on a word near the middle of the page, and 
 | --- | --- |
 | D-pad | Move the cursor. Hold to repeat. Left at the start of the page, or right at the end, turns the page. Until you extend, each move is still one word. |
 | Start | Keep the first word and add every word you move through. Press Start again to stop extending. The next move returns to one word. |
-| A | Open a small menu over the page, with **Look up** and **Highlight**. Look up uses the word at the cursor. Highlight covers the whole selection. If that stretch is already highlighted, the second row is **Remove highlight**. **B** returns to the word. |
+| A | Open a small menu over the page, with **Look up**, **Search book**, **Highlight**, **Underline**, and **Strike out**. Look up and Search use the word at the cursor. The three marks cover the whole selection. If that stretch is already marked, the last rows are replaced by **Remove highlight**. **B** returns to the word. |
 | B or Y | Leave word selection. The shoulders still turn the page. |
 
 **Look up** opens the definition full screen. Up and down scroll a long definition. Any other button closes it.
@@ -86,7 +91,11 @@ The first time a book is opened, the reader has to measure every part of it. An 
 
 On a word that is a link in the book, such as a footnote number, the **A** menu also has **Show note**, which opens the text the link points to when it names a spot in the book, and **Go to link**, which jumps there. **Jump back** in the book menu returns.
 
-**Highlight** marks the selected words and saves them with the book, along with the words themselves. A highlight is a bar behind each word. Punctuation between the words is not painted. It is still there after you close the book. Removing it deletes the marks that overlap the selection. Installing the reader again does not delete highlights.
+**Search book** finds the word everywhere in the book, ignoring capitals and matching whole words, and lists the places with the words around each one and their place as a percent. **A** goes there and **Jump back** returns. The list has one row for each paragraph that holds the word, up to 300 rows. The search reads the whole book, so a **Searching** screen with a bar shows how far it has got. If the word is split between two lines with a hyphen, Look up and Search use the whole word.
+
+Every word you look up is added to the **Word list**, newest first, with its meaning and the book it came from. Looking a word up again moves it to the top. **A** shows the meaning, **X** deletes a word. **Export word list** in the book menu writes them to `Word list.txt` in the folder of the book. The list is kept in `vocabulary.tsv` in the store and is shared by all books.
+
+**Highlight** marks the selected words and saves them with the book, along with the words themselves. A highlight is a bar behind each word. **Underline** draws a line under the words instead, and **Strike out** draws one through them. Each mark remembers its own style. Punctuation between the words is not painted. It is still there after you close the book. Removing it deletes the marks that overlap the selection. Installing the reader again does not delete highlights.
 
 The **Highlights** row of the book menu lists every highlight in book order with its place as a percent. **A** goes there and **X** removes one. **Export highlights** writes them to `<title> - highlights.txt` in the folder of the book, which the book list can open. A highlight made before this version has no saved words and shows as `(text not saved)`.
 
@@ -117,7 +126,8 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 - **Go to %** is a small picker, starting at where you are. Left and right move 1, up and down move 10, **A** goes, **B** cancels. The percent is of the whole book.
 - **Go to page** appears in Page mode once the pages are counted. It works like Go to %, starting at the current page, and goes to the top of the chosen page. The page count follows the Progress row, so in Chapter mode the pages are the chapter's.
 - **Jump back** appears once you have used the chapter list, a bookmark, a highlight, a link, Go to %, or Go to page. It returns to where you were, and a second use goes one jump further back, up to 20.
-- **Highlights** and **Export highlights** are described above.
+- **Reading stats** shows the time spent in this book today and in total, the time in all books today, in the last seven days and in total, and how many books you have started and finished. Time is counted between key presses, and a pause of four minutes or more counts as being away. The numbers are kept in `stats.log` in the store.
+- **Word list**, **Export word list**, **Highlights** and **Export highlights** are described above.
 
 ## Settings
 
@@ -133,10 +143,14 @@ Press **X**. The book stays behind the menu. Each row has the name on the left a
 - **Clock.** 24-hour or 12-hour, for the time in the bar. The time and date are the ones the device keeps, and the line redraws when the minute changes.
 - **Margins.** The empty space at each side of the text: Narrow (the default), Medium, Wide, or Extra wide.
 - **Line spacing.** Tight, Normal (the default), Relaxed, or Loose. It changes the height of every line.
+- **Hyphenate.** On splits a word that does not fit at the end of a line, with a hyphen, so lines are fuller and justified lines have smaller gaps. The patterns for English, French and Portuguese follow the language of the book, and a book in another language uses the English ones. The hyphen is not part of the book, so highlights and bookmarks stay in the same place with Hyphenate on or off. Off is the default. Changing it counts the pages again.
+- **Auto exit.** Off, or 5, 10, 15, 30 or 60 minutes. When no button has been pressed for that long, the reader saves its place and quits, so a book left open does not run the battery down.
 - **Justify.** On spreads the words of each line so it fills the width, except the last line of a paragraph, headings, centered text, and preformatted text. A line that falls well short of full is left alone. Off is the default.
 - **Controls.** Press **A** to open the same shortcut guide that **Start** opens while reading.
 
 Margins and line spacing re-wrap the book, so the page count is made again, as it is for the font size.
+
+Margins, Line spacing, Justify, Hyphenate and Reading are kept for each book. Open Settings while a book is open and the change belongs to that book only, and the next time you open it the same layout comes back. Open Settings in the book list and the change sets the defaults every other book starts with. A book you never changed uses the defaults. The layout of a book is in a `.layout` file beside its highlights.
 
 **A** while reading shows or hides the progress line. That choice is saved too.
 
@@ -146,8 +160,9 @@ The reader writes under `App/PixelReader/.pixel_reader_store`.
 
 - Reading position and the last folder you browsed.
 - Theme, font, font size, shoulder buttons, whether the progress line is shown, the bar, clock, margins, line spacing, justify, the book list order, and your reading speed.
-- Highlights and bookmarks, one file per book, named from the book file.
-- `library.log`: for each book you opened, how far you got and when. The list uses it for progress, sorting by recent, and Continue.
+- Highlights, bookmarks and the layout, one file for each of them per book, named from the book file.
+- `stats.log` and `vocabulary.tsv`: the reading time for each day and book, and the words you looked up.
+- `library.log`: for each book you opened, how far you got and when, and whether it is a favorite or marked finished. The list uses it for progress, sorting by recent, Continue, favorites and finished.
 - `info` and `covers`: the titles and the cover pictures read from your books. They can be deleted at any time and are made again.
 
 Books themselves are not copied or modified. A later install of this reader replaces the program and the dictionary, and leaves the store alone.
@@ -158,6 +173,7 @@ The Flip build is installed by [spruce-patch](https://github.com/mucadoo/spruce-
 
 - `App/PixelReader/reader`
 - `App/PixelReader/resources/dictionary/english.txt`, `french.txt`, and `portuguese.txt`
+- `App/PixelReader/resources/hyphenation/english.txt`, `french.txt`, and `portuguese.txt`, with their notice
 - the WordNet notice and the Wiktionary notice next to those dictionaries
 
 Quit E-Reader if it is open, eject the card, and open E-Reader again. The new reader is used the next time the app starts. A spruce reinstall puts the stock reader back. Run the installer again and choose E-Reader to restore this one.
@@ -177,5 +193,7 @@ The program is GPL. See `LICENSE`. It is based on [Pixel Reader](https://github.
 The English dictionary in `resources/dictionary/english.txt` is generated from WordNet 3.1. Princeton's notice is in `resources/dictionary/LICENSE.txt`.
 
 The French and Portuguese dictionaries are generated from Wiktionary data extracted by [Kaikki](https://kaikki.org) (wiktextract). Wiktionary text is available under CC BY-SA 4.0 and the GFDL. The notice is in `resources/dictionary/LICENSE-wiktionary.txt`.
+
+The hyphenation patterns in `resources/hyphenation` are from the [TeX hyph-utf8](https://github.com/hyphenation/tex-hyphen) project, under their own licenses (the English ones are permissive, French is MIT, Portuguese is BSD 3-clause). The notices are in `resources/hyphenation/LICENSE-hyphenation.txt`.
 
 Picture decoding uses [stb_image](https://github.com/nothings/stb), public domain, in `src/extern/stb/stb_image.h`.

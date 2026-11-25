@@ -1,0 +1,146 @@
+#include "./book_layout.h"
+
+#include "./layout_options.h"
+#include "./reading_mode.h"
+#include "./views/token_view/token_view_styling.h"
+
+#include <fstream>
+#include <map>
+#include <string>
+#include <system_error>
+
+namespace book_layout
+{
+
+namespace
+{
+
+struct Layout
+{
+    int margin = DEFAULT_MARGIN_LEVEL;
+    int spacing = DEFAULT_SPACING_LEVEL;
+    bool justify = false;
+    bool hyphenate = false;
+    ReadingMode reading = ReadingMode::Scroll;
+};
+
+TokenViewStyling *styling = nullptr;
+bool is_active = false;
+bool applying = false;
+std::filesystem::path book_file;
+Layout defaults;
+
+Layout current()
+{
+    Layout layout;
+    layout.margin = styling->get_margin_level();
+    layout.spacing = styling->get_spacing_level();
+    layout.justify = styling->get_justify();
+    layout.hyphenate = styling->get_hyphenate();
+    layout.reading = styling->get_reading_mode();
+    return layout;
+}
+
+void apply(const Layout &layout)
+{
+    applying = true;
+    styling->set_margin_level(layout.margin);
+    styling->set_spacing_level(layout.spacing);
+    styling->set_justify(layout.justify);
+    styling->set_hyphenate(layout.hyphenate);
+    styling->set_reading_mode(layout.reading);
+    applying = false;
+}
+
+bool read_file(const std::filesystem::path &file, Layout &layout)
+{
+    std::ifstream in(file);
+    if (!in)
+    {
+        return false;
+    }
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
+        try
+        {
+            if (key == "margin") layout.margin = std::stoi(value);
+            else if (key == "spacing") layout.spacing = std::stoi(value);
+            else if (key == "justify") layout.justify = value == "1";
+            else if (key == "hyphenate") layout.hyphenate = value == "1";
+            else if (key == "reading") layout.reading = value == "page" ? ReadingMode::Page : ReadingMode::Scroll;
+        }
+        catch (...)
+        {
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void attach(TokenViewStyling &s)
+{
+    styling = &s;
+}
+
+void open(const std::filesystem::path &file)
+{
+    if (!styling)
+    {
+        return;
+    }
+    defaults = current();
+    book_file = file;
+    is_active = true;
+    Layout layout = defaults;
+    if (read_file(file, layout))
+    {
+        apply(layout);
+    }
+}
+
+void close()
+{
+    if (!styling || !is_active)
+    {
+        return;
+    }
+    is_active = false;
+    apply(defaults);
+}
+
+bool active()
+{
+    return is_active;
+}
+
+void save_if_active()
+{
+    if (!styling || !is_active || applying)
+    {
+        return;
+    }
+    const Layout layout = current();
+    std::error_code ec;
+    std::filesystem::create_directories(book_file.parent_path(), ec);
+    std::ofstream out(book_file, std::ios::trunc);
+    out << "margin=" << layout.margin << "\n"
+        << "spacing=" << layout.spacing << "\n"
+        << "justify=" << (layout.justify ? 1 : 0) << "\n"
+        << "hyphenate=" << (layout.hyphenate ? 1 : 0) << "\n"
+        << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n";
+}
+
+} // namespace book_layout

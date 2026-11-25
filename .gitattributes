@@ -1,3 +1,4 @@
 cross-compile/** linguist-vendored
 src/extern/** linguist-vendored
 resources/dictionary/*.txt -text
+resources/hyphenation/*.txt -text

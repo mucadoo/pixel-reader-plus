@@ -459,6 +459,18 @@ void BookGrid::draw_cell(SDL_Surface *dest, const Layout &l, uint32_t index, int
         }
     }
 
+    // A read book wears a small label in the top corner.
+    if (item.kind == Item::Kind::Book && item.finished && art_w > 40)
+    {
+        auto badge = shade(font, "Done", theme.background, theme.main_text);
+        if (badge)
+        {
+            fill(dest, art_x + 2, art_y + 2, badge->w + 4, badge->h + 2, map_color(dest, theme.main_text));
+            SDL_Rect where = {static_cast<Sint16>(art_x + 4), static_cast<Sint16>(art_y + 3), 0, 0};
+            SDL_BlitSurface(badge.get(), nullptr, dest, &where);
+        }
+    }
+
     // The name under the cover. The chosen one slides when it is too long.
     const SDL_Color caption_fg = selected ? theme.highlight_text : theme.main_text;
     const SDL_Color caption_bg = selected ? theme.highlight_background : theme.background;

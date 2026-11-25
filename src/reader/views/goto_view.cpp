@@ -10,8 +10,20 @@
 
 #include <algorithm>
 
-GotoView::GotoView(uint32_t start_percent, std::function<void(uint32_t)> on_choose, SystemStyling &styling)
-    : percent(std::min<uint32_t>(start_percent, 100))
+GotoView::GotoView(
+    std::string heading,
+    std::string suffix,
+    uint32_t lo,
+    uint32_t hi,
+    uint32_t start,
+    std::function<void(uint32_t)> on_choose,
+    SystemStyling &styling
+)
+    : heading(std::move(heading))
+    , suffix(std::move(suffix))
+    , lo(lo)
+    , hi(std::max(lo, hi))
+    , percent(std::clamp(start, lo, std::max(lo, hi)))
     , on_choose(std::move(on_choose))
     , styling(styling)
     , styling_sub_id(styling.subscribe_to_changes([this](SystemStyling::ChangeId) {
@@ -36,8 +48,8 @@ bool GotoView::render(SDL_Surface *dest_surface, bool force_render)
     const auto &theme = styling.get_loaded_color_theme();
     const SDL_Color quiet = menu_draw::quiet_text(theme);
 
-    auto title = menu_draw::shade(font, "Go to", quiet, theme.background);
-    auto value = menu_draw::shade(font, std::to_string(percent) + "%", theme.main_text, theme.background);
+    auto title = menu_draw::shade(font, heading, quiet, theme.background);
+    auto value = menu_draw::shade(font, std::to_string(percent) + suffix, theme.main_text, theme.background);
     auto hint = menu_draw::shade(font, "Left/Right 1   Up/Down 10", quiet, theme.background);
     auto hint2 = menu_draw::shade(font, "A  Go    B  Cancel", quiet, theme.background);
     if (!title || !value || !hint || !hint2)
@@ -83,16 +95,16 @@ void GotoView::on_keypress(SDLKey key)
     switch (key)
     {
         case SW_BTN_LEFT:
-            percent = percent > 0 ? percent - 1 : 0;
+            percent = percent > lo ? percent - 1 : lo;
             break;
         case SW_BTN_RIGHT:
-            percent = std::min<uint32_t>(percent + 1, 100);
+            percent = std::min<uint32_t>(percent + 1, hi);
             break;
         case SW_BTN_DOWN:
-            percent = percent > 10 ? percent - 10 : 0;
+            percent = percent > lo + 10 ? percent - 10 : lo;
             break;
         case SW_BTN_UP:
-            percent = std::min<uint32_t>(percent + 10, 100);
+            percent = std::min<uint32_t>(percent + 10, hi);
             break;
         case SW_BTN_A:
             _is_done = true;

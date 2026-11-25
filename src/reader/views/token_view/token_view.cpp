@@ -1474,6 +1474,27 @@ void TokenView::turn_page(int direction)
     }
 }
 
+bool TokenView::go_to_page(bool chapter, uint32_t page)
+{
+    if (!page_index_ready(chapter))
+    {
+        return false;
+    }
+    const int size = std::max(1, state->num_text_display_lines());
+    const int pages = state->page_index.page_count(size);
+    if (pages <= 0 || page < 1)
+    {
+        return false;
+    }
+    const int line = state->page_index.line_for_navigation(absolute_line(*state), size);
+    const int target = state->page_index.first_line_of_page(std::min<int>(static_cast<int>(page), pages) - 1, size);
+    if (target != line)
+    {
+        scroll(target - line);
+    }
+    return true;
+}
+
 void TokenView::set_on_scroll(std::function<void(DocAddr)> callback)
 {
     state->on_scroll = callback;

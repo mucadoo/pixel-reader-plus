@@ -9,19 +9,31 @@
 
 struct SystemStyling;
 
-// A small panel for picking a place in the book as a percent.
+// A small panel for picking a number in a range, such as a percent or a page.
 class GotoView: public View
 {
     bool _is_done = false;
     bool _needs_render = true;
 
+    std::string heading;
+    std::string suffix;
+    uint32_t lo;
+    uint32_t hi;
     uint32_t percent;
     std::function<void(uint32_t)> on_choose;
     SystemStyling &styling;
     uint32_t styling_sub_id;
 
 public:
-    GotoView(uint32_t start_percent, std::function<void(uint32_t)> on_choose, SystemStyling &styling);
+    GotoView(
+        std::string heading,
+        std::string suffix,
+        uint32_t lo,
+        uint32_t hi,
+        uint32_t start,
+        std::function<void(uint32_t)> on_choose,
+        SystemStyling &styling
+    );
     virtual ~GotoView();
 
     bool render(SDL_Surface *dest_surface, bool force_render) override;

@@ -113,7 +113,8 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 - **Chapters** is the book's table of contents, opened on the chapter you are reading. A mark stays on that chapter while you move. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. A book with no table of contents does not show this row. There is no separate next-chapter button.
 - **Add bookmark** saves the place under the name of its chapter. **Bookmarks** lists them with their place as a percent, **A** goes there, **X** deletes one. They are saved with the book.
 - **Go to %** is a small picker, starting at where you are. Left and right move 1, up and down move 10, **A** goes, **B** cancels. The percent is of the whole book.
-- **Jump back** appears once you have used the chapter list, a bookmark, a highlight, a link, or Go to %. It returns to where you were, and a second use goes one jump further back, up to 20.
+- **Go to page** appears in Page mode once the pages are counted. It works like Go to %, starting at the current page, and goes to the top of the chosen page. The page count follows the Progress row, so in Chapter mode the pages are the chapter's.
+- **Jump back** appears once you have used the chapter list, a bookmark, a highlight, a link, Go to %, or Go to page. It returns to where you were, and a second use goes one jump further back, up to 20.
 - **Highlights** and **Export highlights** are described above.
 
 ## Settings

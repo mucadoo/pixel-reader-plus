@@ -355,11 +355,27 @@ void ReaderView::open_book_menu()
     actions->push_back({"Go to %", [this]() {
         const uint32_t now = state->reader->get_global_progress_percent(get_current_address(*state));
         state->view_stack.push(std::make_shared<GotoView>(
-            now,
+            "Go to", "%", 0, 100, now,
             [this](uint32_t percent) { jump_to(state->reader->get_address_at_percent(percent)); },
             state->sys_styling
         ));
     }});
+    {
+        const bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+        uint32_t page = 0;
+        uint32_t pages = 0;
+        if (state->token_view_styling.get_reading_mode() == ReadingMode::Page
+            && state->token_view->page_numbers(chapter, page, pages))
+        {
+            actions->push_back({"Go to page", [this, chapter, page, pages]() {
+                state->view_stack.push(std::make_shared<GotoView>(
+                    "Go to page of " + std::to_string(pages), "", 1, pages, page,
+                    [this, chapter](uint32_t chosen) { go_to_page(chapter, chosen); },
+                    state->sys_styling
+                ));
+            }});
+        }
+    }
     if (can_jump_back())
     {
         actions->push_back({"Jump back", [this]() { jump_back(); }});
@@ -775,6 +791,20 @@ void ReaderView::jump_to(DocAddr address)
         }
     }
     seek_to_address(address);
+}
+
+void ReaderView::go_to_page(bool chapter, uint32_t page)
+{
+    const DocAddr here = get_current_address(*state);
+    if (state->jump_stack.empty() || state->jump_stack.back() != here)
+    {
+        state->jump_stack.push_back(here);
+        if (state->jump_stack.size() > 20)
+        {
+            state->jump_stack.erase(state->jump_stack.begin());
+        }
+    }
+    state->token_view->go_to_page(chapter, page);
 }
 
 bool ReaderView::can_jump_back() const

@@ -57,6 +57,8 @@ public:
     void seek_to_address(DocAddr address);
     // Goes to the address and remembers where the reader was, so Jump back can return.
     void jump_to(DocAddr address);
+    // Goes to the top of a page in Page mode and remembers where the reader was.
+    void go_to_page(bool chapter, uint32_t page);
     // Returns to the place before the last jump. False when there is none.
     bool jump_back();
     bool can_jump_back() const;

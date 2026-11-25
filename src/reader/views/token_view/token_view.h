@@ -55,6 +55,8 @@ public:
     // Returns true when the view actually moved.
     bool align_to_page(bool chapter);
     void turn_page(int direction);
+    // Moves to the top of the given page (counting from 1). False when the count is not ready.
+    bool go_to_page(bool chapter, uint32_t page);
 
     void set_on_scroll(std::function<void(DocAddr)> callback);
 

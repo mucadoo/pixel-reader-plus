@@ -18,6 +18,7 @@ inline const char *controls_guide_text()
         "Select opens the book menu. Chapters lists the chapters, with the one you are reading marked.\n"
         "Add bookmark saves the place. Bookmarks lists them: A goes there, X deletes one.\n"
         "Go to % picks a place by percent: left and right move 1, up and down move 10, A goes.\n"
+        "In Page mode, once the pages are counted, Go to page picks a page the same way.\n"
         "Jump back returns to where you were before the last jump.\n"
         "Highlights lists what you marked, in book order: A goes there, X removes one.\n"
         "Export highlights writes them to a text file next to the book.\n"

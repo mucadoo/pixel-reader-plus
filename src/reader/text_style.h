@@ -16,6 +16,9 @@ int style_flags(bool bold, bool italic);
 // the Latin-1 block. The text keeps its length.
 std::string lookup_lowercase(const std::string &word);
 
+// Extra pixels added to every space between words (negative to tighten). Applies to later layouts.
+void set_word_spacing(int pixels);
+
 using RunFontFn = std::function<TTF_Font *(int style, float scale)>;
 
 // Width of text[offset, offset+len), applying bold, italic, and size runs.

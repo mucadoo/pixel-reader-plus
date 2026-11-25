@@ -344,6 +344,16 @@ SDL_Surface *read_cover_file(const std::filesystem::path &path)
 
 } // namespace
 
+bool read_book_cover(const std::filesystem::path &book, std::vector<char> &bytes, std::string &format)
+{
+    std::string ext = book.extension().string();
+    for (char &c : ext)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return ext == ".epub" && read_epub_cover(book, bytes, format);
+}
+
 BookCovers::BookCovers(std::filesystem::path dir)
     : cache_dir(std::move(dir))
 {

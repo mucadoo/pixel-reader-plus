@@ -24,7 +24,7 @@ void discover_fonts()
 
     auto test_font = [](std::filesystem::path file_path) {
         auto norm_ext = to_lower(file_path.extension());
-        return std::filesystem::exists(file_path) && (norm_ext == ".ttf" || norm_ext == ".ttc");
+        return std::filesystem::exists(file_path) && (norm_ext == ".ttf" || norm_ext == ".ttc" || norm_ext == ".otf");
     };
 
     for (const auto &entry: directory_listing(FONT_DIR))

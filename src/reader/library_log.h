@@ -27,6 +27,7 @@ public:
         long long last_opened = 0;
         Status status = Status::Auto;
         bool favorite = false;
+        uint32_t units = 0;  // length of the book in address units, 0 until it has been opened
         std::string book_id; // names the files kept for the book, empty until it has been opened
 
         bool finished() const
@@ -49,6 +50,9 @@ public:
     void touch(const std::filesystem::path &book, long long now);
     void set_percent(const std::filesystem::path &book, int percent);
     void set_status(const std::filesystem::path &book, Status status);
+    void set_units(const std::filesystem::path &book, uint32_t units);
+    // The books opened most recently that still exist, newest first.
+    std::vector<std::filesystem::path> recent(size_t max_count) const;
     void set_book_id(const std::filesystem::path &book, const std::string &book_id);
     // Forgets the book, or moves what is known about it to a new path.
     void remove(const std::filesystem::path &book);

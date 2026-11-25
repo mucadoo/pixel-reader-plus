@@ -199,6 +199,69 @@ void settings_set_auto_exit_minutes(StateStore &state_store, int minutes)
     state_store.set_setting("auto_exit_minutes", std::to_string(minutes));
 }
 
+std::optional<int> settings_get_picture_mode(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("picture_mode");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return std::stoi(*opt);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+void settings_set_picture_mode(StateStore &state_store, int mode)
+{
+    state_store.set_setting("picture_mode", std::to_string(mode));
+}
+
+std::optional<int> settings_get_small_int(const StateStore &state_store, const std::string &key)
+{
+    const auto opt = state_store.get_setting(key);
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        const int value = std::stoi(*opt);
+        if (value >= 0 && value <= 3)
+        {
+            return value;
+        }
+    }
+    catch (...)
+    {
+    }
+    return std::nullopt;
+}
+
+void settings_set_small_int(StateStore &state_store, const std::string &key, int value)
+{
+    state_store.set_setting(key, std::to_string(value));
+}
+
+std::optional<bool> settings_get_thin_bar(const StateStore &state_store)
+{
+    const auto opt = state_store.get_setting("thin_bar");
+    if (!opt)
+    {
+        return std::nullopt;
+    }
+    return *opt == "1";
+}
+
+void settings_set_thin_bar(StateStore &state_store, bool on)
+{
+    state_store.set_setting("thin_bar", on ? "1" : "0");
+}
+
 std::optional<std::string> settings_get_night_theme(const StateStore &state_store)
 {
     return state_store.get_setting("night_theme");

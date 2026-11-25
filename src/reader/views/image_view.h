@@ -24,6 +24,7 @@ class ImageView: public View
     int offset_x = 0;   // top left of the screen within the zoomed picture
     int offset_y = 0;
     int hint_ms_left = 3500;
+    bool screensaver = false;
     bool _is_done = false;
     bool _needs_render = true;
     Throttled pan_throttle;
@@ -34,10 +35,17 @@ class ImageView: public View
     void pan(SDLKey key);
 
 public:
-    ImageView(const std::vector<char> &data, const std::string &extension, SystemStyling &styling);
+    ImageView(const std::vector<char> &data, const std::string &extension, SystemStyling &styling, int picture_mode = 0);
     virtual ~ImageView();
 
     // False when the data could not be read as a picture.
+    // Shown as the cover screen: no hints, and any key closes it.
+    void set_screensaver()
+    {
+        screensaver = true;
+        hint_ms_left = 0;
+    }
+
     bool valid() const { return original != nullptr; }
 
     bool render(SDL_Surface *dest_surface, bool force_render) override;

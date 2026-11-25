@@ -49,6 +49,26 @@ public:
     bool get_justify() const;
     void set_justify(bool justify);
 
+    // How pictures in the book are shown, a PictureMode
+    int get_picture_mode() const;
+    void set_picture_mode(int mode);
+
+    // A thin line along the bottom edge showing how far through the book you are, cut at each chapter
+    bool get_thin_bar() const;
+    void set_thin_bar(bool on);
+
+    // Lines of the old screen kept when a scroll or page jump moves on (0 to 3)
+    int get_scroll_overlap() const;
+    void set_scroll_overlap(int lines);
+
+    // Extra space between words: 0 Tight, 1 Normal, 2 Wide, 3 Wider (see layout_options.h)
+    int get_word_spacing() const;
+    void set_word_spacing(int level);
+
+    // Idle time before the cover is shown: 0 Off, then the steps of cover_sleep_minutes()
+    int get_cover_sleep() const;
+    void set_cover_sleep(int step);
+
     // Automatic night theme: the theme to use between two hours of the day. Empty name for off.
     const std::string &get_night_theme() const;
     void set_night_theme(const std::string &name);

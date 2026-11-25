@@ -10,12 +10,16 @@
 #include "./shoulder_keymap.h"
 #include "./state_store.h"
 #include "./system_styling.h"
+#include "./collections.h"
 #include "./color_theme_def.h"
 #include <ctime>
 #include "./view_stack.h"
 #include "./views/definition_view.h"
 #include "./views/file_selector.h"
 #include "./views/reader_bootstrap_view.h"
+#include "./views/image_view.h"
+#include "./book_covers.h"
+#include "./layout_options.h"
 #include "./views/settings_view.h"
 #include "reader/controls_guide.h"
 #include "./views/token_view/token_view_styling.h"
@@ -298,6 +302,7 @@ int main(int argc, char **argv)
     StateStore state_store(config[CONFIG_KEY_STORE_PATH]);
     library_log().load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "library.log");
     reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
+    collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
     // Preload & check fonts
@@ -349,6 +354,11 @@ int main(int argc, char **argv)
     token_view_styling.set_indent_level(settings_get_indent_level(state_store).value_or(token_view_styling.get_indent_level()));
     token_view_styling.set_paragraph_gap(settings_get_paragraph_gap(state_store).value_or(token_view_styling.get_paragraph_gap()));
     token_view_styling.set_bold_text(settings_get_bold_text(state_store).value_or(token_view_styling.get_bold_text()));
+    token_view_styling.set_picture_mode(settings_get_picture_mode(state_store).value_or(0));
+    token_view_styling.set_thin_bar(settings_get_thin_bar(state_store).value_or(false));
+    token_view_styling.set_scroll_overlap(settings_get_small_int(state_store, "scroll_overlap").value_or(0));
+    token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
+    token_view_styling.set_cover_sleep(settings_get_small_int(state_store, "cover_sleep").value_or(0));
     token_view_styling.set_night_theme(settings_get_night_theme(state_store).value_or(std::string()));
     token_view_styling.set_night_from(settings_get_night_hour(state_store, true).value_or(21));
     token_view_styling.set_night_until(settings_get_night_hour(state_store, false).value_or(7));
@@ -377,6 +387,11 @@ int main(int argc, char **argv)
             settings_set_spacing_level(state_store, token_view_styling.get_spacing_level());
             settings_set_justify(state_store, token_view_styling.get_justify());
             settings_set_hyphenate(state_store, token_view_styling.get_hyphenate());
+            settings_set_picture_mode(state_store, token_view_styling.get_picture_mode());
+            settings_set_thin_bar(state_store, token_view_styling.get_thin_bar());
+            settings_set_small_int(state_store, "scroll_overlap", token_view_styling.get_scroll_overlap());
+            settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
+            settings_set_small_int(state_store, "cover_sleep", token_view_styling.get_cover_sleep());
             settings_set_night_theme(state_store, token_view_styling.get_night_theme());
             settings_set_night_hour(state_store, true, token_view_styling.get_night_from());
             settings_set_night_hour(state_store, false, token_view_styling.get_night_until());
@@ -456,6 +471,7 @@ int main(int argc, char **argv)
     // Timing
     Timer idle_timer;
     Timer save_timer;
+    bool cover_shown = false; // the cover screen is up until a key is pressed
     Timer quiet_timer; // time since the last key press, for Auto exit
     Timer night_timer;
     bool night_active = false;
@@ -513,6 +529,7 @@ int main(int argc, char **argv)
     auto handle_key_down = [&](SDLKey raw_key) {
         idle_timer.reset();
         quiet_timer.reset();
+        cover_shown = false;
 
         SDLKey key = chord_tracker.on_keypress(raw_key);
 
@@ -645,6 +662,29 @@ int main(int argc, char **argv)
         {
             update_night_theme();
             night_timer.reset();
+        }
+
+        const int cover_minutes = cover_sleep_minutes(token_view_styling.get_cover_sleep());
+        if (cover_minutes > 0 && !cover_shown && quiet_timer.elapsed_sec() >= static_cast<uint32_t>(cover_minutes) * 60u)
+        {
+            cover_shown = true;
+            if (const auto open_book = state_store.get_current_book_path())
+            {
+                std::vector<char> bytes;
+                std::string format;
+                if (read_book_cover(*open_book, bytes, format))
+                {
+                    auto cover = std::make_shared<ImageView>(bytes, format, sys_styling, 0);
+                    if (cover->valid())
+                    {
+                        cover->set_screensaver();
+                        view_stack.push(cover);
+                        view_stack.render(screen, true);
+                        SDL_BlitSurface(screen, NULL, video, NULL);
+                        SDL_Flip(video);
+                    }
+                }
+            }
         }
 
         const int auto_exit = token_view_styling.get_auto_exit_minutes();

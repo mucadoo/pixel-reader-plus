@@ -5,6 +5,7 @@
 #include "reader/system_styling.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
+#include "util/picture_filter.h"
 #include "util/sdl_font_cache.h"
 #include "util/sdl_utils.h"
 
@@ -26,7 +27,7 @@ const int SCREEN_H = static_cast<int>(::SCREEN_HEIGHT);
 
 } // namespace
 
-ImageView::ImageView(const std::vector<char> &data, const std::string &extension, SystemStyling &styling)
+ImageView::ImageView(const std::vector<char> &data, const std::string &extension, SystemStyling &styling, int picture_mode)
     : styling(styling)
     , styling_sub_id(styling.subscribe_to_changes([this](SystemStyling::ChangeId) {
           _needs_render = true;
@@ -39,6 +40,7 @@ ImageView::ImageView(const std::vector<char> &data, const std::string &extension
     }
     if (original && original->w > 0 && original->h > 0)
     {
+        apply_picture_filter(original.get(), picture_mode);
         fit = std::min(
             static_cast<double>(SCREEN_W) / original->w,
             static_cast<double>(SCREEN_H) / original->h
@@ -203,6 +205,11 @@ bool ImageView::tick(uint32_t elapsed_ms)
 
 void ImageView::on_keypress(SDLKey key)
 {
+    if (screensaver)
+    {
+        _is_done = true;
+        return;
+    }
     switch (key)
     {
         case SW_BTN_LEFT:

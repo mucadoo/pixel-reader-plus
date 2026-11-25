@@ -33,6 +33,31 @@ inline const char *spacing_label(int level)
     return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
 }
 
+// Extra pixels added to every space between words.
+inline int word_spacing_pixels(int level)
+{
+    static const int values[LAYOUT_LEVEL_COUNT] = {-1, 0, 2, 4};
+    return values[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+inline const char *word_spacing_label(int level)
+{
+    static const char *labels[LAYOUT_LEVEL_COUNT] = {"Tight", "Normal", "Wide", "Wider"};
+    return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+// Minutes of quiet before the cover screen, per step of the Cover screen setting. Step 0 is off.
+inline int cover_sleep_minutes(int step)
+{
+    static const int values[4] = {0, 2, 5, 10};
+    return values[step < 0 ? 0 : (step > 3 ? 3 : step)];
+}
+
+inline std::string cover_sleep_label(int step)
+{
+    return step <= 0 ? std::string("Off") : std::to_string(cover_sleep_minutes(step)) + " min";
+}
+
 // First-line indent of a paragraph, in pixels.
 inline int indent_pixels(int level)
 {

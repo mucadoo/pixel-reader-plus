@@ -13,6 +13,9 @@
 #include <unordered_map>
 #include <vector>
 
+// The full size cover picture of a book and its format name ("JPG", "PNG", "GIF"). False when it has none.
+bool read_book_cover(const std::filesystem::path &book, std::vector<char> &bytes, std::string &format);
+
 // Small cover pictures for the book grid.
 //
 // Pulling a cover out of an epub and shrinking it can take a good fraction of a

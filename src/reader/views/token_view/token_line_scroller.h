@@ -34,6 +34,7 @@ class TokenLineScroller
 
     uint32_t line_height_pixels;
     int side_margin = 4;
+    int picture_mode = 0;
     int first_line_indent = 0;
     bool paragraph_gap = true;
     bool bold_body = false;
@@ -74,6 +75,8 @@ public:
     void set_side_margin(int pixels);
     // First-line indent in pixels, whether blank lines separate paragraphs, and bold body text.
     // Call reset_buffer to wrap again.
+    // How pictures are shown, a PictureMode. Call reset_buffer to lay out again.
+    void set_picture_mode(int mode);
     void set_text_options(int first_line_indent_pixels, bool blank_between_paragraphs, bool bold_text);
     // Words may be split at the end of a line, with these patterns. Null for never.
     // Call reset_buffer to wrap again.

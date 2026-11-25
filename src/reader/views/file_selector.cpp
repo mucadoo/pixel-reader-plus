@@ -6,14 +6,18 @@
 #include "reader/book_covers.h"
 #include "reader/book_info.h"
 #include "reader/browser_sort.h"
+#include "reader/collections.h"
 #include "reader/library_log.h"
 #include "reader/progress_screen.h"
+#include "reader/reading_speed.h"
+#include "reader/reading_stats.h"
 #include "./text_input_view.h"
 #include "reader/system_styling.h"
 #include "sys/filesystem.h"
 #include "sys/keymap.h"
 
 #include <algorithm>
+#include <ctime>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -42,7 +46,10 @@ struct FSState
     std::function<void(bool)> on_hide_finished_change;
     std::function<void(const std::string &)> on_book_deleted;
 
-    bool search_active = false;
+    bool search_active = false; // the list shows results: a search, or the books of a collection
+    std::string results_title;  // heading of those results
+    std::string results_up = "Clear search";
+    std::string collection;     // the collection being browsed, empty for a search
     std::string search_query;
     std::vector<std::filesystem::path> search_hits;
 
@@ -100,6 +107,37 @@ std::string book_kind(const std::string &file_name)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     return ext;
+}
+
+// How long the book takes at your reading speed: what is left for a book you have
+// opened, a rough whole-book figure for text formats, nothing for an unopened epub.
+std::string reading_time_text(const FSEntry &entry, const LibraryLog::Entry *log)
+{
+    long long seconds = -1;
+    bool rough = false;
+    if (log && log->units > 0)
+    {
+        if (log->finished())
+        {
+            return "";
+        }
+        seconds = reading_speed::seconds_for(static_cast<uint32_t>(static_cast<unsigned long long>(log->units) * (100 - log->percent) / 100));
+    }
+    else
+    {
+        const std::string kind = book_kind(entry.name);
+        if (kind == "EPUB" || entry.size == 0)
+        {
+            return "";
+        }
+        seconds = reading_speed::seconds_for(static_cast<uint32_t>(entry.size * 85 / 100));
+        rough = true;
+    }
+    if (seconds < 0)
+    {
+        return "";
+    }
+    return (rough ? "~" : "") + reading_stats::format_duration(seconds) + (rough ? "" : " left");
 }
 
 std::string folder_title(const std::filesystem::path &path)
@@ -348,7 +386,7 @@ void rebuild_views(FSState *s)
 
         if (entry.is_dir && entry.name == "..")
         {
-            const char *up_label = s->search_active ? "Clear search" : "Up one folder";
+            const char *up_label = s->search_active ? s->results_up.c_str() : "Up one folder";
             menu_entries.push_back(up_label);
             menu_details.push_back("");
             item.kind = BookGrid::Item::Kind::Up;
@@ -379,6 +417,11 @@ void rebuild_views(FSState *s)
             menu_entries.push_back(prefix + (info && !info->author.empty() ? title + " - " + info->author : title));
             std::string kind = book_kind(entry.name);
             std::string detail = kind.empty() ? format_size(entry.size) : kind + ", " + format_size(entry.size);
+            const std::string time_left = reading_time_text(entry, log);
+            if (!time_left.empty())
+            {
+                detail = time_left + ", " + detail;
+            }
             if (log)
             {
                 detail = (log->finished() ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
@@ -394,7 +437,7 @@ void rebuild_views(FSState *s)
     }
 
     std::string folder = s->search_active
-        ? "Search: " + s->search_query + "  (" + std::to_string(s->search_hits.size()) + ")"
+        ? s->results_title + "  (" + std::to_string(s->search_hits.size()) + ")"
         : folder_title(s->path);
     if (!s->search_active && *browser_sort_suffix(s->sort) != 0)
     {
@@ -403,7 +446,7 @@ void rebuild_views(FSState *s)
     const auto hints = hints_for(s, has_way_up(s));
     const std::string empty_message = has_items
         ? ""
-        : (s->search_active ? "No book matches" : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
+        : (s->search_active ? (s->collection.empty() ? "No book matches" : "This collection has no books") : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
 
     s->menu.set_title(folder);
     s->menu.set_entries(menu_entries);
@@ -507,6 +550,11 @@ std::string properties_text(const FSState *s, const FSEntry &entry)
         std::string kind = book_kind(entry.name);
         body += "Type\n" + (kind.empty() ? std::string("Book") : kind + " book") + "\n\n";
         body += "Size\n" + format_size(entry.size) + "\n\n";
+        const std::string time_left = reading_time_text(entry, library_log().get(s->path / entry.name));
+        if (!time_left.empty())
+        {
+            body += "Reading time\n" + time_left + "\n\n";
+        }
     }
     body += "Location\n" + s->path.string();
     return body;
@@ -612,6 +660,9 @@ void run_search(FSState *s, const std::string &query)
     std::stable_sort(hits.begin(), hits.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
 
     s->search_query = query;
+    s->results_title = "Search: " + query;
+    s->results_up = "Clear search";
+    s->collection.clear();
     s->search_hits.clear();
     for (const auto &hit : hits)
     {
@@ -663,6 +714,8 @@ void rename_book(FSState *s, const std::filesystem::path &book, const std::strin
     }
     library_log().rename(book, target);
     library_log().flush();
+    collections::rename_book(book, target);
+    collections::flush();
     for (auto &hit : s->search_hits)
     {
         if (hit == book)
@@ -694,12 +747,172 @@ void delete_book(FSState *s, const std::filesystem::path &book)
     }
     library_log().remove(book);
     library_log().flush();
+    collections::forget_book(book);
+    collections::flush();
     if (!book_id.empty() && s->on_book_deleted)
     {
         s->on_book_deleted(book_id);
     }
     s->search_hits.erase(std::remove(s->search_hits.begin(), s->search_hits.end(), book), s->search_hits.end());
     refresh_keeping_cursor(s);
+}
+
+// Shows the books of a collection in place of the folder.
+void show_collection(FSState *s, const std::string &name)
+{
+    s->collection = name;
+    s->results_title = "Collection: " + name;
+    s->results_up = "Leave collection";
+    s->search_hits = collections::books(name);
+    s->search_active = true;
+    refresh_path_entries(s);
+    focus_first_item(s);
+}
+
+// The list of collections, and a way to start a new one.
+void open_collections(FSState *s)
+{
+    const auto shelves = collections::names();
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const auto &name : shelves)
+    {
+        names.push_back(name);
+        details.push_back(std::to_string(collections::count(name)) + " books");
+    }
+    names.push_back("New collection...");
+    details.push_back("");
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title("Collections");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, shelves](uint32_t index) {
+        if (index < shelves.size())
+        {
+            show_collection(s, shelves[index]);
+            return;
+        }
+        s->on_open_view(std::make_shared<TextInputView>(
+            "New collection",
+            "",
+            [s](const std::string &name) {
+                std::string trimmed = name;
+                while (!trimmed.empty() && trimmed.back() == ' ') trimmed.pop_back();
+                if (!trimmed.empty())
+                {
+                    collections::create(trimmed);
+                    collections::flush();
+                    show_collection(s, trimmed);
+                }
+            },
+            s->styling,
+            40
+        ));
+    });
+    s->on_open_view(menu);
+}
+
+// Picks a collection for the book, or starts a new one with it.
+void add_to_collection(FSState *s, const std::filesystem::path &book)
+{
+    const auto shelves = collections::names();
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const auto &name : shelves)
+    {
+        names.push_back(name);
+        details.push_back(collections::contains(name, book) ? "In it" : "");
+    }
+    names.push_back("New collection...");
+    details.push_back("");
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title("Add to collection");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, shelves, book](uint32_t index) {
+        if (index < shelves.size())
+        {
+            collections::add(shelves[index], book);
+            collections::flush();
+            return;
+        }
+        s->on_open_view(std::make_shared<TextInputView>(
+            "New collection",
+            "",
+            [book](const std::string &name) {
+                std::string trimmed = name;
+                while (!trimmed.empty() && trimmed.back() == ' ') trimmed.pop_back();
+                if (!trimmed.empty())
+                {
+                    collections::add(trimmed, book);
+                    collections::flush();
+                }
+            },
+            s->styling,
+            40
+        ));
+    });
+    s->on_open_view(menu);
+}
+
+// The books opened lately, newest first, with how far along each is and when it was last open.
+void open_history(FSState *s)
+{
+    const auto books = library_log().recent(40);
+    if (books.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Recent books", "No book has been opened yet.");
+        }
+        return;
+    }
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const auto &book : books)
+    {
+        std::string title = book.stem().string();
+        if (s->info)
+        {
+            s->info->load(book);
+            if (const BookInfo *info = s->info->get(book))
+            {
+                if (!info->title.empty())
+                {
+                    title = info->title;
+                }
+            }
+        }
+        names.push_back(title);
+        const LibraryLog::Entry *log = library_log().get(book);
+        std::string detail;
+        if (log)
+        {
+            detail = log->finished() ? std::string("Done") : std::to_string(log->percent) + "%";
+            char date[32] = "";
+            const std::time_t when = static_cast<std::time_t>(log->last_opened);
+            std::tm local {};
+            if (localtime_r(&when, &local))
+            {
+                std::strftime(date, sizeof(date), "%d %b %Y", &local);
+            }
+            detail += std::string(", ") + date;
+        }
+        details.push_back(detail);
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title("Recent books");
+    menu->set_close_on_select();
+    menu->set_on_selection([s, books](uint32_t index) {
+        if (index < books.size() && s->on_file_selected)
+        {
+            s->on_file_selected(books[index]);
+        }
+    });
+    s->on_open_view(menu);
 }
 
 // The Y menu: properties, and for a book its favorite and finished marks, plus
@@ -719,7 +932,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Finished, HideFinished, Search, ClearSearch, Rename, Delete };
+    enum class Act { Properties, Favorite, Finished, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -731,12 +944,31 @@ void open_options(FSState *s)
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
+    acts.push_back(Act::History);
+    names.push_back("Recent books");
     acts.push_back(Act::Search);
     names.push_back("Search library");
+    acts.push_back(Act::Collections);
+    names.push_back("Collections");
     if (s->search_active)
     {
         acts.push_back(Act::ClearSearch);
-        names.push_back("Clear search");
+        names.push_back(s->collection.empty() ? "Clear search" : "Leave collection");
+    }
+    if (!entry.is_dir)
+    {
+        acts.push_back(Act::AddToCollection);
+        names.push_back("Add to collection");
+        if (!s->collection.empty())
+        {
+            acts.push_back(Act::RemoveFromCollection);
+            names.push_back("Remove from collection");
+        }
+    }
+    if (!s->collection.empty())
+    {
+        acts.push_back(Act::DeleteCollection);
+        names.push_back("Delete collection");
     }
     if (!entry.is_dir)
     {
@@ -778,6 +1010,9 @@ void open_options(FSState *s)
                 library_log().flush();
                 refresh_keeping_cursor(s);
                 break;
+            case Act::History:
+                open_history(s);
+                break;
             case Act::Search:
                 s->on_open_view(std::make_shared<TextInputView>(
                     "Search library",
@@ -786,8 +1021,30 @@ void open_options(FSState *s)
                     s->styling
                 ));
                 break;
+            case Act::Collections:
+                open_collections(s);
+                break;
+            case Act::AddToCollection:
+                add_to_collection(s, book);
+                break;
+            case Act::RemoveFromCollection:
+                collections::remove(s->collection, book);
+                collections::flush();
+                s->search_hits.erase(std::remove(s->search_hits.begin(), s->search_hits.end(), book), s->search_hits.end());
+                refresh_keeping_cursor(s);
+                break;
+            case Act::DeleteCollection:
+                collections::delete_collection(s->collection);
+                collections::flush();
+                s->search_active = false;
+                s->search_hits.clear();
+                s->collection.clear();
+                refresh_path_entries(s);
+                focus_first_item(s);
+                break;
             case Act::ClearSearch:
                 s->search_active = false;
+                s->collection.clear();
                 s->search_hits.clear();
                 refresh_path_entries(s);
                 focus_first_item(s);
@@ -850,6 +1107,7 @@ void go_up(FSState *s)
     {
         s->search_active = false;
         s->search_hits.clear();
+        s->collection.clear();
         refresh_path_entries(s);
         focus_first_item(s);
         return;

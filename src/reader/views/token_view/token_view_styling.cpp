@@ -21,6 +21,11 @@ struct TokenViewStylingState
     int indent_level = DEFAULT_INDENT_LEVEL;
     bool paragraph_gap = true;
     std::string night_theme;
+    bool thin_bar = false;
+    int scroll_overlap = 0;
+    int word_spacing = 1;
+    int cover_sleep = 0;
+    int picture_mode = 0;
     int night_from = 21;
     int night_until = 7;
     bool bold_text = false;
@@ -189,6 +194,80 @@ void TokenViewStyling::set_justify(bool justify)
     if (state->justify != justify)
     {
         state->justify = justify;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_scroll_overlap() const
+{
+    return state->scroll_overlap;
+}
+
+void TokenViewStyling::set_scroll_overlap(int lines)
+{
+    lines = std::clamp(lines, 0, 3);
+    if (state->scroll_overlap != lines)
+    {
+        state->scroll_overlap = lines;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_word_spacing() const
+{
+    return state->word_spacing;
+}
+
+void TokenViewStyling::set_word_spacing(int level)
+{
+    level = std::clamp(level, 0, 3);
+    if (state->word_spacing != level)
+    {
+        state->word_spacing = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_cover_sleep() const
+{
+    return state->cover_sleep;
+}
+
+void TokenViewStyling::set_cover_sleep(int step)
+{
+    step = std::clamp(step, 0, 3);
+    if (state->cover_sleep != step)
+    {
+        state->cover_sleep = step;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_picture_mode() const
+{
+    return state->picture_mode;
+}
+
+void TokenViewStyling::set_picture_mode(int mode)
+{
+    mode = std::clamp(mode, 0, 3);
+    if (state->picture_mode != mode)
+    {
+        state->picture_mode = mode;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_thin_bar() const
+{
+    return state->thin_bar;
+}
+
+void TokenViewStyling::set_thin_bar(bool on)
+{
+    if (state->thin_bar != on)
+    {
+        state->thin_bar = on;
         notify_subscribers();
     }
 }

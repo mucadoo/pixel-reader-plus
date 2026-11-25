@@ -22,12 +22,17 @@ class SettingsView: public View
     static constexpr uint32_t ROW_GAP = 14;
     static constexpr uint32_t ROW_BOLD = 15;
     static constexpr uint32_t ROW_HYPHEN = 16;
-    static constexpr uint32_t ROW_NIGHT = 17;
-    static constexpr uint32_t ROW_NIGHT_FROM = 18;
-    static constexpr uint32_t ROW_NIGHT_UNTIL = 19;
-    static constexpr uint32_t ROW_AUTO_EXIT = 20;
-    static constexpr uint32_t ROW_CONTROLS = 21;
-    static constexpr int ROW_COUNT = 22;
+    static constexpr uint32_t ROW_PICTURES = 17;
+    static constexpr uint32_t ROW_THIN_BAR = 18;
+    static constexpr uint32_t ROW_WORD_SPACING = 19;
+    static constexpr uint32_t ROW_OVERLAP = 20;
+    static constexpr uint32_t ROW_NIGHT = 21;
+    static constexpr uint32_t ROW_NIGHT_FROM = 22;
+    static constexpr uint32_t ROW_NIGHT_UNTIL = 23;
+    static constexpr uint32_t ROW_AUTO_EXIT = 24;
+    static constexpr uint32_t ROW_COVER_SLEEP = 25;
+    static constexpr uint32_t ROW_CONTROLS = 26;
+    static constexpr int ROW_COUNT = 27;
 
     bool _is_done = false;
     bool needs_render = true;

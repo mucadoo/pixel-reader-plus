@@ -35,6 +35,9 @@ A name that is too long for its row slides once the row is selected: it waits a 
 - **Add to favorites** or **Remove from favorites**, for a book. A favorite has `* ` in front of its name. Favorites in other folders are listed at the top of every folder, under **Continue**, so they are one press away.
 - **Mark as finished** or **Mark as not finished**, for a book. A book at 99% or more counts as finished by itself, shows **Done**, and has a **Done** label on its cover. Marking it as not finished overrides that, and marking an unfinished book as finished overrides the percent.
 - **Hide finished books** or **Show finished books**, for the whole list. Hidden books stay on the card and come back when you show them. A favorite is never hidden. The choice is saved.
+- **Recent books** lists the last 40 books you opened, newest first, with the percent or Done and the date. **A** opens one.
+- **Collections** are shelves of your own. The list shows each collection and **New collection...**; **A** opens a collection as a list of its books, and the Y menu there has **Remove from collection**, **Delete collection** and **Leave collection**. **Add to collection** in the Y menu puts the selected book in one. Collections are kept in `collections.tsv` in the store, and follow a book when you rename or delete it.
+- In the list, a book you have opened shows the time left to read at your speed, and an unopened text, Markdown, HTML or FB2 book shows an estimate such as `~2h 10m`. Properties has a **Reading time** row. An unopened epub shows none, because its length is unknown until it is opened.
 - **Search library** opens an on-screen keyboard. The words you type are looked for in the file name, title, author and series of every book under the top folder, in all its subfolders. A **Searching library** screen with a bar shows how far it has got. The matches replace the list, with the title and the folder they are in; **A** opens one, and **Clear search** (the first row, **B**, or the same entry in the Y menu) goes back to the folders. A search shows up to 500 books.
 - **Rename file**, for a book, asks for a new name with the keyboard. The extension stays, and the progress, favorite mark, highlights and bookmarks go with the book.
 - **Delete book**, for a book, asks you to confirm and then removes the file together with its progress, highlights, bookmarks and layout.
@@ -66,12 +69,12 @@ These are the printed buttons on the Flip.
 | --- | --- |
 | D-pad up / down | Previous or next line. Hold to keep moving. |
 | D-pad left / right | Previous or next page. |
-| L1 / R1 | Previous or next page. Settings can move this to L2 / R2. |
+| L1 / R1 | Previous or next page. Settings can move this to L2 / R2. The other shoulder pair (L2 / R2, or L1 / R1 after the swap) jumps to the previous or next chapter: the first press goes to the start of the current chapter, and a second one, or one within the first 3% of a chapter, to the one before. |
 | A | Show or hide the progress line. |
 | B | Close the book and return to the file list. |
 | X | Settings. |
 | Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
-| Select | The book menu: chapters, bookmarks, next and previous mark, book map, go to a percent, go to a page, view pictures, jump back, reading stats, word list, highlights. Press Select again to close it. |
+| Select | The book menu: chapters, bookmarks, next and previous mark, book map, go to a percent, go to a page, view pictures, jump back, look up a word, reading stats, word list, highlights. Press Select again to close it. |
 | Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
@@ -142,6 +145,7 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 - **Next mark** and **Previous mark** go to the next or previous bookmark or highlight in book order, from where you are. They appear when the book has any, and say so when there is none further on.
 - **Book map** shows the whole book as one bar: the part you have read is filled, thin lines cut the bar at each chapter start, small squares above it are bookmarks and below it are highlights, and a tall marker is the place the map points at. Left and right move it by 1%, **L1** and **R1** by 10%, up and down jump to the previous or next chapter, and the chapter name is shown below the bar. **A** goes there, **B** closes the map.
 - **View picture** or **View pictures** appears when a picture is on the screen. It opens the picture full screen, or a short list to choose from when there are several. **A** zooms in step by step (100%, 150%, 200%, 300%, 400% of the size that fits the screen) and then returns, **L1** and **R1** zoom out and in, **Y** fits the picture to the screen, the D-pad moves around a zoomed picture (hold to keep moving), and **B** closes it.
+- **Look up a word** opens the on-screen keyboard. Type a word and the dictionary entry opens. When a selected phrase of several words has no entry as a whole, Look up shows the entry of each word in turn (up to six).
 - **Go to %** is a small picker, starting at where you are. Left and right move 1, up and down move 10, **A** goes, **B** cancels. The percent is of the whole book.
 - **Go to page** appears in Page mode once the pages are counted. It works like Go to %, starting at the current page, and goes to the top of the chosen page. The page count follows the Progress row, so in Chapter mode the pages are the chapter's.
 - **Jump back** appears once you have used the chapter list, a bookmark, a highlight, a link, Go to %, or Go to page. It returns to where you were, and a second use goes one jump further back, up to 20.
@@ -165,6 +169,11 @@ Press **X**. The book stays behind the menu. Each row has the name on the left a
 - **Indent.** None (the default), Small, Medium or Large: the space before the first line of each paragraph.
 - **Paragraph gap.** On (the default) keeps the empty line between paragraphs. Off removes it, which looks best together with an indent. Changing these counts the pages again.
 - **Bold text.** Draws all body text in bold. Off is the default.
+- **Word spacing.** Tight, Normal (the default), Wide or Wider: extra pixels in every space between words. Counts the pages again.
+- **Scroll overlap.** 0 to 3 lines of the old screen stay at the top when left or right scrolls a screen in Scroll mode, so you do not lose your place.
+- **Pictures.** Normal, Inverted, High contrast or Hidden. Inverted and High contrast are for dark themes and for line art. Hidden removes pictures from the text.
+- **Thin bar.** On draws a 3 pixel line along the bottom edge: the part read is filled and thin ticks mark the chapters.
+- **Cover screen.** Off, or 2, 5 or 10 minutes. When no button has been pressed for that long, the cover of the open epub fills the screen; any button brings the book back. Books without a cover picture do not show one.
 - **Night theme, Night from, Night until.** Night theme is Off or any of the themes. When it is set, the reader switches to it from the hour in Night from until the hour in Night until (for example 21:00 to 07:00), using the clock of the device, and goes back to your own theme afterwards. A theme you pick by hand during the night is kept.
 - **Hyphenate.** On splits a word that does not fit at the end of a line, with a hyphen, so lines are fuller and justified lines have smaller gaps. The patterns for English, French and Portuguese follow the language of the book, and a book in another language uses the English ones. The hyphen is not part of the book, so highlights and bookmarks stay in the same place with Hyphenate on or off. Off is the default. Changing it counts the pages again.
 - **Auto exit.** Off, or 5, 10, 15, 30 or 60 minutes. When no button has been pressed for that long, the reader saves its place and quits, so a book left open does not run the battery down.

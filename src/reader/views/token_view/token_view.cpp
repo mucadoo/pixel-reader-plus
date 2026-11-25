@@ -59,9 +59,11 @@ struct TokenViewState
     Hyphenator hyphenator;
     std::string hyphenation_language = "english";
     bool hyphenating = false; // whether the scroller currently splits words
+    int picture_mode = 0;
     int first_line_indent = 0;
     bool paragraph_gap = true;
     bool bold_text = false;
+    int word_spacing = 1;   // level of the word spacing setting
     int side_margin;    // pixels left empty at each side of the text
     int spacing_extra;  // pixels added to every line on top of the font's own
     int line_height;
@@ -75,6 +77,8 @@ struct TokenViewState
     int title_progress_percent = 0;
     int title_chapter_percent = 0;
     int title_book_percent = 0;
+    std::vector<double> chapter_ticks; // where each chapter starts in the book, 0 to 1
+    bool chapter_ticks_ready = false;
     int title_chapter_minutes = -1; // minutes left, -1 when unknown
     int title_book_minutes = -1;
     uint32_t title_page = 0;
@@ -250,6 +254,10 @@ struct TokenViewState
         paragraph_gap = token_view_styling.get_paragraph_gap();
         bold_text = token_view_styling.get_bold_text();
         line_scroller.set_text_options(first_line_indent, paragraph_gap, bold_text);
+        picture_mode = token_view_styling.get_picture_mode();
+        line_scroller.set_picture_mode(picture_mode);
+        word_spacing = token_view_styling.get_word_spacing();
+        set_word_spacing(word_spacing_pixels(word_spacing));
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -294,6 +302,22 @@ struct TokenViewState
         const int indent = indent_pixels(token_view_styling.get_indent_level());
         const bool gap = token_view_styling.get_paragraph_gap();
         const bool bold = token_view_styling.get_bold_text();
+        const int pictures = token_view_styling.get_picture_mode();
+        const int spacing_level = token_view_styling.get_word_spacing();
+        if (spacing_level != word_spacing)
+        {
+            word_spacing = spacing_level;
+            set_word_spacing(word_spacing_pixels(spacing_level));
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (pictures != picture_mode)
+        {
+            picture_mode = pictures;
+            line_scroller.set_picture_mode(pictures);
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
         if (indent != first_line_indent || gap != paragraph_gap || bold != bold_text)
         {
             first_line_indent = indent;
@@ -1023,6 +1047,39 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         }
     }
 
+    if (state->token_view_styling.get_thin_bar())
+    {
+        if (!state->chapter_ticks_ready)
+        {
+            state->chapter_ticks_ready = true;
+            const uint32_t chapters = static_cast<uint32_t>(state->doc_reader->get_table_of_contents().size());
+            for (uint32_t i = 0; i < chapters; ++i)
+            {
+                const auto extent = state->doc_reader->get_progress_extent(state->doc_reader->get_toc_item_address(i), false);
+                if (extent.second > 0)
+                {
+                    state->chapter_ticks.push_back(static_cast<double>(extent.first) / extent.second);
+                }
+            }
+        }
+        const auto here = state->doc_reader->get_progress_extent(get_address(), false);
+        const double fraction = here.second > 0 ? std::min(1.0, static_cast<double>(here.first) / here.second) : 0.0;
+        const int bar_w = static_cast<int>(SCREEN_WIDTH);
+        const int bar_top = static_cast<int>(SCREEN_HEIGHT) - 3;
+        auto paint = [&](int x, int y, int w, int h, SDL_Color color) {
+            SDL_Rect rect = {static_cast<Sint16>(x), static_cast<Sint16>(y), static_cast<Uint16>(std::max(0, w)), static_cast<Uint16>(h)};
+            SDL_FillRect(dest_surface, &rect, SDL_MapRGB(dest_surface->format, color.r, color.g, color.b));
+        };
+        paint(0, bar_top, bar_w, 3, theme.background);
+        paint(0, bar_top + 1, bar_w, 1, theme.secondary_text);
+        paint(0, bar_top, static_cast<int>(fraction * bar_w), 3, theme.main_text);
+        for (double tick : state->chapter_ticks)
+        {
+            const int x = std::min(bar_w - 1, static_cast<int>(tick * bar_w));
+            paint(x, bar_top, 1, 3, tick <= fraction ? theme.background : theme.secondary_text);
+        }
+    }
+
     return true;
 }
 
@@ -1188,11 +1245,11 @@ void TokenView::on_keypress(SDLKey key)
                 }
                 else if (key == SW_BTN_LEFT)
                 {
-                    scroll(-state->num_text_display_lines());
+                    scroll(-std::max(1, state->num_text_display_lines() - state->token_view_styling.get_scroll_overlap()));
                 }
                 else
                 {
-                    scroll(state->num_text_display_lines());
+                    scroll(std::max(1, state->num_text_display_lines() - state->token_view_styling.get_scroll_overlap()));
                 }
             }
             break;
@@ -1338,7 +1395,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
+    key += ",ws" + std::to_string(state.word_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');
     if (!chapter)
     {

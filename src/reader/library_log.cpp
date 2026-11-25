@@ -57,6 +57,13 @@ void LibraryLog::load(std::filesystem::path path)
                 if (parts.size() >= 6)
                 {
                     entry.book_id = parts[4];
+                    const size_t comma = entry.book_id.find(',');
+                    if (comma != std::string::npos)
+                    {
+                        // the length of the book rides after the id
+                        try { entry.units = static_cast<uint32_t>(std::stoul(entry.book_id.substr(comma + 1))); } catch (...) {}
+                        entry.book_id.erase(comma);
+                    }
                     path_at = 5;
                 }
                 for (size_t i = path_at; i < parts.size(); ++i)
@@ -91,7 +98,7 @@ void LibraryLog::flush()
         const Entry &e = item.second;
         out << e.percent << '\t' << e.last_opened << '\t'
             << (e.status == Status::Finished ? 1 : (e.status == Status::Reading ? 2 : 0)) << '\t'
-            << (e.favorite ? 1 : 0) << '\t' << e.book_id << '\t' << item.first << '\n';
+            << (e.favorite ? 1 : 0) << '\t' << e.book_id << (e.units ? "," + std::to_string(e.units) : std::string()) << '\t' << item.first << '\n';
     }
     dirty = false;
 }
@@ -142,6 +149,39 @@ void LibraryLog::set_book_id(const std::filesystem::path &book, const std::strin
         entry.book_id = book_id;
         dirty = true;
     }
+}
+
+void LibraryLog::set_units(const std::filesystem::path &book, uint32_t units)
+{
+    Entry &entry = entries[book.string()];
+    if (entry.units != units)
+    {
+        entry.units = units;
+        dirty = true;
+    }
+}
+
+std::vector<std::filesystem::path> LibraryLog::recent(size_t max_count) const
+{
+    std::vector<std::pair<long long, std::string>> found;
+    for (const auto &item : entries)
+    {
+        if (item.second.last_opened > 0)
+        {
+            std::error_code ec;
+            if (std::filesystem::exists(item.first, ec))
+            {
+                found.emplace_back(item.second.last_opened, item.first);
+            }
+        }
+    }
+    std::sort(found.begin(), found.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+    std::vector<std::filesystem::path> result;
+    for (size_t i = 0; i < found.size() && i < max_count; ++i)
+    {
+        result.emplace_back(found[i].second);
+    }
+    return result;
 }
 
 void LibraryLog::remove(const std::filesystem::path &book)

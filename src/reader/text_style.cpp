@@ -134,7 +134,29 @@ int measure_plain(TTF_Font *font, const char *s, uint32_t len)
     return w;
 }
 
+int g_word_spacing = 0;
+
+// The extra width the word spacing setting gives a run of whitespace.
+int spacing_for(const char *s, const char *e)
+{
+    if (g_word_spacing == 0)
+    {
+        return 0;
+    }
+    int spaces = 0;
+    for (; s < e; ++s)
+    {
+        spaces += *s == ' ' ? 1 : 0;
+    }
+    return spaces * g_word_spacing;
+}
+
 } // namespace
+
+void set_word_spacing(int pixels)
+{
+    g_word_spacing = pixels;
+}
 
 // Lowercase for dictionary lookup: ASCII, and the accented capitals of the
 // Latin-1 block (such as the E in Ecole) that French and Portuguese use.
@@ -229,7 +251,12 @@ int measure_styled(
             }
             q = next;
         }
-        width += measure_plain(font_for(run.flags, run.scale), p, static_cast<uint32_t>(q - p));
+        int run_w = measure_plain(font_for(run.flags, run.scale), p, static_cast<uint32_t>(q - p));
+        if (ws)
+        {
+            run_w = std::max(0, run_w + spacing_for(p, q));
+        }
+        width += run_w;
         p = q;
     }
     return width;
@@ -329,6 +356,10 @@ LineLayout layout_line(
 
         TTF_Font *font = font_for(run.flags, run.scale);
         int piece_w = measure_plain(font, p, static_cast<uint32_t>(q - p));
+        if (ws)
+        {
+            piece_w = std::max(0, piece_w + spacing_for(p, q));
+        }
         DrawnPiece piece;
         piece.text.assign(p, q);
         piece.x = x;

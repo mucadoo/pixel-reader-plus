@@ -9,6 +9,7 @@
 #include "reader/system_styling.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
+#include "util/picture_filter.h"
 #include "util/sdl_font_cache.h"
 #include "util/sdl_utils.h"
 
@@ -173,10 +174,15 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Paragraph gap", token_view_styling.get_paragraph_gap() ? "On" : "Off", true, sys_font},
         {"Bold text", token_view_styling.get_bold_text() ? "On" : "Off", true, sys_font},
         {"Hyphenate", token_view_styling.get_hyphenate() ? "On" : "Off", true, sys_font},
+        {"Pictures", picture_mode_label(token_view_styling.get_picture_mode()), true, sys_font},
+        {"Thin bar", token_view_styling.get_thin_bar() ? "On" : "Off", true, sys_font},
+        {"Word spacing", word_spacing_label(token_view_styling.get_word_spacing()), true, sys_font},
+        {"Scroll overlap", std::to_string(token_view_styling.get_scroll_overlap()) + (token_view_styling.get_scroll_overlap() == 1 ? " line" : " lines"), true, sys_font},
         {"Night theme", night_value, true, sys_font},
         {"Night from", hour_label(token_view_styling.get_night_from()), true, sys_font},
         {"Night until", hour_label(token_view_styling.get_night_until()), true, sys_font},
         {"Auto exit", auto_exit_label(token_view_styling.get_auto_exit_minutes()), true, sys_font},
+        {"Cover screen", cover_sleep_label(token_view_styling.get_cover_sleep()), true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -503,6 +509,34 @@ void SettingsView::on_keypress(SDLKey key)
                 else if (line_selected == ROW_HYPHEN)
                 {
                     token_view_styling.set_hyphenate(!token_view_styling.get_hyphenate());
+                }
+                else if (line_selected == ROW_PICTURES)
+                {
+                    token_view_styling.set_picture_mode(
+                        (token_view_styling.get_picture_mode() + PICTURE_MODE_COUNT + dir) % PICTURE_MODE_COUNT
+                    );
+                }
+                else if (line_selected == ROW_THIN_BAR)
+                {
+                    token_view_styling.set_thin_bar(!token_view_styling.get_thin_bar());
+                }
+                else if (line_selected == ROW_WORD_SPACING)
+                {
+                    token_view_styling.set_word_spacing(
+                        (token_view_styling.get_word_spacing() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_OVERLAP)
+                {
+                    token_view_styling.set_scroll_overlap(
+                        (token_view_styling.get_scroll_overlap() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_COVER_SLEEP)
+                {
+                    token_view_styling.set_cover_sleep(
+                        (token_view_styling.get_cover_sleep() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
                 }
                 else if (line_selected == ROW_NIGHT)
                 {

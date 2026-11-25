@@ -4,6 +4,7 @@
 #include "./goto_view.h"
 #include "./book_map_view.h"
 #include "./image_view.h"
+#include "./text_input_view.h"
 #include "./popup_view.h"
 #include "./selection_menu.h"
 #include "./menu_draw.h"
@@ -22,6 +23,7 @@
 #include "reader/reading_stats.h"
 #include "reader/vocabulary.h"
 #include "reader/reading_mode.h"
+#include "reader/shoulder_keymap.h"
 #include "reader/system_styling.h"
 #include "reader/work_pump.h"
 #include "reader/view_stack.h"
@@ -259,7 +261,7 @@ void open_picture(ReaderViewState &state, const std::filesystem::path &path)
     {
         extension.erase(0, 1);
     }
-    auto view = std::make_shared<ImageView>(state.reader->load_resource(path), extension, state.sys_styling);
+    auto view = std::make_shared<ImageView>(state.reader->load_resource(path), extension, state.sys_styling, state.token_view_styling.get_picture_mode());
     if (!view->valid())
     {
         show_message(state, "This picture cannot be shown");
@@ -292,6 +294,35 @@ void open_pictures(ReaderViewState &state, const std::vector<std::filesystem::pa
         }
     });
     state.view_stack.push(menu);
+}
+
+// The shoulder pair that does not turn pages moves between chapters: back to the start of
+// this chapter, or to the one before when already near its start, and forward to the next.
+void jump_chapter(ReaderView &reader_view, ReaderViewState &state, int direction)
+{
+    const auto &toc = state.reader->get_table_of_contents();
+    if (toc.empty())
+    {
+        show_message(state, "This book has no chapters");
+        return;
+    }
+    const DocAddr here = get_current_address(state);
+    const auto position = state.reader->get_toc_position(here);
+    int target = static_cast<int>(position.toc_index);
+    if (direction > 0)
+    {
+        ++target;
+    }
+    else if (position.progress_percent < 3)
+    {
+        --target;
+    }
+    if (target < 0 || target >= static_cast<int>(toc.size()))
+    {
+        show_message(state, direction > 0 ? "This is the last chapter" : "This is the first chapter");
+        return;
+    }
+    reader_view.jump_to(state.reader->get_toc_item_address(static_cast<uint32_t>(target)));
 }
 
 void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
@@ -525,6 +556,8 @@ void export_highlights(ReaderViewState &state)
 
 } // namespace
 
+void show_definition(ReaderViewState &state, const std::string &lookup);
+
 void ReaderView::open_book_menu()
 {
     struct Action
@@ -606,6 +639,22 @@ void ReaderView::open_book_menu()
     {
         actions->push_back({"Jump back", [this]() { jump_back(); }});
     }
+    actions->push_back({"Look up a word", [this]() {
+        state->view_stack.push(std::make_shared<TextInputView>(
+            "Look up a word",
+            "",
+            [this](const std::string &typed) {
+                std::string word = typed;
+                while (!word.empty() && word.back() == ' ') word.pop_back();
+                if (!word.empty())
+                {
+                    show_definition(*state, word);
+                }
+            },
+            state->sys_styling,
+            60
+        ));
+    }});
     actions->push_back({
         "Word list (" + std::to_string(vocabulary::entries().size()) + ")",
         [this]() { open_word_list(*state); }
@@ -925,6 +974,95 @@ static void run_search(ReaderView &reader_view, ReaderViewState &state, const st
     state.view_stack.push(menu);
 }
 
+// Looks the text up in the dictionary of the book language, falling back to English, and shows it.
+// A phrase that has no entry of its own is looked up word by word.
+void show_definition(ReaderViewState &state, const std::string &lookup)
+{
+    static std::map<std::string, Dictionary> dictionaries;
+    const std::string dictionary_name = state.dictionary_name;
+    SystemStyling &styling = state.sys_styling;
+    const auto load_with_bar = [&styling](Dictionary &d, const std::string &label) {
+        if (!d.is_loaded())
+        {
+            d.load([&styling, &label](int percent) {
+                progress_screen::show(styling, "Loading dictionary", label, percent);
+            });
+        }
+    };
+    Dictionary *dictionary = &dictionaries.try_emplace(dictionary_name, dictionary_name).first->second;
+    load_with_bar(*dictionary, dictionary_name);
+    if (!dictionary->available() && dictionary_name != "english")
+    {
+        // The book's language has no dictionary on the card.
+        dictionary = &dictionaries.try_emplace("english", "english").first->second;
+        load_with_bar(*dictionary, "english");
+    }
+    const long long now = static_cast<long long>(std::time(nullptr));
+    std::string body;
+    if (lookup.empty())
+    {
+        body = "Not a word";
+    }
+    else if (!dictionary->available())
+    {
+        body = "No dictionary installed";
+    }
+    else if (auto gloss = dictionary->lookup(lookup))
+    {
+        body = *gloss;
+        vocabulary::add(lookup, *gloss, state.book_title, now);
+    }
+    else
+    {
+        // Several words with no entry as a whole: give each word its own entry.
+        std::vector<std::string> words;
+        {
+            std::string word;
+            for (char c : lookup + " ")
+            {
+                if (c == ' ')
+                {
+                    if (!word.empty())
+                    {
+                        words.push_back(word);
+                        word.clear();
+                    }
+                }
+                else
+                {
+                    word.push_back(c);
+                }
+            }
+        }
+        if (words.size() > 1)
+        {
+            int shown = 0;
+            for (const std::string &word : words)
+            {
+                if (shown >= 6)
+                {
+                    break;
+                }
+                if (auto part = dictionary->lookup(word))
+                {
+                    body += (body.empty() ? "" : "\n\n") + word + "\n" + *part;
+                    vocabulary::add(word, *part, state.book_title, now);
+                    ++shown;
+                }
+            }
+        }
+        if (body.empty())
+        {
+            body = "No entry for \"" + lookup + "\"";
+        }
+    }
+    state.view_stack.push(std::make_shared<DefinitionView>(
+        lookup.empty() ? std::string("Look up") : lookup,
+        body,
+        state.sys_styling
+    ));
+}
+
 static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
 {
     std::string lookup = state.token_view->selected_lookup();
@@ -990,52 +1128,9 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
                 reader_view.jump_to(target->address);
                 break;
             case Act::LookUp:
-            {
-                static std::map<std::string, Dictionary> dictionaries;
-                SystemStyling &styling = state.sys_styling;
-                const auto load_with_bar = [&styling](Dictionary &d, const std::string &label) {
-                    if (!d.is_loaded())
-                    {
-                        d.load([&styling, &label](int percent) {
-                            progress_screen::show(styling, "Loading dictionary", label, percent);
-                        });
-                    }
-                };
-                Dictionary *dictionary = &dictionaries.try_emplace(dictionary_name, dictionary_name).first->second;
-                load_with_bar(*dictionary, dictionary_name);
-                if (!dictionary->available() && dictionary_name != "english")
-                {
-                    // The book's language has no dictionary on the card.
-                    dictionary = &dictionaries.try_emplace("english", "english").first->second;
-                    load_with_bar(*dictionary, "english");
-                }
-                std::string body;
-                if (lookup.empty())
-                {
-                    body = "Not a word";
-                }
-                else if (!dictionary->available())
-                {
-                    body = "No dictionary installed";
-                }
-                else if (auto gloss = dictionary->lookup(lookup))
-                {
-                    body = *gloss;
-                    vocabulary::add(lookup, *gloss, state.book_title, static_cast<long long>(std::time(nullptr)));
-                }
-                else
-                {
-                    body = "No entry for \"" + lookup + "\"";
-                }
-                state.view_stack.push(std::make_shared<DefinitionView>(
-                    lookup.empty() ? std::string("Look up") : lookup,
-                    body,
-                    state.sys_styling
-                ));
+                show_definition(state, lookup);
                 break;
-            }
-            case Act::Highlight:
-                state.token_view->toggle_selected_highlight();
+            case Act::Highlight:                state.token_view->toggle_selected_highlight();
                 break;
             case Act::Search:
                 run_search(reader_view, state, lookup);
@@ -1117,6 +1212,22 @@ void ReaderView::handle_keypress(SDLKey key)
         case SW_BTN_SELECT:
             open_book_menu();
             break;
+        case SW_BTN_L1:
+        case SW_BTN_R1:
+        case SW_BTN_L2:
+        case SW_BTN_R2:
+        {
+            const auto pages = get_shoulder_keymap_lr(state->sys_styling.get_shoulder_keymap());
+            if (key == pages.first || key == pages.second)
+            {
+                state->token_view->on_keypress(key);
+            }
+            else
+            {
+                jump_chapter(*this, *state, (key == SW_BTN_L1 || key == SW_BTN_L2) ? -1 : 1);
+            }
+            break;
+        }
         default:
             state->token_view->on_keypress(key);
             break;

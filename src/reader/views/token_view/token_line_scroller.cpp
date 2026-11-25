@@ -2,6 +2,7 @@
 
 #include "doc_api/token_addressing.h"
 #include "reader/hyphenation.h"
+#include "util/picture_filter.h"
 #include "reader/text_style.h"
 #include "reader/text_wrap.h"
 #include "sys/screen.h"
@@ -88,6 +89,10 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
 {
     if (token.type == TokenType::Image)
     {
+        if (picture_mode == PICTURES_HIDDEN)
+        {
+            return {};
+        }
         return image_to_display_lines(static_cast<const ImageDocToken &>(token));
     }
     else
@@ -292,8 +297,12 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
     if (token.type == TokenType::Image)
     {
         const auto &image_token = static_cast<const ImageDocToken &>(token);
+        if (picture_mode == PICTURES_HIDDEN)
+        {
+            return;
+        }
         int slots = 3;
-        if (SDL_Surface *cached = image_cache.get_image(image_token.path.string()))
+        if (SDL_Surface *cached = image_cache.get_image(image_token.path.string() + "#" + std::to_string(picture_mode)))
         {
             if (cached->h > 0)
             {
@@ -466,6 +475,11 @@ void TokenLineScroller::set_line_height_pixels(uint32_t new_height)
     line_height_pixels = new_height;
 }
 
+void TokenLineScroller::set_picture_mode(int mode)
+{
+    picture_mode = mode;
+}
+
 void TokenLineScroller::set_text_options(int first_line_indent_pixels, bool blank_between_paragraphs, bool bold_text)
 {
     first_line_indent = first_line_indent_pixels;
@@ -496,7 +510,7 @@ std::optional<int> TokenLineScroller::end_line_number() const
 SDL_Surface *TokenLineScroller::load_scaled_image(const std::filesystem::path &path)
 {
     {
-        SDL_Surface *image = image_cache.get_image(path);
+        SDL_Surface *image = image_cache.get_image(path.string() + "#" + std::to_string(picture_mode));
         if (image)
         {
             return image;
@@ -533,12 +547,12 @@ SDL_Surface *TokenLineScroller::load_scaled_image(const std::filesystem::path &p
     }
 
     float scale = scale_to_fit_width(img_surface->w);
-    image_cache.put_image(
-        path,
-            scale != 1 ?
-            surface_unique_ptr { zoomSurface(img_surface.get(), scale, scale, 0) } :
-            std::move(img_surface)
-    );
+    surface_unique_ptr shown = scale != 1
+        ? surface_unique_ptr { zoomSurface(img_surface.get(), scale, scale, 0) }
+        : std::move(img_surface);
+    apply_picture_filter(shown.get(), picture_mode);
+    const std::string key = path.string() + "#" + std::to_string(picture_mode);
+    image_cache.put_image(key, std::move(shown));
 
-    return image_cache.get_image(path);
+    return image_cache.get_image(key);
 }

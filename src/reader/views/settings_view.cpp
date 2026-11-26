@@ -56,7 +56,7 @@ const std::vector<Category> &categories()
         {"Theme and colors", {0, 46, 1, 2, 39, 30, 31, 32, 33, 28}, false},
         {"Page layout", {10, 11, 12, 13, 14, 15, 16, 17, 18, 38}, false},
         {"Text", {19, 20, 23, 24, 40, 29, 37}, false},
-        {"Reading", {5, 4, 25, 26, 21, 27, 47}, false},
+        {"Reading", {5, 25, 26, 21, 27, 47}, false},
         {"Bar and clock", {6, 7, 8, 9, 48, 49, 22}, false},
         {"Library and power", {36, 41, 44, 34, 35, 42}, false},
         {"Controls", {43}, true},
@@ -184,12 +184,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Font size", std::to_string(sys_styling.get_font_size()), true, sys_font},
         {"Font", font_value, true, user_font},
         {"Shoulders", shoulder_display_name(sys_styling.get_shoulder_keymap()), true, sys_font},
-        {
-            "Progress",
-            token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT ? "Chapter" : "Book",
-            true,
-            sys_font
-        },
+        {"", "", false, sys_font}, // row 4 was Progress, which is gone: pages are counted over the whole book
         {
             "Reading",
             token_view_styling.get_reading_mode() == ReadingMode::Page ? "Page" : "Scroll",
@@ -473,13 +468,6 @@ void SettingsView::on_change_shoulder_keymap(int dir)
     );
 }
 
-void SettingsView::on_change_progress()
-{
-    token_view_styling.set_progress_reporting(
-        get_next_progress_reporting(token_view_styling.get_progress_reporting())
-    );
-}
-
 void SettingsView::on_change_bar(int slot, int dir)
 {
     auto step = [dir](BarItem item) {
@@ -549,10 +537,6 @@ void SettingsView::on_keypress(SDLKey key)
                 else if (line_selected == 3)
                 {
                     on_change_shoulder_keymap(dir);
-                }
-                else if (line_selected == 4)
-                {
-                    on_change_progress();
                 }
                 else if (line_selected == 5)
                 {

@@ -90,14 +90,11 @@ struct TokenViewState
     int title_chapter_count = 0;
     int title_chapter_pages_left = -1; // -1 when unknown
     int title_book_pages_left = -1;
-    // The page of the whole book and of the chapter, whichever the progress setting does not measure
-    // is estimated from the text. -1 when unknown.
+    // The page of the whole book and of the chapter. -1 when unknown.
     int title_book_page = -1;
     int title_book_pages = -1;
-    bool title_book_estimated = false;
     int title_chapter_page = -1;
     int title_chapter_pages = -1;
-    bool title_chapter_estimated = false;
     uint32_t title_page = 0;
     uint32_t title_pages = 0;
     std::string title_label; // the printed page number the book gives, empty when it gives none
@@ -571,8 +568,7 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             {
                 return "";
             }
-            const char *mark = (book ? state.title_book_estimated : state.title_chapter_estimated) ? "~" : "";
-            snprintf(text, sizeof(text), "%s%d / %s%d", mark, page, mark, pages);
+            snprintf(text, sizeof(text), "%d / %d", page, pages);
             return text;
         }
         case BarItem::Battery:
@@ -1691,18 +1687,15 @@ void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, i
     }
 }
 
-void TokenView::set_bar_pages(int book_page, int book_pages, bool book_estimated, int chapter_page, int chapter_pages, bool chapter_estimated)
+void TokenView::set_bar_pages(int book_page, int book_pages, int chapter_page, int chapter_pages)
 {
     if (book_page != state->title_book_page || book_pages != state->title_book_pages
-        || book_estimated != state->title_book_estimated || chapter_page != state->title_chapter_page
-        || chapter_pages != state->title_chapter_pages || chapter_estimated != state->title_chapter_estimated)
+        || chapter_page != state->title_chapter_page || chapter_pages != state->title_chapter_pages)
     {
         state->title_book_page = book_page;
         state->title_book_pages = book_pages;
-        state->title_book_estimated = book_estimated;
         state->title_chapter_page = chapter_page;
         state->title_chapter_pages = chapter_pages;
-        state->title_chapter_estimated = chapter_estimated;
         state->needs_render = true;
     }
 }
@@ -1864,7 +1857,7 @@ static int visible_text_lines(TokenViewState &state)
     {
         return size;
     }
-    bool chapter = state.token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool chapter = false;
     if (!state.page_index.ready_for(page_index_key(state, chapter)))
     {
         return size;
@@ -1933,6 +1926,51 @@ int TokenView::page_count_percent(bool chapter)
 bool TokenView::page_index_ready(bool chapter)
 {
     return state->page_index.ready_for(page_index_key(*state, chapter));
+}
+
+bool TokenView::chapter_page_numbers(uint32_t &page, uint32_t &pages)
+{
+    if (!page_index_ready(false))
+    {
+        return false;
+    }
+    const int size = std::max(1, state->num_text_display_lines());
+    const int line = std::max(0, absolute_line(*state));
+    const int total = state->page_index.total_lines();
+    if (total <= 0 || state->page_index.page_count(size) <= 0)
+    {
+        return false;
+    }
+
+    int start_line = 0;
+    int end_line = total;
+    const auto &items = state->doc_reader->get_table_of_contents();
+    if (!items.empty())
+    {
+        const DisplayLine *current = state->line_scroller.get_line_relative(0);
+        const DocAddr address = current ? current->address : 0;
+        const auto toc = state->doc_reader->get_toc_position(address);
+        const DocAddr start = state->doc_reader->get_toc_item_address(toc.toc_index);
+        start_line = state->page_index.line_for_address(start, false);
+        // The chapter ends where the next one that starts later begins.
+        for (size_t next = toc.toc_index + 1; next < items.size(); ++next)
+        {
+            const DocAddr next_address = state->doc_reader->get_toc_item_address(static_cast<uint32_t>(next));
+            if (next_address > start)
+            {
+                end_line = state->page_index.line_for_address(next_address, false);
+                break;
+            }
+        }
+    }
+    end_line = std::max(end_line, start_line + 1);
+
+    const int first = state->page_index.page_of_line(start_line, size);
+    const int last = std::max(first, state->page_index.page_of_line(end_line - 1, size));
+    const int now = state->page_index.page_of_line(line, size);
+    pages = static_cast<uint32_t>(last - first + 1);
+    page = static_cast<uint32_t>(std::clamp(now - first + 1, 1, last - first + 1));
+    return true;
 }
 
 bool TokenView::page_numbers(bool chapter, uint32_t &page, uint32_t &pages)
@@ -2009,7 +2047,7 @@ bool TokenView::align_to_page(bool chapter)
 void TokenView::turn_page(int direction)
 {
     state->land_on_last_page = false;
-    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool chapter = false;
     int size = std::max(1, state->num_text_display_lines());
     if (!page_index_ready(chapter))
     {

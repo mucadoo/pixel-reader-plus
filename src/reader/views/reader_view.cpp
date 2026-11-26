@@ -1997,7 +1997,7 @@ void ReaderView::open_book_menu()
         }});
     }
     {
-        const bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+        const bool chapter = false;
         uint32_t page = 0;
         uint32_t pages = 0;
         if (state->token_view_styling.get_reading_mode() == ReadingMode::Page
@@ -2306,7 +2306,7 @@ void ReaderView::update_token_view_title(DocAddr address)
         state->token_view->set_title(state->filename);
     }
 
-    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool chapter = false;
     if (state->token_view_styling.get_reading_mode() == ReadingMode::Page
         && state->token_view->align_to_page(chapter))
     {
@@ -2329,36 +2329,32 @@ void ReaderView::update_token_view_title(DocAddr address)
 
     const auto book_extent = state->reader->get_progress_extent(address, false);
 
-    // Chapter x of y, and the pages left. The page count is exact for what the progress setting
-    // measures and estimated from the text left for the other.
+    // Chapter x of y, the pages left and the page of the book and of the chapter. All are exact:
+    // the chapter's pages are read from the page count of the whole book.
     {
         int chapter_pages_left = -1;
         int book_pages_left = -1;
+        int book_page = -1;
+        int book_pages = -1;
+        int chapter_page = -1;
+        int chapter_pages = -1;
         if (pages > 0)
         {
-            const auto scope = chapter ? state->reader->get_progress_extent(address, true) : book_extent;
-            const auto other = chapter ? book_extent : state->reader->get_progress_extent(address, true);
-            const int exact = static_cast<int>(pages - std::min(page, pages));
-            int estimate = -1;
-            if (scope.second > 0 && other.second > 0)
+            book_page = static_cast<int>(std::min(page, pages));
+            book_pages = static_cast<int>(pages);
+            book_pages_left = book_pages - book_page;
+            uint32_t in_chapter = 0;
+            uint32_t of_chapter = 0;
+            if (state->token_view->chapter_page_numbers(in_chapter, of_chapter))
             {
-                const double per_unit = static_cast<double>(pages) / scope.second;
-                const uint32_t units = other.second > other.first ? other.second - other.first : 0;
-                estimate = static_cast<int>(std::ceil(units * per_unit));
+                chapter_page = static_cast<int>(in_chapter);
+                chapter_pages = static_cast<int>(of_chapter);
+                chapter_pages_left = chapter_pages - chapter_page;
             }
-            chapter_pages_left = chapter ? exact : estimate;
-            book_pages_left = chapter ? estimate : exact;
         }
         const int index = toc_position.toc_index < toc.size() ? static_cast<int>(toc_position.toc_index) + 1 : 0;
         state->token_view->set_bar_extras(index, static_cast<int>(toc.size()), chapter_pages_left, book_pages_left);
-
-        // The page of the whole book, or of the chapter, for whichever the progress setting
-        // measures. Only exact counts are shown, so the other one stays empty.
-        const int shown_page = pages > 0 ? static_cast<int>(std::min(page, pages)) : -1;
-        const int shown_pages = pages > 0 ? static_cast<int>(pages) : -1;
-        state->token_view->set_bar_pages(
-            chapter ? -1 : shown_page, chapter ? -1 : shown_pages, false,
-            chapter ? shown_page : -1, chapter ? shown_pages : -1, false);
+        state->token_view->set_bar_pages(book_page, book_pages, chapter_page, chapter_pages);
     }
 
     // The printed page number, when the book lists its pages.
@@ -2385,7 +2381,7 @@ bool ReaderView::counting_pages() const
 
 bool ReaderView::pagination_ready() const
 {
-    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool chapter = false;
     return state->token_view->page_index_ready(chapter);
 }
 
@@ -2396,7 +2392,7 @@ bool ReaderView::run_pagination(uint32_t budget_ms)
         return false;
     }
 
-    bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+    bool chapter = false;
     if (state->token_view->page_index_ready(chapter))
     {
         return false;
@@ -2444,7 +2440,7 @@ bool ReaderView::render(SDL_Surface *dest_surface, bool force_render)
 {
     if (counting_pages())
     {
-        const bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
+        const bool chapter = false;
         const int percent = state->token_view->page_count_percent(chapter);
         if (!force_render && state->counting_shown && percent == state->counting_drawn)
         {

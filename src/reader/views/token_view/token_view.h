@@ -55,8 +55,10 @@ public:
     // percent follows the Progress setting; the other two are always given
     // Where the chapter and page counters of the bar stand. Pages left are -1 when not known.
     void set_bar_extras(int chapter_index, int chapter_count, int chapter_pages_left, int book_pages_left);
-    // The page of the book and of the chapter, with whether each is estimated. -1 when unknown.
-    void set_bar_pages(int book_page, int book_pages, bool book_estimated, int chapter_page, int chapter_pages, bool chapter_estimated);
+    // The page of the book and of the chapter, counted from the pages of the whole book. -1 when unknown.
+    void set_bar_pages(int book_page, int book_pages, int chapter_page, int chapter_pages);
+    // The page within the current chapter and the pages in it, from the page count of the book.
+    bool chapter_page_numbers(uint32_t &page, uint32_t &pages);
     void set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent);
     // Redraws the bar when the clock in it changes minute.
     bool tick(uint32_t elapsed_ms) override;

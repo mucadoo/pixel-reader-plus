@@ -478,7 +478,7 @@ int main(int argc, char **argv)
     // Text Styling
     TokenViewStyling token_view_styling(
         settings_get_show_title_bar(state_store).value_or(DEFAULT_SHOW_PROGRESS),
-        settings_get_progress_reporting(state_store).value_or(DEFAULT_PROGRESS_REPORTING),
+        DEFAULT_PROGRESS_REPORTING,
         settings_get_reading_mode(state_store).value_or(DEFAULT_READING_MODE)
     );
     token_view_styling.set_bar_left(settings_get_bar_item(state_store, 0).value_or(token_view_styling.get_bar_left()));
@@ -533,7 +533,6 @@ int main(int argc, char **argv)
         // Persist changes
         library_status::configure(token_view_styling.get_library_status(), token_view_styling.get_clock_format() == ClockFormat::H12);
         settings_set_show_title_bar(state_store, token_view_styling.get_show_title_bar());
-        settings_set_progress_reporting(state_store, token_view_styling.get_progress_reporting());
         if (book_layout::active())
         {
             // Inside a book these belong to that book alone.

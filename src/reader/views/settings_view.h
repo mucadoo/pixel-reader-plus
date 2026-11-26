@@ -80,7 +80,6 @@ class SettingsView: public View
     void on_change_font_size(int dir);
     void on_change_font_name(int dir);
     void on_change_shoulder_keymap(int dir);
-    void on_change_progress();
     void on_change_reading();
     void on_change_bar(int slot, int dir);
 

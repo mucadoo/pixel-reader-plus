@@ -40,7 +40,7 @@ inline const char *controls_guide_text()
         "In the chapter list, Start folds or unfolds the part under the cursor and X folds all parts or unfolds them all.\n"
         "Pressing forward on the last page shows the end of the book: the next book, a star rating (A changes it), time spent and Back to the list.\n"
         "Review words in the book menu asks the words you looked up as flash cards: A shows the meaning, then A means known and Y means not yet.\n"
-        "Reading history is a calendar of the time read each day. Reading stats shows the time you have read, your speed, a chart of 14 days and the books read most. Reset this book's layout in Tools brings back the default layout. Word list keeps every word you looked up: A shows it, X deletes it.\n"
+        "Reading history is a calendar of the time read each day. Reading stats shows the time you have read, your speed, the time left and the day you finish at your pace, a chart of 14 days and the books read most. Reset this book's layout in Tools brings back the default layout. Word list keeps every word you looked up: A shows it, X deletes it.\n"
         "Highlights lists what you marked, in book order: A goes there, X removes one.\n"
         "Y on a highlight writes a note. Export highlights and notes writes a Markdown file next to the book, and Import highlights reads it back.\n"
         "This guide is in the book menu under Tools, and in Settings under Controls.\n"

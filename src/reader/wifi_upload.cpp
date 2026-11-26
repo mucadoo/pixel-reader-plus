@@ -99,9 +99,9 @@ std::string page(const std::vector<std::string> &files, const std::string &messa
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<title>Pixel Reader</title><style>body{font-family:sans-serif;max-width:32em;margin:2em auto;padding:0 1em}"
         "input,button{font-size:1.1em;margin:.5em 0}button{padding:.5em 1.2em}</style></head><body>"
-        "<h1>Send books</h1><p>Choose epub, cbz, fb2, md, txt or html files. They are saved in the Downloads folder of the library.</p>"
+        "<h1>Send books</h1><p>Choose epub, md or txt files. They are saved in the Downloads folder of the library.</p>"
         "<form method=\"post\" action=\"/upload\" enctype=\"multipart/form-data\">"
-        "<input type=\"file\" name=\"books\" multiple accept=\".epub,.cbz,.fb2,.md,.markdown,.txt,.html,.htm\"><br>"
+        "<input type=\"file\" name=\"books\" multiple accept=\".epub,.md,.markdown,.txt\"><br>"
         "<button type=\"submit\">Send</button></form>";
     if (!message.empty())
     {
@@ -193,7 +193,7 @@ std::string upload_safe_name(const std::string &raw)
         return std::string();
     }
     const std::string ext = lower(clean.substr(dot));
-    static const char *allowed[] = {".epub", ".cbz", ".fb2", ".md", ".markdown", ".txt", ".html", ".htm"};
+    static const char *allowed[] = {".epub", ".md", ".markdown", ".txt"};
     bool ok = false;
     for (const char *a : allowed)
     {

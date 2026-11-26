@@ -15,8 +15,8 @@
 class DocReader;
 struct SystemStyling;
 
-// Skim the book as a grid of tiles. Each tile shows the start of the text at that place, or for a
-// comic book a small picture of the page. Choose a tile to go there.
+// Skim the book as a grid of tiles. Each tile shows the start of the text at that place.
+// Choose a tile to go there.
 class PageBrowserView: public View
 {
     std::shared_ptr<DocReader> reader;
@@ -24,7 +24,6 @@ class PageBrowserView: public View
     uint32_t styling_sub_id;
     std::function<void(DocAddr)> on_go;
 
-    bool comic = false;
     int tile_count = 0;
     int cols = 3;
     int rows = 3;
@@ -32,8 +31,6 @@ class PageBrowserView: public View
     int here_tile = 0;
     int first_row = 0;
     std::map<int, std::vector<std::string>> snippets; // text of each tile that was read
-    std::map<int, surface_unique_ptr> thumbnails;
-    std::map<int, bool> no_thumbnail;                 // tiles whose picture could not be made
     bool _is_done = false;
     bool _needs_render = true;
 
@@ -43,10 +40,7 @@ class PageBrowserView: public View
     int visible_last() const;
     bool load_one_pending();
     void load_snippet(int tile);
-    void load_thumbnail(int tile, int box_w, int box_h);
     void move_cursor(int cols_delta, int rows_delta);
-    int tile_box_w = 0;
-    int tile_box_h = 0;
 
 public:
     PageBrowserView(

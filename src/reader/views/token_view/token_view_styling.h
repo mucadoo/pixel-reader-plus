@@ -69,13 +69,6 @@ public:
     int get_tweaks() const;
     void set_tweaks(int mask);
 
-    // How a comic is shown: fit 0 whole page or 1 page width, split wide pages in two, and manga (right to left).
-    int get_comic_fit() const;
-    void set_comic_fit(int fit);
-    bool get_comic_split() const;
-    void set_comic_split(bool split);
-    bool get_comic_manga() const;
-    void set_comic_manga(bool manga);
 
     int get_ruler() const;
     void set_ruler(int mode);

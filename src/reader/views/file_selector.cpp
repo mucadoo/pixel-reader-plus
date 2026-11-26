@@ -2,7 +2,9 @@
 
 #include "./book_grid.h"
 #include "./selection_menu.h"
+#include "doc_api/doc_reader.h"
 #include "filetypes/open_doc.h"
+#include "reader/book_search.h"
 #include "reader/folder_prefs.h"
 #include "reader/highlights.h"
 #include "reader/text_style.h"
@@ -143,10 +145,6 @@ std::string reading_time_text(const FSEntry &entry, const LibraryLog::Entry *log
 {
     long long seconds = -1;
     bool rough = false;
-    if (book_kind(entry.name) == "CBZ")
-    {
-        return ""; // pages are pictures, not words
-    }
     if (log && log->units > 0)
     {
         if (log->finished())
@@ -268,9 +266,46 @@ void apply_sort(FSState *s)
         const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
         return log ? log->last_opened : 0LL;
     };
+    // The date a file was put on the card is looked up once for each book.
+    std::map<std::string, long long> added;
+    if (s->sort == BrowserSort::Added)
+    {
+        for (auto it = books; it != s->path_entries.end(); ++it)
+        {
+            std::error_code ec;
+            const auto when = std::filesystem::last_write_time(s->path / it->name, ec);
+            added[it->name] = ec ? 0LL : static_cast<long long>(when.time_since_epoch().count());
+        }
+    }
+    // 0 for a book in progress, 1 for one not opened, 2 for a finished one.
+    auto progress_of = [s](const FSEntry &entry, int &percent) {
+        const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
+        percent = log ? log->percent : 0;
+        if (!log)
+        {
+            return 1;
+        }
+        return log->finished() ? 2 : (log->percent > 0 ? 0 : 1);
+    };
     std::stable_sort(books, s->path_entries.end(), [&](const FSEntry &a, const FSEntry &b) {
         switch (s->sort)
         {
+            case BrowserSort::Size:
+                return a.size > b.size;
+            case BrowserSort::Added:
+                return added[a.name] > added[b.name];
+            case BrowserSort::Progress:
+            {
+                int percent_a = 0;
+                int percent_b = 0;
+                const int group_a = progress_of(a, percent_a);
+                const int group_b = progress_of(b, percent_b);
+                if (group_a != group_b)
+                {
+                    return group_a < group_b;
+                }
+                return group_a == 0 && percent_a > percent_b;
+            }
             case BrowserSort::Title:
                 return lowercase(entry_title(s, a)) < lowercase(entry_title(s, b));
             case BrowserSort::Author:
@@ -331,7 +366,7 @@ void apply_folder_prefs(FSState *s)
         s->prefs_for.pop_back();
     }
     const auto prefs = folder_prefs::get(s->prefs_for);
-    s->sort = prefs && prefs->sort >= 0 && prefs->sort <= static_cast<int>(BrowserSort::Recent) ? static_cast<BrowserSort>(prefs->sort) : s->global_sort;
+    s->sort = prefs && prefs->sort >= 0 && prefs->sort <= static_cast<int>(BrowserSort::Progress) ? static_cast<BrowserSort>(prefs->sort) : s->global_sort;
     s->hide_finished = prefs && prefs->hide >= 0 ? prefs->hide != 0 : s->global_hide;
     const bool grid = prefs && prefs->grid >= 0 ? prefs->grid != 0 : s->global_grid;
     if (grid != s->grid_mode)
@@ -622,7 +657,7 @@ bool load_book_info(FSState *s)
             break;
         }
         const std::string kind = book_kind(entry.name);
-        if (entry.is_dir || (kind != "EPUB" && kind != "FB2" && kind != "HTML" && kind != "HTM" && kind != "MD" && kind != "MARKDOWN"))
+        if (entry.is_dir || (kind != "EPUB" && kind != "MD" && kind != "MARKDOWN"))
         {
             continue;
         }
@@ -1876,10 +1911,98 @@ void open_all_highlights(FSState *s)
     show_highlight_rows(s, rows, "");
 }
 
+// The words around each match in every book of the library, so a phrase can be found when the
+// book is not known. Choosing a match opens that book at the place.
+void search_all_books(FSState *s, const std::string &query)
+{
+    constexpr size_t MAX_HITS = 300;
+    constexpr size_t PER_BOOK = 6;
+    const std::vector<std::filesystem::path> files = library_files(s);
+    std::vector<HighlightRow> rows;
+    for (size_t i = 0; i < files.size() && rows.size() < MAX_HITS; ++i)
+    {
+        const std::filesystem::path &book = files[i];
+        const std::string title = book_title_for(s, book);
+        const auto overall = [&](int percent) {
+            return static_cast<int>((i * 100 + static_cast<size_t>(std::clamp(percent, 0, 100))) / files.size());
+        };
+        progress_screen::show(s->styling, "Searching all books", title, overall(0));
+        std::shared_ptr<DocReader> reader;
+        try
+        {
+            reader = create_doc_reader(book);
+        }
+        catch (...)
+        {
+            continue;
+        }
+        if (!reader)
+        {
+            continue;
+        }
+        std::vector<SearchHit> hits;
+        try
+        {
+            hits = search_book(*reader, query, PER_BOOK, [&](int percent) {
+                progress_screen::show(s->styling, "Searching all books", title, overall(percent));
+            });
+        }
+        catch (...)
+        {
+            continue;
+        }
+        for (const SearchHit &hit : hits)
+        {
+            if (rows.size() >= MAX_HITS)
+            {
+                break;
+            }
+            HighlightRow row;
+            row.book = book;
+            row.title = title;
+            row.text = hit.snippet;
+            row.address = hit.address;
+            rows.push_back(row);
+        }
+    }
+    if (rows.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Search all books", "No match for \"" + query + "\" in " + std::to_string(files.size()) + " books.");
+        }
+        return;
+    }
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const HighlightRow &row : rows)
+    {
+        std::string one_line = row.text;
+        for (char &c : one_line)
+        {
+            if (c == '\n' || c == '\t') c = ' ';
+        }
+        names.push_back(one_line);
+        details.push_back(row.title);
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title(query + " (" + std::to_string(rows.size()) + (rows.size() >= MAX_HITS ? "+" : "") + ")");
+    menu->set_compact(true);
+    menu->set_hints({"A  Open the book", "B  Back"});
+    menu->set_on_selection([s, rows](uint32_t index) {
+        if (index < rows.size() && s->on_open_at)
+        {
+            s->on_open_at(rows[index].book, rows[index].address);
+        }
+    });
+    s->on_open_view(menu);
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -1986,6 +2109,23 @@ void open_library_tools(FSState *s)
                 break;
             case 11:
                 open_all_highlights(s);
+                break;
+            case 12:
+                s->on_open_view(std::make_shared<TextInputView>(
+                    "Search inside all books",
+                    "",
+                    [s](const std::string &typed) {
+                        std::string query = typed;
+                        while (!query.empty() && query.back() == ' ') query.pop_back();
+                        while (!query.empty() && query.front() == ' ') query.erase(0, 1);
+                        if (!query.empty())
+                        {
+                            search_all_books(s, query);
+                        }
+                    },
+                    s->styling,
+                    60
+                ));
                 break;
             default:
                 break;

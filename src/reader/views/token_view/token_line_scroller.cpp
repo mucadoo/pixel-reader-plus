@@ -58,49 +58,15 @@ float scale_to_fit_width(int w)
 
 } // namespace
 
-// The scale a picture is shown at. A picture of a book fits the width of the screen. A page of a
-// comic fits the whole page, and a small one is enlarged up to twice.
-float TokenLineScroller::image_scale(int w, int h) const
+// The scale a picture is shown at: it fits the width of the screen.
+float TokenLineScroller::image_scale(int w, int) const
 {
-    if (!reader || !reader->pages_are_pictures() || w <= 0 || h <= 0)
-    {
-        return scale_to_fit_width(w);
-    }
-    const float page_h = static_cast<float>(std::max(1, static_cast<int>(SCREEN_HEIGHT) - 3 * static_cast<int>(line_height_pixels)));
-    // A split page is two pages side by side, so the size of one of them is what fits.
-    const float shown_w = splits(w, h) ? w / 2.f : static_cast<float>(w);
-    if (comic_fit == 1)
-    {
-        return std::min(2.5f, static_cast<float>(SCREEN_WIDTH) / shown_w);
-    }
-    return std::min(2.f, std::min(static_cast<float>(SCREEN_WIDTH) / shown_w, page_h / h));
-}
-
-void TokenLineScroller::set_comic_options(int fit, bool split, bool manga)
-{
-    comic_fit = fit;
-    comic_split = split;
-    comic_manga = manga;
-}
-
-bool TokenLineScroller::is_comic() const
-{
-    return reader && reader->pages_are_pictures();
-}
-
-bool TokenLineScroller::splits(int w, int h) const
-{
-    return comic_split && is_comic() && h > 0 && w * 10 > h * 12;
+    return scale_to_fit_width(w);
 }
 
 std::string TokenLineScroller::image_key(const std::filesystem::path &path) const
 {
-    std::string key = path.string() + "#" + std::to_string(picture_mode);
-    if (is_comic())
-    {
-        key += "." + std::to_string(comic_fit) + (comic_split ? "s" : "");
-    }
-    return key;
+    return path.string() + "#" + std::to_string(picture_mode);
 }
 
 std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_lines(const ImageDocToken &token)
@@ -111,28 +77,12 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_li
     if (image && image->h)
     {
         int num_lines = (image->h + line_height_pixels - 1) / line_height_pixels;
-        // A wide page of a comic is shown as two, the left half first (the right half first for manga).
-        // The picture was scaled for one half, so the halves are cut from the scaled picture.
-        const bool split = splits(image->w, image->h);
-        const int parts = split ? 2 : 1;
-        for (int part = 0; part < parts; ++part)
+        lines.emplace_back(std::make_unique<ImageLine>(token.address, token.path, num_lines, image->w, image->h));
+        for (int i = 1; i < num_lines; ++i)
         {
-            const int half = split ? (comic_manga ? 1 - part : part) : 0;
-            const int crop_x = split ? half * (image->w / 2) : 0;
-            const int crop_w = split ? (half == 0 ? image->w / 2 : image->w - image->w / 2) : image->w;
-            auto first = std::make_unique<ImageLine>(token.address, token.path, num_lines, crop_w, image->h);
-            if (split)
-            {
-                first->crop_x = static_cast<uint32_t>(crop_x);
-                first->crop_w = static_cast<uint32_t>(crop_w);
-            }
-            lines.emplace_back(std::move(first));
-            for (int i = 1; i < num_lines; ++i)
-            {
-                auto ref = std::make_unique<ImageRefLine>(token.address, i);
-                ref->continuation = true;
-                lines.emplace_back(std::move(ref));
-            }
+            auto ref = std::make_unique<ImageRefLine>(token.address, i);
+            ref->continuation = true;
+            lines.emplace_back(std::move(ref));
         }
     }
     else
@@ -368,10 +318,6 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
             if (cached->h > 0)
             {
                 slots = std::max(1, (cached->h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
-                if (splits(cached->w, cached->h))
-                {
-                    slots *= 2;
-                }
             }
         }
         else
@@ -384,10 +330,6 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
                 float scale = image_scale(w, h);
                 int scaled_h = std::max(1, static_cast<int>(h * scale));
                 slots = std::max(1, (scaled_h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
-                if (splits(w, h))
-                {
-                    slots *= 2;
-                }
             }
         }
         for (int i = 0; i < slots; ++i)

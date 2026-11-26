@@ -483,30 +483,15 @@ std::string extension_for(const std::string &mime_in, const std::string &href, i
         rank = 0;
         return "epub";
     }
-    if (mime.find("cbz") != std::string::npos || mime.find("comicbook") != std::string::npos || ends(".cbz"))
-    {
-        rank = 1;
-        return "cbz";
-    }
-    if (mime.find("fictionbook") != std::string::npos || mime == "application/x-fb2+xml" || ends(".fb2"))
-    {
-        rank = 2;
-        return "fb2";
-    }
     if (mime == "text/markdown" || ends(".md"))
     {
-        rank = 3;
+        rank = 1;
         return "md";
     }
     if (mime == "text/plain" || ends(".txt"))
     {
-        rank = 4;
+        rank = 2;
         return "txt";
-    }
-    if (mime == "text/html" || mime == "application/xhtml+xml" || ends(".html") || ends(".htm"))
-    {
-        rank = 5;
-        return "html";
     }
     return std::string();
 }

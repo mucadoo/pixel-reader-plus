@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-// Reading books that are not epubs: plain text in other encodings, Markdown, HTML and FictionBook (FB2).
+// Reading books that are not epubs: plain text in other encodings, and Markdown.
 // Each is turned into a list of blocks, which the text reader then makes into tokens.
 namespace markup
 {
@@ -37,8 +37,6 @@ struct Block
 enum class Format
 {
     Markdown,
-    Html,
-    Fb2,
 };
 
 // Which format a file name stands for. False for names that are not one of these.

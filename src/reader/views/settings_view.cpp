@@ -199,7 +199,6 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Book grid", grid_size_label(token_view_styling.get_grid_size()), true, sys_font},
         {"Style tweaks", style_tweaks_label(token_view_styling.get_tweaks()), false, sys_font},
         {"Layout profiles", "Open", false, sys_font},
-        {"Comics", std::string(token_view_styling.get_comic_manga() ? "Manga" : "Western") + (token_view_styling.get_comic_split() ? ", split" : "") + (token_view_styling.get_comic_fit() == 1 ? ", wide" : ""), false, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 

@@ -526,6 +526,54 @@ std::vector<std::string> Dictionary::suggest(const std::string &key, size_t max_
     }
     return found;
 }
+std::vector<std::string> Dictionary::words_with_prefix(const std::string &prefix, size_t max_count)
+{
+    ensure_loaded();
+    std::vector<std::string> found;
+    if (!ok)
+    {
+        return found;
+    }
+    const auto key_at = [this](size_t index) {
+        const size_t start = lines[index];
+        size_t tab = data.find('\t', start);
+        const size_t eol = data.find('\n', start);
+        if (tab == std::string::npos || (eol != std::string::npos && tab > eol))
+        {
+            tab = eol == std::string::npos ? data.size() : eol;
+        }
+        return std::string(data, start, tab - start);
+    };
+    size_t lo = 0;
+    size_t hi = lines.size();
+    while (lo < hi)
+    {
+        const size_t mid = lo + (hi - lo) / 2;
+        if (key_at(mid) < prefix)
+        {
+            lo = mid + 1;
+        }
+        else
+        {
+            hi = mid;
+        }
+    }
+    for (size_t i = lo; i < lines.size() && found.size() < max_count; ++i)
+    {
+        const std::string word = key_at(i);
+        if (word.compare(0, prefix.size(), prefix) != 0)
+        {
+            break;
+        }
+        if (word.empty() || (!found.empty() && found.back() == word))
+        {
+            continue;
+        }
+        found.push_back(word);
+    }
+    return found;
+}
+
 bool Dictionary::available()
 {
     ensure_loaded();

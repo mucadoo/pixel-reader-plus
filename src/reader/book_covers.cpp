@@ -1,5 +1,4 @@
 #include "./book_covers.h"
-#include "filetypes/cbz/cbz_pages.h"
 
 #include "filetypes/epub/epub_metadata.h"
 #include "sys/screen.h"
@@ -49,7 +48,7 @@ std::string lowercase(std::string text)
 bool is_epub(const std::filesystem::path &book)
 {
     const std::string ext = lowercase(book.extension().string());
-    return ext == ".epub" || ext == ".cbz";
+    return ext == ".epub";
 }
 
 std::string percent_decode(const std::string &in)
@@ -352,30 +351,6 @@ bool read_book_cover(const std::filesystem::path &book, std::vector<char> &bytes
     for (char &c : ext)
     {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    if (ext == ".cbz")
-    {
-        // The first page is the cover.
-        const auto pages = cbz_page_names(book);
-        if (pages.empty())
-        {
-            return false;
-        }
-        int err = 0;
-        zip_t *zip = zip_open(book.c_str(), ZIP_RDONLY, &err);
-        if (!zip)
-        {
-            return false;
-        }
-        bytes = read_zip_file_str(zip, pages.front());
-        zip_close(zip);
-        if (bytes.empty())
-        {
-            return false;
-        }
-        bytes.pop_back(); // read_zip_file_str adds a terminating zero
-        format = cbz_image_format(pages.front());
-        return !bytes.empty();
     }
     return ext == ".epub" && read_epub_cover(book, bytes, format);
 }

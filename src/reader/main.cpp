@@ -401,9 +401,6 @@ int main(int argc, char **argv)
     token_view_styling.set_ruler(settings_get_small_int(state_store, "ruler").value_or(0));
     token_view_styling.set_letter_spacing(settings_get_small_int(state_store, "letter_spacing").value_or(0));
     token_view_styling.set_rotation(active_rotation);
-    token_view_styling.set_comic_fit(settings_get_small_int(state_store, "comic_fit").value_or(0));
-    token_view_styling.set_comic_split(settings_get_small_int(state_store, "comic_split").value_or(0) != 0);
-    token_view_styling.set_comic_manga(settings_get_small_int(state_store, "comic_manga").value_or(0) != 0);
     if (const auto saved_tweaks = state_store.get_setting("tweaks"))
     {
         token_view_styling.set_tweaks(std::atoi(saved_tweaks->c_str()));
@@ -455,9 +452,6 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "margin_bottom", token_view_styling.get_margin_bottom());
             settings_set_small_int(state_store, "ruler", token_view_styling.get_ruler());
             settings_set_small_int(state_store, "letter_spacing", token_view_styling.get_letter_spacing());
-            settings_set_small_int(state_store, "comic_fit", token_view_styling.get_comic_fit());
-            settings_set_small_int(state_store, "comic_split", token_view_styling.get_comic_split() ? 1 : 0);
-            settings_set_small_int(state_store, "comic_manga", token_view_styling.get_comic_manga() ? 1 : 0);
             settings_set_small_int(state_store, "grid_size", token_view_styling.get_grid_size());
             BookGrid::set_density(token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
@@ -510,9 +504,6 @@ int main(int argc, char **argv)
     );
     settings_view->set_row_action(SettingsView::TWEAKS_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
         open_style_tweaks_menu(view_stack, sys_styling, token_view_styling);
-    });
-    settings_view->set_row_action(SettingsView::COMIC_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
-        open_comic_menu(view_stack, sys_styling, token_view_styling);
     });
     settings_view->set_row_action(SettingsView::PROFILES_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
         open_layout_profiles_menu(view_stack, sys_styling, token_view_styling);

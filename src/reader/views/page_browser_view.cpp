@@ -2,7 +2,6 @@
 
 #include "./menu_draw.h"
 #include "doc_api/doc_reader.h"
-#include "extern/rotozoom/SDL_rotozoom.h"
 #include "reader/system_styling.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
@@ -18,8 +17,6 @@ namespace
 {
 
 constexpr int TEXT_TILES = 50;      // a tile for every 2% of a book
-constexpr int MAX_PICTURE_PIXELS = 12 * 1000 * 1000;
-constexpr size_t MAX_THUMBNAILS = 30;
 const int SCREEN_W = static_cast<int>(::SCREEN_WIDTH);
 const int SCREEN_H = static_cast<int>(::SCREEN_HEIGHT);
 
@@ -67,17 +64,7 @@ PageBrowserView::PageBrowserView(
       }))
     , on_go(std::move(on_go))
 {
-    comic = this->reader->pages_are_pictures();
-    if (comic)
-    {
-        tile_count = std::max(1, static_cast<int>(this->reader->get_progress_extent(0, false).second));
-        cols = 4;
-        rows = 3;
-    }
-    else
-    {
-        tile_count = TEXT_TILES;
-    }
+    tile_count = TEXT_TILES;
     here_tile = tile_of(current);
     cursor = here_tile;
     first_row = std::max(0, cursor / cols - rows / 2);
@@ -90,19 +77,11 @@ PageBrowserView::~PageBrowserView()
 
 DocAddr PageBrowserView::address_of(int tile) const
 {
-    if (comic)
-    {
-        return static_cast<DocAddr>(std::max(0, tile));
-    }
     return reader->get_address_at_percent(static_cast<uint32_t>(tile * 100 / TEXT_TILES));
 }
 
 int PageBrowserView::tile_of(DocAddr address) const
 {
-    if (comic)
-    {
-        return std::clamp(static_cast<int>(address), 0, tile_count - 1);
-    }
     const auto extent = reader->get_progress_extent(address, false);
     if (extent.second == 0)
     {
@@ -158,66 +137,12 @@ void PageBrowserView::load_snippet(int tile)
     snippets[tile] = lines;
 }
 
-void PageBrowserView::load_thumbnail(int tile, int box_w, int box_h)
-{
-    no_thumbnail[tile] = true; // until it works
-    auto iter = reader->get_iter(address_of(tile));
-    const DocToken *token = iter ? iter->read(1) : nullptr;
-    if (!token || token->type != TokenType::Image)
-    {
-        return;
-    }
-    const auto &path = static_cast<const ImageDocToken *>(token)->path;
-    const std::vector<char> data = reader->load_resource(path);
-    int w = 0;
-    int h = 0;
-    if (data.empty() || !image_pixel_size(data.data(), static_cast<uint32_t>(data.size()), w, h)
-        || static_cast<long long>(w) * h > MAX_PICTURE_PIXELS)
-    {
-        return;
-    }
-    std::string ext = path.extension().string();
-    if (ext.size() < 2)
-    {
-        return;
-    }
-    surface_unique_ptr full = load_surface_from_ptr(data.data(), static_cast<uint32_t>(data.size()), ext.substr(1), get_render_surface_format());
-    if (!full || full->w <= 0 || full->h <= 0)
-    {
-        return;
-    }
-    const double scale = std::min(static_cast<double>(box_w) / full->w, static_cast<double>(box_h) / full->h);
-    surface_unique_ptr small { zoomSurface(full.get(), scale, scale, 1) };
-    if (!small)
-    {
-        return;
-    }
-    if (thumbnails.size() >= MAX_THUMBNAILS)
-    {
-        // drop the ones that are not on screen
-        for (auto it = thumbnails.begin(); it != thumbnails.end();)
-        {
-            it = (it->first < visible_first() || it->first > visible_last()) ? thumbnails.erase(it) : std::next(it);
-        }
-    }
-    thumbnails[tile] = std::move(small);
-    no_thumbnail.erase(tile);
-}
-
 // Reads the content of one visible tile that has none yet. True when it did.
 bool PageBrowserView::load_one_pending()
 {
     for (int tile = visible_first(); tile <= visible_last(); ++tile)
     {
-        if (comic)
-        {
-            if (!thumbnails.count(tile) && !no_thumbnail.count(tile) && tile_box_w > 0)
-            {
-                load_thumbnail(tile, tile_box_w, tile_box_h);
-                return true;
-            }
-        }
-        else if (!snippets.count(tile))
+        if (!snippets.count(tile))
         {
             load_snippet(tile);
             return true;
@@ -277,7 +202,7 @@ bool PageBrowserView::render(SDL_Surface *dest_surface, bool force_render)
     const int page = first_row / rows + 1;
     menu_draw::draw_title_bar(
         dest_surface, font, theme, line_height,
-        comic ? "Pages" : "Skim", std::to_string(page) + " / " + std::to_string(pages)
+        "Skim", std::to_string(page) + " / " + std::to_string(pages)
     );
 
     const int top = line_height + 10;
@@ -285,8 +210,6 @@ bool PageBrowserView::render(SDL_Surface *dest_surface, bool force_render)
     const int gap = 6;
     const int tile_w = (SCREEN_W - gap * (cols + 1)) / cols;
     const int tile_h = (bottom - top - gap * (rows + 1)) / rows;
-    tile_box_w = tile_w - 8;
-    tile_box_h = tile_h - small_height - 8;
 
     for (int tile = visible_first(); tile <= visible_last(); ++tile)
     {
@@ -301,14 +224,8 @@ bool PageBrowserView::render(SDL_Surface *dest_surface, bool force_render)
         fill(dest_surface, x, y, tile_w, tile_h, selected ? theme.highlight_text : quiet);
         fill(dest_surface, x + 1, y + 1, tile_w - 2, tile_h - 2, back);
 
-        std::string label;
-        if (comic)
+        std::string label = std::to_string(tile * 2) + "%";
         {
-            label = "Page " + std::to_string(tile + 1);
-        }
-        else
-        {
-            label = std::to_string(tile * 2) + "%";
             const auto position = reader->get_toc_position(address_of(tile));
             const auto &toc = reader->get_table_of_contents();
             if (!toc.empty() && position.toc_index < toc.size())
@@ -327,21 +244,6 @@ bool PageBrowserView::render(SDL_Surface *dest_surface, bool force_render)
         }
 
         const int body_y = y + small_height + 6;
-        if (comic)
-        {
-            const auto found = thumbnails.find(tile);
-            if (found != thumbnails.end() && found->second)
-            {
-                SDL_Surface *thumb = found->second.get();
-                SDL_Rect at = {
-                    static_cast<Sint16>(x + (tile_w - thumb->w) / 2),
-                    static_cast<Sint16>(body_y + (tile_h - small_height - 8 - thumb->h) / 2),
-                    0, 0
-                };
-                SDL_BlitSurface(thumb, nullptr, dest_surface, &at);
-            }
-        }
-        else
         {
             const auto found = snippets.find(tile);
             if (found != snippets.end() && !found->second.empty())

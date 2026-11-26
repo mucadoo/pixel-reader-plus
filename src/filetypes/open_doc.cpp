@@ -1,6 +1,5 @@
 #include "./open_doc.h"
 
-#include "./cbz/cbz_reader.h"
 #include "./epub/epub_reader.h"
 #include "./txt/txt_reader.h"
 #include "util/str_utils.h"
@@ -13,15 +12,10 @@ namespace
 {
 
 const std::string EPUB_EXT = ".epub";
-const std::string CBZ_EXT = ".cbz";
 const std::set<std::string> TEXT_EXTS = {
     ".txt",
     ".md",
-    ".markdown",
-    ".html",
-    ".htm",
-    ".xhtml",
-    ".fb2"
+    ".markdown"
 };
 
 std::string norm_extension(const std::filesystem::path &path)
@@ -34,7 +28,7 @@ std::string norm_extension(const std::filesystem::path &path)
 bool file_type_is_supported(const std::filesystem::path &path)
 {
     auto ext = norm_extension(path);
-    return ext == EPUB_EXT || ext == CBZ_EXT || TEXT_EXTS.count(ext) > 0;
+    return ext == EPUB_EXT || TEXT_EXTS.count(ext) > 0;
 }
 
 std::shared_ptr<DocReader> create_doc_reader(const std::filesystem::path &path)
@@ -43,10 +37,6 @@ std::shared_ptr<DocReader> create_doc_reader(const std::filesystem::path &path)
     if (ext == EPUB_EXT)
     {
         return std::make_shared<EPubReader>(path);
-    }
-    if (ext == CBZ_EXT)
-    {
-        return std::make_shared<CbzReader>(path);
     }
     if (TEXT_EXTS.count(ext) > 0)
     {

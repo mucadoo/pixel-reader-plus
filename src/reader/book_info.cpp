@@ -26,7 +26,7 @@ bool is_epub(const std::filesystem::path &book)
     return ext == ".epub";
 }
 
-// Markdown, HTML and FB2 books say what they are in their text.
+// Markdown books say what they are in their text.
 bool is_markup(const std::filesystem::path &book, markup::Format &format)
 {
     return markup::format_for_extension(book.extension().string(), format);

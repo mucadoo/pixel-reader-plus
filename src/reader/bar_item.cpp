@@ -23,6 +23,9 @@ const ItemInfo ITEMS[] = {
     {BarItem::Date, "date", "Date"},
     {BarItem::ChapterTimeLeft, "chapter_time_left", "Chapter time left"},
     {BarItem::BookTimeLeft, "book_time_left", "Book time left"},
+    {BarItem::ChapterNumber, "chapter_number", "Chapter x of y"},
+    {BarItem::ChapterPagesLeft, "chapter_pages_left", "Pages left in chapter"},
+    {BarItem::BookPagesLeft, "book_pages_left", "Pages left in book"},
     {BarItem::Battery, "battery", "Battery"},
 };
 constexpr int ITEM_COUNT = static_cast<int>(sizeof(ITEMS) / sizeof(ITEMS[0]));

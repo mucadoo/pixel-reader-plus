@@ -95,8 +95,6 @@ public:
         return none;
     }
 
-    // True for a comic book, whose pages are pictures that should be shown whole.
-    virtual bool pages_are_pictures() const { return false; }
 };
 
 #endif

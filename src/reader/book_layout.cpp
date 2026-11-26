@@ -28,9 +28,6 @@ struct Layout
     bool gap = true;
     bool bold = false;
     ReadingMode reading = ReadingMode::Scroll;
-    int comic_fit = 0;
-    bool comic_split = false;
-    bool comic_manga = false;
 };
 
 TokenViewStyling *styling = nullptr;
@@ -53,9 +50,6 @@ Layout current()
     layout.gap = styling->get_paragraph_gap();
     layout.bold = styling->get_bold_text();
     layout.reading = styling->get_reading_mode();
-    layout.comic_fit = styling->get_comic_fit();
-    layout.comic_split = styling->get_comic_split();
-    layout.comic_manga = styling->get_comic_manga();
     return layout;
 }
 
@@ -73,9 +67,6 @@ void apply(const Layout &layout)
     styling->set_paragraph_gap(layout.gap);
     styling->set_bold_text(layout.bold);
     styling->set_reading_mode(layout.reading);
-    styling->set_comic_fit(layout.comic_fit);
-    styling->set_comic_split(layout.comic_split);
-    styling->set_comic_manga(layout.comic_manga);
     applying = false;
 }
 
@@ -113,9 +104,6 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
             else if (key == "gap") layout.gap = value == "1";
             else if (key == "bold") layout.bold = value == "1";
             else if (key == "reading") layout.reading = value == "page" ? ReadingMode::Page : ReadingMode::Scroll;
-            else if (key == "comic_fit") layout.comic_fit = std::stoi(value);
-            else if (key == "comic_split") layout.comic_split = value == "1";
-            else if (key == "comic_manga") layout.comic_manga = value == "1";
         }
         catch (...)
         {
@@ -182,10 +170,7 @@ void save_if_active()
         << "indent=" << layout.indent << "\n"
         << "gap=" << (layout.gap ? 1 : 0) << "\n"
         << "bold=" << (layout.bold ? 1 : 0) << "\n"
-        << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n"
-        << "comic_fit=" << layout.comic_fit << "\n"
-        << "comic_split=" << (layout.comic_split ? 1 : 0) << "\n"
-        << "comic_manga=" << (layout.comic_manga ? 1 : 0) << "\n";
+        << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n";
 }
 
 } // namespace book_layout

@@ -78,52 +78,6 @@ void open_style_tweaks_menu(ViewStack &stack, SystemStyling &system, TokenViewSt
 namespace
 {
 
-std::vector<std::string> comic_details(const TokenViewStyling &styling)
-{
-    return {
-        styling.get_comic_fit() == 1 ? "Page width" : "Whole page",
-        styling.get_comic_split() ? "Split in two" : "As one page",
-        styling.get_comic_manga() ? "Right to left" : "Left to right",
-    };
-}
-
-} // namespace
-
-void open_comic_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling)
-{
-    auto menu = std::make_shared<SelectionMenu>(
-        std::vector<std::string> {"Page fit", "Wide pages", "Reading order"},
-        system
-    );
-    menu->set_details(comic_details(styling));
-    menu->set_title("Comics (for this book)");
-    menu->set_compact(true);
-    menu->set_hints({"A  Change", "B  Close"});
-    std::weak_ptr<SelectionMenu> weak = menu;
-    menu->set_on_selection([weak, &styling](uint32_t index) {
-        if (index == 0)
-        {
-            styling.set_comic_fit(styling.get_comic_fit() == 1 ? 0 : 1);
-        }
-        else if (index == 1)
-        {
-            styling.set_comic_split(!styling.get_comic_split());
-        }
-        else if (index == 2)
-        {
-            styling.set_comic_manga(!styling.get_comic_manga());
-        }
-        if (auto self = weak.lock())
-        {
-            self->set_details(comic_details(styling));
-        }
-    });
-    stack.push(menu);
-}
-
-namespace
-{
-
 void open_profile_actions(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling, const std::string &name)
 {
     auto menu = std::make_shared<SelectionMenu>(

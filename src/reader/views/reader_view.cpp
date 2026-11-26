@@ -38,6 +38,7 @@
 #include "./reading_history_view.h"
 
 #include "doc_api/doc_reader.h"
+#include <cmath>
 #include <ctime>
 #include "sys/keymap.h"
 #include "sys/screen.h"
@@ -857,6 +858,13 @@ void export_highlights(ReaderViewState &state)
 } // namespace
 
 void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen = std::string());
+static std::map<std::string, Dictionary> &dictionary_cache()
+{
+    static std::map<std::string, Dictionary> dictionaries;
+    return dictionaries;
+}
+// Lists the words of the dictionary that begin with what is typed; choosing one shows its entry.
+static void open_dictionary_browser(ReaderViewState &state);
 void open_search_menu(ReaderView &reader_view, ReaderViewState &state);
 
 void ReaderView::open_book_menu()
@@ -902,11 +910,8 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
-    if (!state->reader->pages_are_pictures())
-    {
-        actions->push_back({"Search in book", [this]() { open_search_menu(*this, *state); }});
-    }
-    actions->push_back({state->reader->pages_are_pictures() ? "Browse pages" : "Skim the book", [this]() {
+    actions->push_back({"Search in book", [this]() { open_search_menu(*this, *state); }});
+    actions->push_back({"Skim the book", [this]() {
         state->view_stack.push(std::make_shared<PageBrowserView>(
             state->reader,
             get_current_address(*state),
@@ -1006,13 +1011,8 @@ void ReaderView::open_book_menu()
                 60
             ));
         };
-        if (vocabulary::entries().empty())
-        {
-            type_a_word();
-            return;
-        }
         // The words looked up lately, newest first, one press away.
-        std::vector<std::string> rows = {"Type a word..."};
+        std::vector<std::string> rows = {"Type a word...", "Browse the dictionary..."};
         std::vector<std::string> recent;
         for (const auto &entry : vocabulary::entries())
         {
@@ -1032,9 +1032,13 @@ void ReaderView::open_book_menu()
             {
                 type_a_word();
             }
-            else if (index - 1 < recent.size())
+            else if (index == 1)
             {
-                show_definition(*state, recent[index - 1]);
+                open_dictionary_browser(*state);
+            }
+            else if (index - 2 < recent.size())
+            {
+                show_definition(*state, recent[index - 2]);
             }
         });
         state->view_stack.push(menu);
@@ -1219,6 +1223,30 @@ void ReaderView::update_token_view_title(DocAddr address)
 
     state->token_view->set_title_progress(
         progress_percent, page, pages, chapter_percent, book_percent, chapter_minutes, book_minutes);
+
+    // Chapter x of y, and the pages left. The page count is exact for what the progress setting
+    // measures and estimated from the text left for the other.
+    {
+        int chapter_pages_left = -1;
+        int book_pages_left = -1;
+        if (pages > 0)
+        {
+            const auto scope = chapter ? state->reader->get_progress_extent(address, true) : book_extent;
+            const auto other = chapter ? book_extent : state->reader->get_progress_extent(address, true);
+            const int exact = static_cast<int>(pages - std::min(page, pages));
+            int estimate = -1;
+            if (scope.second > 0 && other.second > 0)
+            {
+                const double per_unit = static_cast<double>(pages) / scope.second;
+                const uint32_t units = other.second > other.first ? other.second - other.first : 0;
+                estimate = static_cast<int>(std::ceil(units * per_unit));
+            }
+            chapter_pages_left = chapter ? exact : estimate;
+            book_pages_left = chapter ? estimate : exact;
+        }
+        const int index = toc_position.toc_index < toc.size() ? static_cast<int>(toc_position.toc_index) + 1 : 0;
+        state->token_view->set_bar_extras(index, static_cast<int>(toc.size()), chapter_pages_left, book_pages_left);
+    }
 
     // The printed page number, when the book lists its pages.
     std::string label;
@@ -1524,7 +1552,7 @@ void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
 // A phrase that has no entry of its own is looked up word by word.
 void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen)
 {
-    static std::map<std::string, Dictionary> dictionaries;
+    std::map<std::string, Dictionary> &dictionaries = dictionary_cache();
     // The dictionary asked for now, else the one in Settings, else the one for the language of the book.
     const std::string dictionary_name = !chosen.empty() ? chosen
         : (!state.token_view_styling.get_dictionary().empty() ? state.token_view_styling.get_dictionary() : state.dictionary_name);
@@ -1669,6 +1697,67 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
         entry->set_lookup([&state, chosen](const std::string &word) { show_definition(state, word, chosen); });
     }
     state.view_stack.push(entry);
+}
+
+static void open_dictionary_browser(ReaderViewState &state)
+{
+    // The dictionary of the settings, or of the book when the settings ask for all of them.
+    std::string name = !state.token_view_styling.get_dictionary().empty() ? state.token_view_styling.get_dictionary() : state.dictionary_name;
+    if (name == ALL_DICTIONARIES)
+    {
+        name = state.dictionary_name;
+    }
+    SystemStyling &styling = state.sys_styling;
+    Dictionary *dictionary = &dictionary_cache().try_emplace(name, name).first->second;
+    const auto load = [&styling](Dictionary &d, const std::string &label) {
+        if (!d.is_loaded())
+        {
+            d.load([&styling, &label](int percent) {
+                progress_screen::show(styling, "Loading dictionary", label, percent);
+            });
+        }
+    };
+    load(*dictionary, name);
+    if (!dictionary->available() && name != "english")
+    {
+        name = "english";
+        dictionary = &dictionary_cache().try_emplace(name, name).first->second;
+        load(*dictionary, name);
+    }
+    if (!dictionary->available())
+    {
+        auto note = std::make_shared<DefinitionView>("Dictionary", "No dictionary installed", state.sys_styling);
+        state.view_stack.push(note);
+        return;
+    }
+    state.view_stack.push(std::make_shared<TextInputView>(
+        "Words starting with (empty for the start)",
+        "",
+        [&state, dictionary, name](const std::string &typed) {
+            std::string prefix = lookup_lowercase(typed);
+            while (!prefix.empty() && prefix.back() == ' ') prefix.pop_back();
+            while (!prefix.empty() && prefix.front() == ' ') prefix.erase(0, 1);
+            const std::vector<std::string> words = dictionary->words_with_prefix(prefix);
+            if (words.empty())
+            {
+                state.view_stack.push(std::make_shared<DefinitionView>("Dictionary", "No words start with \"" + prefix + "\"", state.sys_styling));
+                return;
+            }
+            auto list = std::make_shared<SelectionMenu>(words, state.sys_styling);
+            list->set_title(name + ": " + (prefix.empty() ? std::string("all words") : prefix + "..."));
+            list->set_compact(true);
+            list->set_hints({"A  Open", "B  Back"});
+            list->set_on_selection([&state, words, name](uint32_t index) {
+                if (index < words.size())
+                {
+                    show_definition(state, words[index], name);
+                }
+            });
+            state.view_stack.push(list);
+        },
+        state.sys_styling,
+        40
+    ));
 }
 
 static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
@@ -1877,8 +1966,7 @@ void ReaderView::handle_keypress(SDLKey key)
     if (!state->token_view->is_word_selecting() && state->token_view_styling.get_ruler() == 0 && state->token_view->at_end())
     {
         const auto shoulders = get_shoulder_keymap_lr(state->sys_styling.get_shoulder_keymap());
-        const bool manga = state->token_view_styling.get_comic_manga();
-        if (key == SW_BTN_DOWN || key == (manga ? SW_BTN_LEFT : SW_BTN_RIGHT) || key == shoulders.second)
+        if (key == SW_BTN_DOWN || key == SW_BTN_RIGHT || key == shoulders.second)
         {
             offer_next_book(*state);
             return;

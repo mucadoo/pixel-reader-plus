@@ -33,9 +33,6 @@ struct TokenViewStylingState
     int letter_spacing = 0;
     int rotation = 0;
     int tweaks = 0;
-    int comic_fit = 0;
-    bool comic_split = false;
-    bool comic_manga = false;
     int grid_size = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
@@ -287,49 +284,6 @@ void TokenViewStyling::set_tweaks(int mask)
     if (state->tweaks != mask)
     {
         state->tweaks = mask;
-        notify_subscribers();
-    }
-}
-
-int TokenViewStyling::get_comic_fit() const
-{
-    return state->comic_fit;
-}
-
-void TokenViewStyling::set_comic_fit(int fit)
-{
-    fit = std::clamp(fit, 0, 1);
-    if (state->comic_fit != fit)
-    {
-        state->comic_fit = fit;
-        notify_subscribers();
-    }
-}
-
-bool TokenViewStyling::get_comic_split() const
-{
-    return state->comic_split;
-}
-
-void TokenViewStyling::set_comic_split(bool split)
-{
-    if (state->comic_split != split)
-    {
-        state->comic_split = split;
-        notify_subscribers();
-    }
-}
-
-bool TokenViewStyling::get_comic_manga() const
-{
-    return state->comic_manga;
-}
-
-void TokenViewStyling::set_comic_manga(bool manga)
-{
-    if (state->comic_manga != manga)
-    {
-        state->comic_manga = manga;
         notify_subscribers();
     }
 }

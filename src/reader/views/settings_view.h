@@ -45,9 +45,8 @@ class SettingsView: public View
     static constexpr uint32_t ROW_GRID = 36;
     static constexpr uint32_t ROW_TWEAKS = 37;
     static constexpr uint32_t ROW_PROFILES = 38;
-    static constexpr uint32_t ROW_COMIC = 39;
-    static constexpr uint32_t ROW_CONTROLS = 40;
-    static constexpr int ROW_COUNT = 41;
+    static constexpr uint32_t ROW_CONTROLS = 39;
+    static constexpr int ROW_COUNT = 40;
 
     bool _is_done = false;
     bool needs_render = true;
@@ -73,7 +72,6 @@ class SettingsView: public View
 public:
     static constexpr uint32_t TWEAKS_ROW = ROW_TWEAKS;
     static constexpr uint32_t PROFILES_ROW = ROW_PROFILES;
-    static constexpr uint32_t COMIC_ROW = ROW_COMIC;
 
     SettingsView(
         SystemStyling &sys_styling,

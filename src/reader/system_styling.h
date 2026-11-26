@@ -51,6 +51,10 @@ public:
     void reload_color_theme();
     const ColorTheme &get_loaded_color_theme() const;
 
+    // Text contrast: 0 as the theme has it, 1 stronger, 2 the strongest.
+    int get_text_contrast() const;
+    void set_text_contrast(int level);
+
     // shoulder keymap
     const std::string &get_shoulder_keymap() const;
     void set_shoulder_keymap(const std::string &keymap);

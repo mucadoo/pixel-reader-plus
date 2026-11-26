@@ -10,7 +10,7 @@ namespace
 {
 
 std::filesystem::path actions_file;
-int chosen[SLOT_COUNT] = {ACTION_BOOKMARK, ACTION_TITLE_BAR};
+int chosen[SLOT_COUNT] = {ACTION_BOOKMARK, ACTION_TITLE_BAR, ACTION_NOTHING, ACTION_NOTHING, ACTION_NOTHING};
 
 const char *const ACTION_NAMES[ACTION_COUNT] = {
     "Toggle a bookmark",
@@ -23,6 +23,8 @@ const char *const ACTION_NAMES[ACTION_COUNT] = {
     "Next chapter",
     "Previous chapter",
     "Nothing",
+    "Book menu",
+    "Pick a word",
 };
 
 void save()
@@ -44,7 +46,12 @@ void save()
 
 int default_for(Slot slot)
 {
-    return slot == SLOT_START ? ACTION_BOOKMARK : ACTION_TITLE_BAR;
+    switch (slot)
+    {
+        case SLOT_START: return ACTION_BOOKMARK;
+        case SLOT_A: return ACTION_TITLE_BAR;
+        default: return ACTION_NOTHING;
+    }
 }
 
 int valid_action(int value, Slot slot)
@@ -89,7 +96,8 @@ const char *action_name(int action)
 
 const char *slot_name(Slot slot)
 {
-    return slot == SLOT_START ? "Start button" : "A button";
+    static const char *const names[SLOT_COUNT] = {"Start button", "A button", "Hold A", "Hold Y", "Hold Start"};
+    return names[slot];
 }
 
 } // namespace button_actions

@@ -16,6 +16,48 @@ std::vector<Entry> words; // oldest first on disk, newest first in memory
 bool dirty = false;
 std::map<std::string, Review> reviews;
 bool reviews_dirty = false;
+std::map<std::string, std::string> contexts;
+
+std::filesystem::path contexts_file()
+{
+    return words_file.parent_path() / "vocabulary_context.tsv";
+}
+
+void load_contexts()
+{
+    contexts.clear();
+    std::ifstream in(contexts_file());
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        const size_t tab = line.find('\t');
+        if (tab != std::string::npos && tab > 0)
+        {
+            contexts[line.substr(0, tab)] = line.substr(tab + 1);
+        }
+    }
+}
+
+void save_contexts()
+{
+    if (words_file.empty())
+    {
+        return;
+    }
+    std::ofstream out(contexts_file(), std::ios::trunc);
+    for (const Entry &entry : words)
+    {
+        const auto found = contexts.find(entry.word);
+        if (found != contexts.end())
+        {
+            out << entry.word << '\t' << found->second << '\n';
+        }
+    }
+}
 
 std::filesystem::path reviews_file()
 {
@@ -132,6 +174,7 @@ void load(std::filesystem::path file)
     std::reverse(words.begin(), words.end());
     dirty = false;
     load_reviews();
+    load_contexts();
 }
 
 void flush()
@@ -150,7 +193,13 @@ void flush()
     dirty = false;
 }
 
-void add(const std::string &word, const std::string &gloss, const std::string &book, long long now)
+std::string context_of(const std::string &word)
+{
+    const auto found = contexts.find(word);
+    return found == contexts.end() ? std::string() : found->second;
+}
+
+void add(const std::string &word, const std::string &gloss, const std::string &book, long long now, const std::string &sentence)
 {
     if (word.empty())
     {
@@ -168,6 +217,11 @@ void add(const std::string &word, const std::string &gloss, const std::string &b
     words.insert(words.begin(), entry);
     dirty = true;
     flush();
+    if (!sentence.empty())
+    {
+        contexts[entry.word] = single_line(sentence);
+        save_contexts();
+    }
 }
 
 void remove(size_t index)

@@ -12,6 +12,7 @@ struct SystemStylingState {
 
     std::string color_theme;
     ColorTheme loaded_color_theme;
+    int text_contrast = 0;
 
     std::string shoulder_keymap;
 
@@ -97,14 +98,30 @@ void SystemStyling::set_color_theme(const std::string &color_theme)
     if (state->color_theme != color_theme)
     {
         state->color_theme = color_theme;
-        state->loaded_color_theme = ::get_color_theme(color_theme);
+        state->loaded_color_theme = apply_text_contrast(::get_color_theme(color_theme), state->text_contrast);
+        notify_subscribers(ChangeId::COLOR_THEME);
+    }
+}
+
+int SystemStyling::get_text_contrast() const
+{
+    return state->text_contrast;
+}
+
+void SystemStyling::set_text_contrast(int level)
+{
+    level = level < 0 ? 0 : (level > 2 ? 2 : level);
+    if (state->text_contrast != level)
+    {
+        state->text_contrast = level;
+        state->loaded_color_theme = apply_text_contrast(::get_color_theme(state->color_theme), level);
         notify_subscribers(ChangeId::COLOR_THEME);
     }
 }
 
 void SystemStyling::reload_color_theme()
 {
-    state->loaded_color_theme = ::get_color_theme(state->color_theme);
+    state->loaded_color_theme = apply_text_contrast(::get_color_theme(state->color_theme), state->text_contrast);
     notify_subscribers(ChangeId::COLOR_THEME);
 }
 

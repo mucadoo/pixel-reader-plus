@@ -21,7 +21,11 @@ struct Entry
 void load(std::filesystem::path file);
 void flush();
 
-void add(const std::string &word, const std::string &gloss, const std::string &book, long long now);
+// The sentence the word was found in may be given; it is kept for exports.
+void add(const std::string &word, const std::string &gloss, const std::string &book, long long now, const std::string &sentence = std::string());
+
+// The sentence a word was found in, empty when it was looked up without one.
+std::string context_of(const std::string &word);
 void remove(size_t index);
 
 // Newest first.

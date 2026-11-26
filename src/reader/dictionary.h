@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,7 +50,18 @@ constexpr const char *ALL_DICTIONARIES = "*all";
 // license notes, and every StarDict dictionary (a folder with a .ifo file in it, or a .ifo file with its
 // .idx and .dict or .dict.dz beside it). Drop a file of "word<TAB>meaning" lines in that folder to add your own; words are
 // written in lowercase, and the file need not be sorted.
+std::vector<std::string> all_dictionary_names();
+
+// The dictionaries as the reader lists them: in the order you chose, without the ones you hid.
 std::vector<std::string> dictionary_names();
+
+// The order and hidden dictionaries are kept in a small file. Names not in it come last, in alphabetical order.
+void load_dictionary_preferences(const std::string &file);
+// Every dictionary on the card in the order chosen, with the hidden ones included.
+std::vector<std::string> dictionary_names_in_order();
+bool dictionary_hidden(const std::string &name);
+// Gives the new order and the set of hidden names, and saves them.
+void set_dictionary_preferences(const std::vector<std::string> &order, const std::set<std::string> &hidden);
 
 // The dictionary that suits a book language such as "pt-BR" or "fr". Unknown
 // languages get the English one.

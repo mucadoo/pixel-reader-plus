@@ -59,6 +59,14 @@ void ViewStack::on_keypress(SDLKey key)
     }
 }
 
+void ViewStack::on_keyrelease(SDLKey key)
+{
+    if (!views.empty())
+    {
+        views.back()->on_keyrelease(key);
+    }
+}
+
 void ViewStack::on_keyheld(SDLKey key, uint32_t hold_time_ms)
 {
     if (!views.empty())

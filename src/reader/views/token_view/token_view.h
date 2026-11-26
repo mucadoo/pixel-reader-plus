@@ -90,6 +90,8 @@ public:
     void toggle_selected_highlight(HighlightStyle style = HighlightStyle::Marker);
     // The words between the first and last selected word, as they were on the pages.
     std::string selected_text() const;
+    // The sentence on the page around the selected word, empty when there is none.
+    std::string selected_sentence() const;
     // X in word selection: the selection grows to the sentence, then the paragraph, then back to the word.
     void grow_selection();
 

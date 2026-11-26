@@ -524,6 +524,30 @@ void refresh_path_entries(FSState *s)
             }
         }
     }
+    if (s->path == s->top_folder)
+    {
+        // Two more books you are in the middle of, below the one read last.
+        int more = 0;
+        for (const auto &book : library_log().recent(8))
+        {
+            if (more >= 2)
+            {
+                break;
+            }
+            if (s->pinned_prefix.count(book.string()) || book.string() == s->continue_name)
+            {
+                continue;
+            }
+            const LibraryLog::Entry *log = library_log().get(book);
+            if (!log || log->finished() || log->percent <= 0)
+            {
+                continue;
+            }
+            const size_t before = s->pinned_count;
+            pin(book, "Also reading: ");
+            more += s->pinned_count > before ? 1 : 0;
+        }
+    }
     for (const auto &favorite : library_log().favorites())
     {
         pin(favorite, "* ");

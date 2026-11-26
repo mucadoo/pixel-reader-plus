@@ -4,13 +4,16 @@
 #include "./text_input_view.h"
 #include "filetypes/epub/book_style.h"
 #include "reader/button_actions.h"
+#include "reader/dictionary.h"
 #include "reader/color_theme_def.h"
 #include "reader/layout_profiles.h"
 #include "reader/system_styling.h"
 #include "reader/view_stack.h"
 #include "reader/views/token_view/token_view_styling.h"
 
+#include "sys/keymap.h"
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -216,18 +219,97 @@ std::vector<std::string> typography_details(const TokenViewStyling &styling)
 
 } // namespace
 
+void open_dictionary_order_menu(ViewStack &stack, SystemStyling &system)
+{
+    // The names in the order shown, and the hidden ones; changes are saved at once.
+    auto order = std::make_shared<std::vector<std::string>>(dictionary_names_in_order());
+    auto hidden = std::make_shared<std::set<std::string>>();
+    for (const std::string &name : *order)
+    {
+        if (dictionary_hidden(name))
+        {
+            hidden->insert(name);
+        }
+    }
+    const auto fill = [order, hidden](SelectionMenu &m) {
+        std::vector<std::string> details;
+        int place = 0;
+        for (const std::string &name : *order)
+        {
+            details.push_back(hidden->count(name) ? std::string("hidden") : std::to_string(++place));
+        }
+        m.set_entries(*order);
+        m.set_details(details);
+    };
+    auto menu = std::make_shared<SelectionMenu>(system);
+    fill(*menu);
+    menu->set_title("Dictionaries (first is tried first)");
+    menu->set_empty_message("No dictionaries on the card");
+    menu->set_hints({"A  Up", "Y  Down", "X  Hide / show", "B  Close"});
+    menu->set_uses_x(true);
+    menu->set_default_on_keypress([order, hidden, fill](SDLKey key, SelectionMenu &m) {
+        const uint32_t at = m.get_cursor_pos();
+        if (at >= order->size())
+        {
+            return;
+        }
+        if (key == SW_BTN_Y && at + 1 < order->size())
+        {
+            std::swap((*order)[at], (*order)[at + 1]);
+            fill(m);
+            m.set_cursor_pos(at + 1);
+        }
+        else if (key == SW_BTN_X)
+        {
+            const std::string &name = (*order)[at];
+            if (hidden->count(name))
+            {
+                hidden->erase(name);
+            }
+            else if (hidden->size() + 1 < order->size())
+            {
+                hidden->insert(name);
+            }
+            fill(m);
+        }
+        else
+        {
+            return;
+        }
+        set_dictionary_preferences(*order, *hidden);
+    });
+    menu->set_on_selection([order, hidden, fill, weak = std::weak_ptr<SelectionMenu>(menu)](uint32_t at) {
+        // A moves the dictionary up one place.
+        if (at > 0 && at < order->size())
+        {
+            std::swap((*order)[at], (*order)[at - 1]);
+            if (auto m = weak.lock())
+            {
+                fill(*m);
+                m->set_cursor_pos(at - 1);
+            }
+            set_dictionary_preferences(*order, *hidden);
+        }
+    });
+    stack.push(menu);
+}
+
 void open_button_actions_menu(ViewStack &stack, SystemStyling &system)
 {
     const auto current = []() {
-        return std::vector<std::string> {
-            button_actions::action_name(button_actions::get(button_actions::SLOT_START)),
-            button_actions::action_name(button_actions::get(button_actions::SLOT_A)),
-        };
+        std::vector<std::string> names;
+        for (int slot = 0; slot < button_actions::SLOT_COUNT; ++slot)
+        {
+            names.push_back(button_actions::action_name(button_actions::get(static_cast<button_actions::Slot>(slot))));
+        }
+        return names;
     };
-    auto menu = std::make_shared<SelectionMenu>(
-        std::vector<std::string> {"Start button", "A button"},
-        system
-    );
+    std::vector<std::string> slot_names;
+    for (int slot = 0; slot < button_actions::SLOT_COUNT; ++slot)
+    {
+        slot_names.push_back(button_actions::slot_name(static_cast<button_actions::Slot>(slot)));
+    }
+    auto menu = std::make_shared<SelectionMenu>(slot_names, system);
     menu->set_details(current());
     menu->set_title("Button actions while reading");
     menu->set_compact(true);

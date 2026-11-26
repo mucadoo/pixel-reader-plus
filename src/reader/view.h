@@ -19,6 +19,9 @@ public:
     // Key down event.
     virtual void on_keypress(SDLKey key) = 0;
 
+    // Key up event, for the view on top.
+    virtual void on_keyrelease(SDLKey) {}
+
     // Pass key and held time in ms.
     virtual void on_keyheld(SDLKey, uint32_t) {}
 

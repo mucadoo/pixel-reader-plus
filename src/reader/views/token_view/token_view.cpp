@@ -2303,6 +2303,60 @@ std::string TokenView::selected_text() const
     return text;
 }
 
+std::string TokenView::selected_sentence() const
+{
+    if (state->page_words.empty())
+    {
+        return "";
+    }
+    const auto bounds = selection_bounds(*state);
+    const int count = static_cast<int>(state->page_words.size());
+    int lo = -1;
+    int hi = -1;
+    for (int i = 0; i < count; ++i)
+    {
+        const LayoutWord &word = state->page_words[i];
+        if (word.end > bounds.first && word.begin < bounds.second)
+        {
+            if (lo < 0) lo = i;
+            hi = i;
+        }
+    }
+    if (lo < 0)
+    {
+        return "";
+    }
+    while (lo > 0 && !ends_sentence(state->page_words[lo - 1].text) && !state->page_words[lo - 1].paragraph_end)
+    {
+        --lo;
+    }
+    while (hi + 1 < count && !ends_sentence(state->page_words[hi].text) && !state->page_words[hi].paragraph_end)
+    {
+        ++hi;
+    }
+    std::string sentence;
+    for (int i = lo; i <= hi; ++i)
+    {
+        const LayoutWord &word = state->page_words[i];
+        std::string text = word.text;
+        const bool joins_next = word.hyphen_end && i < hi;
+        if (joins_next && !text.empty() && text.back() == '-')
+        {
+            text.pop_back();
+        }
+        sentence += text;
+        if (!joins_next && i < hi)
+        {
+            sentence += ' ';
+        }
+        if (sentence.size() > 400)
+        {
+            break;
+        }
+    }
+    return sentence;
+}
+
 const std::vector<Highlight> &TokenView::highlights() const
 {
     return state->highlights;

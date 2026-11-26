@@ -120,7 +120,7 @@ std::string dictionary_name_for_language(const std::string &language)
     return "english";
 }
 
-std::vector<std::string> dictionary_names()
+std::vector<std::string> all_dictionary_names()
 {
     std::set<std::string> names;
     for (const char *folder : DICTIONARY_FOLDERS)
@@ -156,6 +156,97 @@ std::vector<std::string> dictionary_names()
     }
     return std::vector<std::string>(names.begin(), names.end());
 }
+namespace
+{
+
+std::string preferences_file;
+std::vector<std::string> preferred_order;
+std::set<std::string> hidden_names;
+
+} // namespace
+
+void load_dictionary_preferences(const std::string &file)
+{
+    preferences_file = file;
+    preferred_order.clear();
+    hidden_names.clear();
+    std::ifstream in(file);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        if (line.empty())
+        {
+            continue;
+        }
+        if (line[0] == '-')
+        {
+            line.erase(0, 1);
+            hidden_names.insert(line);
+        }
+        preferred_order.push_back(line);
+    }
+}
+
+std::vector<std::string> dictionary_names_in_order()
+{
+    const std::vector<std::string> found = all_dictionary_names();
+    std::vector<std::string> ordered;
+    for (const std::string &name : preferred_order)
+    {
+        if (std::find(found.begin(), found.end(), name) != found.end()
+            && std::find(ordered.begin(), ordered.end(), name) == ordered.end())
+        {
+            ordered.push_back(name);
+        }
+    }
+    for (const std::string &name : found)
+    {
+        if (std::find(ordered.begin(), ordered.end(), name) == ordered.end())
+        {
+            ordered.push_back(name);
+        }
+    }
+    return ordered;
+}
+
+bool dictionary_hidden(const std::string &name)
+{
+    return hidden_names.count(name) > 0;
+}
+
+std::vector<std::string> dictionary_names()
+{
+    std::vector<std::string> shown;
+    for (const std::string &name : dictionary_names_in_order())
+    {
+        if (!dictionary_hidden(name))
+        {
+            shown.push_back(name);
+        }
+    }
+    // Never an empty list: hiding every dictionary shows them all again.
+    return shown.empty() ? dictionary_names_in_order() : shown;
+}
+
+void set_dictionary_preferences(const std::vector<std::string> &order, const std::set<std::string> &hidden)
+{
+    preferred_order = order;
+    hidden_names = hidden;
+    if (preferences_file.empty())
+    {
+        return;
+    }
+    std::ofstream out(preferences_file, std::ios::trunc);
+    for (const std::string &name : order)
+    {
+        out << (hidden.count(name) ? "-" : "") << name << '\n';
+    }
+}
+
 void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
 {
     if (loaded)

@@ -12,6 +12,7 @@
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
 #include "./button_actions.h"
+#include "./dictionary.h"
 #include "./state_store.h"
 #include "./system_styling.h"
 #include "./collections.h"
@@ -358,6 +359,7 @@ int main(int argc, char **argv)
     reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
     layout_profiles::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "profiles.tsv");
     collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
+    load_dictionary_preferences((std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "dictionaries.txt").string());
     button_actions::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "buttons.txt");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
@@ -417,6 +419,7 @@ int main(int argc, char **argv)
             settings_set_custom_colors(state_store, colors);
         }
         settings_set_shoulder_keymap(state_store, sys_styling.get_shoulder_keymap());
+        settings_set_small_int(state_store, "text_contrast", sys_styling.get_text_contrast());
         if (book_layout::active())
         {
             // Inside a book the font and size belong to that book alone.
@@ -428,6 +431,8 @@ int main(int argc, char **argv)
             settings_set_font_size(state_store, sys_styling.get_font_size());
         }
     });
+
+    sys_styling.set_text_contrast(settings_get_small_int(state_store, "text_contrast").value_or(0));
 
     // Text Styling
     TokenViewStyling token_view_styling(
@@ -585,6 +590,9 @@ int main(int argc, char **argv)
             view_stack.push(std::make_shared<FontPreviewView>(sys_styling));
         });
     }
+    settings_view->set_row_action(SettingsView::DICTIONARY_ORDER_ROW, [&view_stack, &sys_styling]() {
+        open_dictionary_order_menu(view_stack, sys_styling);
+    });
     settings_view->set_row_action(SettingsView::BUTTONS_ROW, [&view_stack, &sys_styling]() {
         open_button_actions_menu(view_stack, sys_styling);
     });
@@ -606,7 +614,11 @@ int main(int argc, char **argv)
             SW_BTN_L1,
             SW_BTN_R1,
             SW_BTN_L2,
-            SW_BTN_R2
+            SW_BTN_R2,
+            // held for the hold actions of the button settings
+            SW_BTN_A,
+            SW_BTN_Y,
+            SW_BTN_START
         }
     );
     SystemKeyChordTracker chord_tracker;
@@ -774,6 +786,8 @@ int main(int argc, char **argv)
                             break;
                         }
                         chord_tracker.on_keyrelease(screen_key_from_device(key));
+                        view_stack.on_keyrelease(screen_key_from_device(key));
+                        ran_user_code = true;
                     }
                     break;
                 default:

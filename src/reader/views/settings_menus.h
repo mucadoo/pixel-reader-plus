@@ -17,6 +17,9 @@ void open_custom_colors_menu(ViewStack &stack, SystemStyling &system);
 // Saved sets of page settings: save the current ones, use one, replace it, delete it.
 void open_layout_profiles_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling);
 
+// The order the dictionaries are listed and used in, and which ones are hidden.
+void open_dictionary_order_menu(ViewStack &stack, SystemStyling &system);
+
 // What the Start and A buttons do while reading.
 void open_button_actions_menu(ViewStack &stack, SystemStyling &system);
 

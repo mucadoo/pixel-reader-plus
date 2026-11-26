@@ -1,4 +1,5 @@
 #include "./reader_bootstrap_view.h"
+#include "reader/pending_progress.h"
 #include "reader/book_fonts.h"
 
 #include "./popup_view.h"
@@ -86,7 +87,13 @@ void ReaderBootstrapView::load_reader()
     }
 
     auto book_id = reader->get_id();
-    const DocAddr resume_address = state_store.get_book_address(book_id).value_or(0);
+    DocAddr resume_address = state_store.get_book_address(book_id).value_or(0);
+    if (const auto set_by_hand = pending_progress::take(book_path))
+    {
+        // A place chosen in the library: open there.
+        resume_address = reader->get_address_at_percent(static_cast<uint32_t>(*set_by_hand));
+        state_store.set_book_address(book_id, resume_address);
+    }
     library_log().set_book_id(book_path, book_id);
     library_log().set_units(book_path, reader->get_progress_extent(0, false).second);
     library_log().touch(book_path, static_cast<long long>(std::time(nullptr)));

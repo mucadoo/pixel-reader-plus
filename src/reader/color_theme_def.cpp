@@ -60,6 +60,66 @@ std::vector<std::pair<std::string, ColorTheme>> theme_defs = {
         }
     },
     {
+        "solarized_light",
+        {
+            {253, 246, 227, 0}, // background
+            {88, 110, 117, 0},  // main text
+            {147, 161, 161, 0}, // secondary text
+            {38, 139, 210, 0},  // highlight background
+            {253, 246, 227, 0}, // highlight text
+        }
+    },
+    {
+        "solarized_dark",
+        {
+            {0, 43, 54, 0},     // background
+            {147, 161, 161, 0}, // main text
+            {88, 110, 117, 0},  // secondary text
+            {42, 161, 152, 0},  // highlight background
+            {0, 43, 54, 0},     // highlight text
+        }
+    },
+    {
+        "amber_night",
+        {
+            {0, 0, 0, 0},       // background
+            {255, 176, 0, 0},   // main text
+            {128, 88, 0, 0},    // secondary text
+            {255, 176, 0, 0},   // highlight background
+            {0, 0, 0, 0},       // highlight text
+        }
+    },
+    {
+        "sepia_dark",
+        {
+            {43, 33, 24, 0},    // background
+            {214, 192, 160, 0}, // main text
+            {120, 100, 78, 0},  // secondary text
+            {176, 124, 72, 0},  // highlight background
+            {43, 33, 24, 0},    // highlight text
+        }
+    },
+    {
+        "paper_gray",
+        {
+            {222, 222, 218, 0}, // background
+            {30, 30, 30, 0},    // main text
+            {120, 120, 116, 0}, // secondary text
+            {70, 70, 70, 0},    // highlight background
+            {235, 235, 230, 0}, // highlight text
+        }
+    },
+    {
+        "yellow_on_black",
+        {
+            {0, 0, 0, 0},       // background
+            {255, 235, 59, 0},  // main text
+            {140, 128, 30, 0},  // secondary text
+            {255, 235, 59, 0},  // highlight background
+            {0, 0, 0, 0},       // highlight text
+        }
+    },
+    {
         "custom",
         {
             {40, 40, 40, 0},    // background

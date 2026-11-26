@@ -21,6 +21,8 @@
 #include "reader/library_log.h"
 #include "reader/opds.h"
 #include "./book_info_view.h"
+#include "./goto_view.h"
+#include "reader/pending_progress.h"
 #include "./upload_view.h"
 #include "./reading_history_view.h"
 #include "reader/progress_screen.h"
@@ -62,6 +64,9 @@ struct FSState
     std::string series_next_for; // the finished book the next volume below was worked out for
     std::string series_next; // the next volume of its series, empty when there is none
     std::string continue_name; // name of the Continue reading row, empty when there is none
+    // With Group series on, the volumes of a series in the folder are one row. Its name starts with a
+    // control character no file name has; these are the books inside, by row name.
+    std::map<std::string, std::vector<std::filesystem::path>> series_rows;
     size_t pinned_count = 0; // rows after the way up that are not part of the folder: Continue and favorites
     std::map<std::string, std::string> pinned_prefix; // name of a pinned row to the text put in front of it
     bool hide_finished = false;
@@ -259,7 +264,46 @@ bool has_way_up(const FSState *s)
 }
 
 void rebuild_views(FSState *s);
+void refresh_keeping_cursor(FSState *s);
 std::string entry_title(const FSState *s, const FSEntry &entry);
+
+// The row of a series standing for its volumes, rather than a folder or a book.
+bool is_series_row(const FSEntry &entry)
+{
+    return entry.is_dir && !entry.name.empty() && entry.name[0] == '\x01';
+}
+
+std::filesystem::path group_series_file(const FSState *s)
+{
+    return s->store_dir / "group_series";
+}
+
+bool group_series_on(const FSState *s)
+{
+    if (s->store_dir.empty())
+    {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::exists(group_series_file(s), ec);
+}
+
+void set_group_series(const FSState *s, bool on)
+{
+    if (s->store_dir.empty())
+    {
+        return;
+    }
+    std::error_code ec;
+    if (on)
+    {
+        std::ofstream(group_series_file(s), std::ios::trunc) << "1\n";
+    }
+    else
+    {
+        std::filesystem::remove(group_series_file(s), ec);
+    }
+}
 
 std::string lowercase(std::string text)
 {
@@ -567,6 +611,67 @@ void refresh_path_entries(FSState *s)
         }
     }
 
+    s->series_rows.clear();
+    if (!s->search_active && s->info && group_series_on(s))
+    {
+        // Books of one series, when the folder holds two or more of it, give way to one row.
+        std::map<std::string, std::vector<size_t>> by_series;
+        std::map<std::string, std::string> shown;
+        for (size_t i = 0; i < s->path_entries.size(); ++i)
+        {
+            const FSEntry &entry = s->path_entries[i];
+            if (entry.is_dir || s->pinned_prefix.count(entry.name))
+            {
+                continue;
+            }
+            const BookInfo *info = s->info->get(s->path / entry.name);
+            if (info && !info->series.empty())
+            {
+                by_series[lowercase(info->series)].push_back(i);
+                shown.emplace(lowercase(info->series), info->series);
+            }
+        }
+        std::set<size_t> hidden;
+        std::vector<FSEntry> rows;
+        for (const auto &group : by_series)
+        {
+            if (group.second.size() < 2)
+            {
+                continue;
+            }
+            std::vector<std::pair<double, std::filesystem::path>> members;
+            for (const size_t index : group.second)
+            {
+                hidden.insert(index);
+                const std::filesystem::path book = s->path / s->path_entries[index].name;
+                const BookInfo *info = s->info->get(book);
+                members.emplace_back(info ? info->series_number() : 0.0, book);
+            }
+            std::stable_sort(members.begin(), members.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+            const std::string row_name = std::string(1, '\x01') + shown[group.first];
+            std::vector<std::filesystem::path> books;
+            for (const auto &member : members)
+            {
+                books.push_back(member.second);
+            }
+            s->series_rows[row_name] = books;
+            rows.push_back({row_name, true, static_cast<unsigned long long>(books.size())});
+        }
+        if (!hidden.empty())
+        {
+            std::vector<FSEntry> kept;
+            for (size_t i = 0; i < s->path_entries.size(); ++i)
+            {
+                if (!hidden.count(i))
+                {
+                    kept.push_back(s->path_entries[i]);
+                }
+            }
+            s->path_entries = kept;
+            s->path_entries.insert(s->path_entries.end(), rows.begin(), rows.end());
+        }
+    }
+
     apply_sort(s);
     rebuild_views(s);
 }
@@ -606,7 +711,14 @@ void rebuild_views(FSState *s)
         }
 
         has_items = true;
-        if (entry.is_dir)
+        if (is_series_row(entry))
+        {
+            menu_entries.push_back(entry.name.substr(1));
+            menu_details.push_back("Series, " + std::to_string(entry.size) + " books");
+            item.kind = BookGrid::Item::Kind::Folder;
+            item.label = entry.name.substr(1);
+        }
+        else if (entry.is_dir)
         {
             menu_entries.push_back(entry.name);
             menu_details.push_back("Folder");
@@ -734,7 +846,14 @@ bool load_book_info(FSState *s)
     }
     if (changed)
     {
-        resort_keeping_cursor(s);
+        if (group_series_on(s))
+        {
+            refresh_keeping_cursor(s); // the series just read may now be one row
+        }
+        else
+        {
+            resort_keeping_cursor(s);
+        }
     }
     return changed;
 }
@@ -2499,14 +2618,14 @@ void open_options(FSState *s)
         return;
     }
     const FSEntry entry = s->path_entries[s->cursor];
-    if (entry.is_dir && entry.name == "..")
+    if ((entry.is_dir && entry.name == "..") || is_series_row(entry))
     {
         return;
     }
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Filter, Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView };
+    enum class Act { Filter, Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView, SetProgress, GroupSeries };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -2515,6 +2634,8 @@ void open_options(FSState *s)
         names.push_back(log && log->favorite ? "Remove from favorites" : "Add to favorites");
         acts.push_back(Act::Status);
         names.push_back("Status: " + status_label(log));
+        acts.push_back(Act::SetProgress);
+        names.push_back("Set progress" + std::string(log ? " (" + std::to_string(log->percent) + "%)" : std::string()) + "...");
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
@@ -2527,6 +2648,11 @@ void open_options(FSState *s)
     {
         acts.push_back(Act::ResetView);
         names.push_back("Use the default view in this folder");
+    }
+    if (!s->search_active && s->info)
+    {
+        acts.push_back(Act::GroupSeries);
+        names.push_back(group_series_on(s) ? "Group series: On" : "Group series: Off");
     }
     acts.push_back(Act::History);
     names.push_back("Recent books");
@@ -2614,6 +2740,27 @@ void open_options(FSState *s)
                 break;
             case Act::Status:
                 choose_status(s, book);
+                break;
+            case Act::GroupSeries:
+                set_group_series(s, !group_series_on(s));
+                refresh_path_entries(s);
+                focus_first_item(s);
+                break;
+            case Act::SetProgress:
+                s->on_open_view(std::make_shared<GotoView>(
+                    "Progress of this book",
+                    "%",
+                    0,
+                    100,
+                    static_cast<uint32_t>(now ? std::clamp(now->percent, 0, 100) : 0),
+                    [s, book](uint32_t percent) {
+                        pending_progress::set(book, static_cast<int>(percent));
+                        library_log().set_percent(book, static_cast<int>(percent));
+                        library_log().flush();
+                        refresh_keeping_cursor(s);
+                    },
+                    s->styling
+                ));
                 break;
             case Act::LibraryTools:
                 open_library_tools(s);
@@ -2914,6 +3061,16 @@ void on_menu_entry_selected(FSState *s, uint32_t menu_index)
     }
 
     const FSEntry &entry = s->path_entries[menu_index];
+    if (is_series_row(entry))
+    {
+        const auto found = s->series_rows.find(entry.name);
+        if (found != s->series_rows.end())
+        {
+            const std::vector<std::filesystem::path> books = found->second;
+            show_results(s, entry.name.substr(1), "Back to the folder", books);
+        }
+        return;
+    }
     if (entry.is_dir)
     {
         if (entry.name == "..")

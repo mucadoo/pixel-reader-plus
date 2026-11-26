@@ -801,7 +801,7 @@ void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
     fill(*menu);
     menu->set_title("Bookmarks");
     menu->set_empty_message("No bookmarks yet\nChoose Add bookmark in the book menu");
-    menu->set_hints({"A  Go", "X  Delete", "B  Close"});
+    menu->set_hints({"A  Go", "Y  Rename", "X  Delete", "B  Close"});
     menu->set_uses_x(true);
     menu->set_close_on_select();
     menu->set_on_selection([&reader_view, &state](uint32_t index) {
@@ -810,7 +810,46 @@ void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
             reader_view.jump_to(state.bookmarks[index].address);
         }
     });
-    menu->set_default_on_keypress([&state, fill](SDLKey key, SelectionMenu &m) {
+    std::weak_ptr<SelectionMenu> weak_bookmarks = menu;
+    menu->set_default_on_keypress([&state, fill, weak_bookmarks](SDLKey key, SelectionMenu &m) {
+        if (key == SW_BTN_Y)
+        {
+            const uint32_t at = m.get_cursor_pos();
+            if (at >= state.bookmarks.size())
+            {
+                return;
+            }
+            const DocAddr address = state.bookmarks[at].address;
+            state.view_stack.push(std::make_shared<TextInputView>(
+                "Bookmark name",
+                state.bookmarks[at].label,
+                [&state, address, at, fill, weak_bookmarks](const std::string &typed) {
+                    std::string label = typed;
+                    while (!label.empty() && label.back() == ' ') label.pop_back();
+                    while (!label.empty() && label.front() == ' ') label.erase(0, 1);
+                    if (label.empty())
+                    {
+                        return;
+                    }
+                    for (Bookmark &bookmark : state.bookmarks)
+                    {
+                        if (bookmark.address == address)
+                        {
+                            bookmark.label = label;
+                        }
+                    }
+                    save_bookmarks(state.bookmarks_path, state.bookmarks);
+                    if (auto open = weak_bookmarks.lock())
+                    {
+                        fill(*open);
+                        open->set_cursor_pos(at);
+                    }
+                },
+                state.sys_styling,
+                80
+            ));
+            return;
+        }
         if (key != SW_BTN_X)
         {
             return;

@@ -15,6 +15,8 @@ inline const char *controls_guide_text()
         "Settings, Theme and colors, Text contrast makes the text stronger. Reading, Dictionary order sorts and hides dictionaries: A up, Y down, X hide.\n"
         "In the highlight list Start shows one kind only. Search marks and notes finds words in bookmarks, highlights and notes. Places you jumped from lists where Jump back would go. Export for Anki writes a file Anki can import.\n"
         "In the top folder of the list, Also reading rows follow Continue.\n"
+        "In the bookmark list Y renames a bookmark. In the library, Y on a book has Set progress, to say how far you got elsewhere, and Group series, which folds a series into one row.\n"
+        "Settings has more color themes: Solarized, Amber night, Dark sepia, Paper gray and Yellow on black.\n"
         "B closes the book.\n"
         "X opens settings.\n"
         "Y selects a word near the middle of the page. A bar names the buttons.\n"

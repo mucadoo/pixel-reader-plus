@@ -88,6 +88,12 @@ const char *theme_display_name(const std::string &name)
     if (name == "light_contrast") return "Light";
     if (name == "light_sepia") return "Sepia";
     if (name == "vampire") return "Vampire";
+    if (name == "solarized_light") return "Solarized light";
+    if (name == "solarized_dark") return "Solarized dark";
+    if (name == "amber_night") return "Amber night";
+    if (name == "sepia_dark") return "Dark sepia";
+    if (name == "paper_gray") return "Paper gray";
+    if (name == "yellow_on_black") return "Yellow on black";
     if (name == "custom") return "Custom";
     return nullptr;
 }

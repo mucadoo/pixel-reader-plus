@@ -12,6 +12,7 @@
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
 #include "./button_actions.h"
+#include "./pending_progress.h"
 #include "./dictionary.h"
 #include "./state_store.h"
 #include "./system_styling.h"
@@ -360,6 +361,7 @@ int main(int argc, char **argv)
     layout_profiles::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "profiles.tsv");
     collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
     load_dictionary_preferences((std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "dictionaries.txt").string());
+    pending_progress::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "pending_progress.tsv");
     button_actions::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "buttons.txt");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 

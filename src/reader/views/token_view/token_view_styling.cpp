@@ -48,6 +48,7 @@ struct TokenViewStylingState
     bool bold_text = false;
     bool ligatures = false;
     bool widow_control = false;
+    bool keep_punctuation = false;
     std::string book_language;
     int auto_exit_minutes = 0;
 
@@ -626,6 +627,20 @@ void TokenViewStyling::set_ligatures(bool on)
     if (state->ligatures != on)
     {
         state->ligatures = on;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_keep_punctuation() const
+{
+    return state->keep_punctuation;
+}
+
+void TokenViewStyling::set_keep_punctuation(bool on)
+{
+    if (state->keep_punctuation != on)
+    {
+        state->keep_punctuation = on;
         notify_subscribers();
     }
 }

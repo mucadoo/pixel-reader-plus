@@ -14,6 +14,8 @@
 #include "reader/progress_screen.h"
 #include "reader/accent_fold.h"
 #include "reader/button_actions.h"
+#include "reader/color_theme_def.h"
+#include "reader/layout_profiles.h"
 #include "reader/book_info.h"
 #include "reader/book_layout.h"
 #include "reader/bookmarks.h"
@@ -1739,7 +1741,8 @@ void ReaderView::open_book_menu()
                     library_log().finished_count(),
                     finished_times,
                     static_cast<long long>(extent.first),
-                    [](const std::string &path) { return std::filesystem::path(path).stem().string(); }
+                    [](const std::string &path) { return std::filesystem::path(path).stem().string(); },
+                    static_cast<long long>(extent.second)
                 );
             }(),
             state->sys_styling
@@ -2773,6 +2776,55 @@ void ReaderView::run_button_action(int action)
             break;
         case button_actions::ACTION_PICK_WORD:
             state->token_view->start_word_select();
+            break;
+        case button_actions::ACTION_NEXT_PROFILE:
+        {
+            static size_t profile_index = 0;
+            const std::vector<std::string> names = layout_profiles::names();
+            if (names.empty())
+            {
+                show_message(*state, "No layout profiles saved yet");
+                break;
+            }
+            profile_index = (profile_index + 1) % names.size();
+            layout_profiles::apply(names[profile_index], state->sys_styling, state->token_view_styling);
+            show_message(*state, "Layout: " + names[profile_index]);
+            break;
+        }
+        case button_actions::ACTION_NEXT_THEME:
+            state->sys_styling.set_color_theme(get_next_theme(state->sys_styling.get_color_theme()));
+            break;
+        case button_actions::ACTION_BIGGER_TEXT:
+            state->sys_styling.set_font_size(state->sys_styling.get_next_font_size());
+            break;
+        case button_actions::ACTION_SMALLER_TEXT:
+            state->sys_styling.set_font_size(state->sys_styling.get_prev_font_size());
+            break;
+        case button_actions::ACTION_LOOK_UP:
+            state->view_stack.push(std::make_shared<TextInputView>(
+                "Look up a word",
+                "",
+                [this](const std::string &typed) {
+                    std::string word = lookup_lowercase(typed);
+                    while (!word.empty() && word.back() == ' ') word.pop_back();
+                    while (!word.empty() && word.front() == ' ') word.erase(0, 1);
+                    if (!word.empty())
+                    {
+                        show_definition(*state, word);
+                    }
+                },
+                state->sys_styling,
+                60
+            ));
+            break;
+        case button_actions::ACTION_WORD_LIST:
+            open_word_list(*state);
+            break;
+        case button_actions::ACTION_HIGHLIGHTS:
+            open_highlights_menu(*this, *state);
+            break;
+        case button_actions::ACTION_BOOKMARKS:
+            open_bookmarks_menu(*this, *state);
             break;
         case button_actions::ACTION_NEXT_CHAPTER:
             jump_chapter(*this, *state, 1);

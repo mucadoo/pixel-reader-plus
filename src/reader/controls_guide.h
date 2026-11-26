@@ -16,6 +16,7 @@ inline const char *controls_guide_text()
         "In the highlight list Start shows one kind only. Search marks and notes finds words in bookmarks, highlights and notes. Places you jumped from lists where Jump back would go. Export for Anki writes a file Anki can import.\n"
         "In the top folder of the list, Also reading rows follow Continue.\n"
         "In the bookmark list Y renames a bookmark. In the library, Y on a book has Set progress, to say how far you got elsewhere, and Group series, which folds a series into one row.\n"
+        "Button actions can also pick the next layout profile or color theme, bigger or smaller text, look up a word, the word list, highlights and bookmarks. Settings, Typography can keep : ; ! ? and units with their words, for French and Portuguese. The status line shows the battery time left. In the library, Y on a folder hides it; Library tools lists hidden folders and browses by publisher or year.\n"
         "Settings has more color themes: Solarized, Amber night, Dark sepia, Paper gray and Yellow on black.\n"
         "B closes the book.\n"
         "X opens settings.\n"

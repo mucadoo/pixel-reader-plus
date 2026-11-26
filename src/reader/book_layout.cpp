@@ -31,6 +31,7 @@ struct Layout
     bool bold = false;
     bool ligatures = false;
     bool widow_control = false;
+    bool keep_punctuation = false;
     std::string language;
     ReadingMode reading = ReadingMode::Scroll;
     std::string font; // empty when the system styling is not attached
@@ -59,6 +60,7 @@ Layout current()
     layout.bold = styling->get_bold_text();
     layout.ligatures = styling->get_ligatures();
     layout.widow_control = styling->get_widow_control();
+    layout.keep_punctuation = styling->get_keep_punctuation();
     layout.language = styling->get_book_language();
     layout.reading = styling->get_reading_mode();
     if (system_styling)
@@ -84,6 +86,7 @@ void apply(const Layout &layout)
     styling->set_bold_text(layout.bold);
     styling->set_ligatures(layout.ligatures);
     styling->set_widow_control(layout.widow_control);
+    styling->set_keep_punctuation(layout.keep_punctuation);
     styling->set_book_language(layout.language);
     styling->set_reading_mode(layout.reading);
     if (system_styling && !layout.font.empty() && layout.font_size > 0)
@@ -128,6 +131,7 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
             else if (key == "gap") layout.gap = value == "1";
             else if (key == "bold") layout.bold = value == "1";
             else if (key == "ligatures") layout.ligatures = value == "1";
+            else if (key == "keep_punctuation") layout.keep_punctuation = value == "1";
             else if (key == "widows") layout.widow_control = value == "1";
             else if (key == "language") layout.language = value;
             else if (key == "reading") layout.reading = value == "page" ? ReadingMode::Page : ReadingMode::Scroll;
@@ -216,6 +220,7 @@ void save_if_active()
         << "gap=" << (layout.gap ? 1 : 0) << "\n"
         << "bold=" << (layout.bold ? 1 : 0) << "\n"
         << "ligatures=" << (layout.ligatures ? 1 : 0) << "\n"
+        << "keep_punctuation=" << (layout.keep_punctuation ? 1 : 0) << "\n"
         << "widows=" << (layout.widow_control ? 1 : 0) << "\n"
         << "language=" << layout.language << "\n"
         << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n";

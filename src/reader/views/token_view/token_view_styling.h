@@ -153,6 +153,8 @@ public:
     // page (page mode). And the language of the book when the epub names the wrong one ("" follows it).
     bool get_ligatures() const;
     void set_ligatures(bool on);
+    bool get_keep_punctuation() const;
+    void set_keep_punctuation(bool on);
     bool get_widow_control() const;
     void set_widow_control(bool on);
     const std::string &get_book_language() const;

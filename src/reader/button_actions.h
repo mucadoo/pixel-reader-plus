@@ -33,7 +33,15 @@ enum Action
     ACTION_NOTHING = 9,
     ACTION_BOOK_MENU = 10,
     ACTION_PICK_WORD = 11,
-    ACTION_COUNT = 12,
+    ACTION_NEXT_PROFILE = 12,
+    ACTION_NEXT_THEME = 13,
+    ACTION_BIGGER_TEXT = 14,
+    ACTION_SMALLER_TEXT = 15,
+    ACTION_LOOK_UP = 16,
+    ACTION_WORD_LIST = 17,
+    ACTION_HIGHLIGHTS = 18,
+    ACTION_BOOKMARKS = 19,
+    ACTION_COUNT = 20,
 };
 
 void load(std::filesystem::path file);

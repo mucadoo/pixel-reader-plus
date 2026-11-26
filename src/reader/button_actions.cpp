@@ -25,6 +25,14 @@ const char *const ACTION_NAMES[ACTION_COUNT] = {
     "Nothing",
     "Book menu",
     "Pick a word",
+    "Next layout profile",
+    "Next color theme",
+    "Bigger text",
+    "Smaller text",
+    "Look up a word",
+    "Word list",
+    "Highlights",
+    "Bookmarks",
 };
 
 void save()

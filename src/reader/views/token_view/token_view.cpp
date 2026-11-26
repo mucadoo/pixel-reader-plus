@@ -1,4 +1,5 @@
 #include "./token_view.h"
+#include "reader/text_wrap.h"
 
 #include "./token_line_scroller.h"
 #include "./token_view_styling.h"
@@ -63,6 +64,7 @@ struct TokenViewState
     bool bold_text = false;
     bool ligatures = false;
     bool widow_control = false;
+    bool keep_punctuation = false;
     int word_spacing = 1;   // level of the word spacing setting
     int letter_spacing = 0; // level of the letter spacing setting
     int left_margin;    // pixels left empty at the left of the text
@@ -315,6 +317,8 @@ struct TokenViewState
         set_ligatures(ligatures);
         widow_control = token_view_styling.get_widow_control();
         page_index.set_widow_control(widow_control);
+        keep_punctuation = token_view_styling.get_keep_punctuation();
+        set_keep_punctuation(keep_punctuation);
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -384,6 +388,13 @@ struct TokenViewState
             ligatures = token_view_styling.get_ligatures();
             set_ligatures(ligatures);
             clear_glyph_cache();
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (token_view_styling.get_keep_punctuation() != keep_punctuation)
+        {
+            keep_punctuation = token_view_styling.get_keep_punctuation();
+            set_keep_punctuation(keep_punctuation);
             line_scroller.reset_buffer();
             needs_render = true;
         }
@@ -1729,7 +1740,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
     key += book_fonts::key();
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "") + (state.ligatures ? ",lig" : "");
+    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "") + (state.ligatures ? ",lig" : "") + (state.keep_punctuation ? ",kp" : "");
     key.push_back('\n');
     if (!chapter)
     {

@@ -491,6 +491,45 @@ void note_view_choice(FSState *s, int sort, int grid, int hide)
     folder_prefs::update(s->prefs_for, {sort, grid, hide});
 }
 
+// Folders kept out of the library, as whole paths, one a line in hidden_folders.txt next to the other
+// files of the reader. They still exist on the card; Library tools lists them to bring them back.
+std::set<std::string> &hidden_folders(const FSState *s)
+{
+    static std::set<std::string> folders;
+    static bool loaded = false;
+    if (!loaded && !s->store_dir.empty())
+    {
+        loaded = true;
+        std::ifstream in(s->store_dir / "hidden_folders.txt");
+        std::string line;
+        while (std::getline(in, line))
+        {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+            {
+                line.pop_back();
+            }
+            if (!line.empty())
+            {
+                folders.insert(line);
+            }
+        }
+    }
+    return folders;
+}
+
+void save_hidden_folders(const FSState *s)
+{
+    if (s->store_dir.empty())
+    {
+        return;
+    }
+    std::ofstream out(s->store_dir / "hidden_folders.txt", std::ios::trunc);
+    for (const std::string &folder : hidden_folders(s))
+    {
+        out << folder << "\n";
+    }
+}
+
 void refresh_path_entries(FSState *s)
 {
     apply_folder_prefs(s);
@@ -598,6 +637,9 @@ void refresh_path_entries(FSState *s)
     }
     for (const auto &entry : directory_listing(s->path)) {
         if (entry.is_dir) {
+            if (entry.name != ".." && hidden_folders(s).count((s->path / entry.name).string())) {
+                continue;
+            }
             s->path_entries.push_back(entry);
         } else if (file_type_is_supported(entry.name)) {
             const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
@@ -1461,6 +1503,14 @@ std::vector<std::filesystem::path> library_files(const FSState *s)
     for (; !ec && it != end; it.increment(ec))
     {
         std::error_code ec_file;
+        if (it->is_directory(ec_file))
+        {
+            if (hidden_folders(s).count(it->path().string()))
+            {
+                it.disable_recursion_pending(); // a hidden folder and what is in it is not part of the library
+            }
+            continue;
+        }
         if (it->is_regular_file(ec_file) && file_type_is_supported(it->path().filename().string()))
         {
             files.push_back(it->path());
@@ -1697,7 +1747,50 @@ std::string language_display(const std::string &code)
     return base.empty() ? std::string() : code;
 }
 
-enum class GroupBy { Series, Author, Language, Tag };
+enum class GroupBy { Series, Author, Language, Tag, Publisher, Year };
+
+const char *group_heading(GroupBy by)
+{
+    switch (by)
+    {
+        case GroupBy::Series: return "Series";
+        case GroupBy::Author: return "Authors";
+        case GroupBy::Tag: return "Tags";
+        case GroupBy::Publisher: return "Publishers";
+        case GroupBy::Year: return "Years";
+        default: return "Languages";
+    }
+}
+
+const char *group_missing(GroupBy by)
+{
+    switch (by)
+    {
+        case GroupBy::Series: return "None of the books name a series.";
+        case GroupBy::Author: return "None of the books name an author.";
+        case GroupBy::Tag: return "None of the books name a tag or genre.";
+        case GroupBy::Publisher: return "None of the books name a publisher.";
+        case GroupBy::Year: return "None of the books say when they were published.";
+        default: return "None of the books name a language.";
+    }
+}
+
+// The year a date such as 2019-03-02 or 2019 is in, empty when it does not start with four digits.
+std::string year_of(const std::string &date)
+{
+    if (date.size() < 4)
+    {
+        return "";
+    }
+    for (size_t i = 0; i < 4; ++i)
+    {
+        if (date[i] < '0' || date[i] > '9')
+        {
+            return "";
+        }
+    }
+    return date.substr(0, 4);
+}
 
 // The library as groups of books by series, author or language. Pick a group to list its books:
 // a series in the order of its numbers, the others by title. Books with no value go in one last group.
@@ -1707,7 +1800,7 @@ void browse_by_group(FSState *s, GroupBy by)
     {
         return;
     }
-    const char *heading = by == GroupBy::Series ? "Series" : (by == GroupBy::Author ? "Authors" : (by == GroupBy::Tag ? "Tags" : "Languages"));
+    const char *heading = group_heading(by);
     const auto files = library_files(s);
     struct Member
     {
@@ -1748,7 +1841,15 @@ void browse_by_group(FSState *s, GroupBy by)
         }
         else if (info)
         {
-            const std::string value = by == GroupBy::Series ? info->series : (by == GroupBy::Author ? info->author : language_display(info->language));
+            std::string value;
+            switch (by)
+            {
+                case GroupBy::Series: value = info->series; break;
+                case GroupBy::Author: value = info->author; break;
+                case GroupBy::Publisher: value = info->publisher; break;
+                case GroupBy::Year: value = year_of(info->date); break;
+                default: value = language_display(info->language); break;
+            }
             if (!value.empty())
             {
                 values.push_back(value);
@@ -1775,7 +1876,7 @@ void browse_by_group(FSState *s, GroupBy by)
     {
         if (s->on_info)
         {
-            s->on_info(heading, std::string("None of the books name a ") + (by == GroupBy::Series ? "series." : (by == GroupBy::Author ? "author." : (by == GroupBy::Tag ? "tag or genre." : "language."))));
+            s->on_info(heading, group_missing(by));
         }
         return;
     }
@@ -2434,10 +2535,49 @@ void tidy_folder(FSState *s)
     s->on_open_view(modes);
 }
 
+// The folders kept out of the library; choosing one brings it back.
+void open_hidden_folders(FSState *s)
+{
+    std::vector<std::string> names;
+    for (const std::string &folder : hidden_folders(s))
+    {
+        names.push_back(folder);
+    }
+    if (names.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Hidden folders", "No folder is hidden.\nHide one from its options menu.");
+        }
+        return;
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title("Hidden folders: choose one to show it again");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, names](uint32_t index) {
+        if (index >= names.size())
+        {
+            return;
+        }
+        hidden_folders(s).erase(names[index]);
+        save_hidden_folders(s);
+        if (!s->search_active)
+        {
+            refresh_keeping_cursor(s);
+        }
+        if (s->on_info)
+        {
+            s->on_info("Hidden folders", std::filesystem::path(names[index]).filename().string() + " is shown again.");
+        }
+    });
+    s->on_open_view(menu);
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders", "Reading stats", "Export all highlights and notes"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders", "Reading stats", "Export all highlights and notes", "Browse by publisher", "Browse by year published", "Hidden folders"
     };
     const auto choose = [s](uint32_t index) {
         const std::filesystem::path zip = library_root(s) / BACKUP_FILE_NAME;
@@ -2550,6 +2690,15 @@ void open_library_tools(FSState *s)
             case 16:
                 export_all_highlights(s);
                 break;
+            case 17:
+                browse_by_group(s, GroupBy::Publisher);
+                break;
+            case 18:
+                browse_by_group(s, GroupBy::Year);
+                break;
+            case 19:
+                open_hidden_folders(s);
+                break;
             case 15:
             {
                 if (!s->on_info)
@@ -2599,7 +2748,8 @@ void open_library_tools(FSState *s)
     // Index in `names` above to the group the tool belongs to.
     const char *groups[] = {
         "Browse", "Clean up", "Browse", "Back up", "Back up", "Get books", "Get books",
-        "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up", "Browse", "Back up"
+        "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up", "Browse", "Back up",
+        "Browse", "Browse", "Clean up"
     };
     std::vector<GroupedEntry> grouped;
     for (size_t i = 0; i < names.size(); ++i)
@@ -2625,7 +2775,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Filter, Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView, SetProgress, GroupSeries };
+    enum class Act { Filter, Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView, SetProgress, GroupSeries, HideFolder };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -2681,6 +2831,11 @@ void open_options(FSState *s)
     {
         acts.push_back(Act::DeleteCollection);
         names.push_back("Delete collection");
+    }
+    if (entry.is_dir && !s->search_active)
+    {
+        acts.push_back(Act::HideFolder);
+        names.push_back("Hide this folder");
     }
     if (!entry.is_dir)
     {
@@ -2828,6 +2983,15 @@ void open_options(FSState *s)
                 s->on_open_view(confirm);
                 break;
             }
+            case Act::HideFolder:
+                hidden_folders(s).insert(book.string());
+                save_hidden_folders(s);
+                refresh_keeping_cursor(s);
+                if (s->on_info)
+                {
+                    s->on_info("Hidden", book.filename().string() + " is hidden.\nBring it back in Library tools, Hidden folders.");
+                }
+                break;
             case Act::Mark:
                 if (!s->marked.erase(book.string()))
                 {
@@ -2923,6 +3087,7 @@ void open_options(FSState *s)
                 break;
             case Act::Rename:
             case Act::Delete:
+            case Act::HideFolder:
             case Act::Mark:
             case Act::CopyBooks:
             case Act::MoveBooks:
@@ -3006,6 +3171,11 @@ void show_info(FSState *s)
             facts.push_back({"Rating", std::to_string(log->rating) + " / 5"});
         }
         facts.push_back({"Reading time", reading_time_text(entry, log)});
+        if (log && log->units > 0 && !log->finished() && log->percent > 0)
+        {
+            const long long left = reading_speed::seconds_for(static_cast<uint32_t>(static_cast<unsigned long long>(log->units) * (100 - log->percent) / 100));
+            facts.push_back({"Finish", reading_stats::finish_text(left, static_cast<long long>(std::time(nullptr)))});
+        }
         struct stat st;
         if (::stat(book.c_str(), &st) == 0)
         {

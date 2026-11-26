@@ -214,6 +214,7 @@ std::vector<std::string> typography_details(const TokenViewStyling &styling)
     return {
         styling.get_ligatures() ? "On" : "Off",
         styling.get_widow_control() ? "On" : "Off",
+        styling.get_keep_punctuation() ? "On" : "Off",
     };
 }
 
@@ -348,7 +349,7 @@ void open_button_actions_menu(ViewStack &stack, SystemStyling &system)
 void open_typography_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling)
 {
     auto menu = std::make_shared<SelectionMenu>(
-        std::vector<std::string> {"Ligatures (fi, fl, ff)", "Widows and orphans (page mode)"},
+        std::vector<std::string> {"Ligatures (fi, fl, ff)", "Widows and orphans (page mode)", "Keep : ; ! ? and units together"},
         system
     );
     menu->set_details(typography_details(styling));
@@ -364,6 +365,10 @@ void open_typography_menu(ViewStack &stack, SystemStyling &system, TokenViewStyl
         else if (index == 1)
         {
             styling.set_widow_control(!styling.get_widow_control());
+        }
+        else if (index == 2)
+        {
+            styling.set_keep_punctuation(!styling.get_keep_punctuation());
         }
         if (auto self = weak.lock())
         {

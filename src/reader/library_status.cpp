@@ -1,6 +1,7 @@
 #include "./library_status.h"
 
 #include "./battery.h"
+#include "./battery_estimate.h"
 
 #include <cstdio>
 #include <ctime>
@@ -78,6 +79,10 @@ std::string text()
     if (charge >= 0)
     {
         line += std::string(line.empty() ? "" : "  ") + std::to_string(charge) + "%" + (battery_charging() ? "+" : "");
+        if (const auto left = battery_estimate::seconds_left(static_cast<long long>(now)))
+        {
+            line += " (" + battery_estimate::format(*left) + ")";
+        }
     }
     if (shown_level >= 2)
     {

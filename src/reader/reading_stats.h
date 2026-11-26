@@ -44,6 +44,17 @@ std::vector<std::pair<std::filesystem::path, long long>> books_on_day(const std:
 // 3725 seconds as "1h 02m", 540 as "9m".
 std::string format_duration(long long seconds);
 
+// The seconds read on a day you read at all, over the last 30 days. 0 when there were none.
+long long average_reading_day(long long now);
+
+// How many days of reading it takes to cover seconds_left at average_day a day, at least 1.
+// 0 when either is unknown (negative or zero average).
+long long days_to_finish(long long seconds_left, long long average_day);
+
+// "about 4 days, around 2026-11-30" for a book with seconds_left to go, going by how much you read on a
+// reading day. Empty when that cannot be told.
+std::string finish_text(long long seconds_left, long long now);
+
 // The text of the statistics screen for a book.
 std::string report(const std::filesystem::path &book, long long now, int books_started, int books_finished);
 
@@ -58,7 +69,8 @@ std::string detailed_report(
     int books_finished,
     const std::vector<long long> &finished_times,
     long long book_units_read,
-    const std::function<std::string(const std::string &)> &title_for
+    const std::function<std::string(const std::string &)> &title_for,
+    long long book_units_total = 0
 );
 
 } // namespace reading_stats

@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+// With this on a line is not broken where French and Portuguese typesetting keeps words together: before
+// : ; ! ? % and a closing guillemet, after an opening one, and between a number and its unit.
+void set_keep_punctuation(bool on);
+
 void wrap_lines(
     const char *str,
     std::function<bool(const char *, uint32_t)> fits_on_line,

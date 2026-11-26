@@ -1,5 +1,6 @@
 #include "./config.h"
 #include "./battery.h"
+#include "./battery_estimate.h"
 #include "./library_status.h"
 #include "./book_layout.h"
 #include "./views/popup_view.h"
@@ -860,6 +861,7 @@ int main(int argc, char **argv)
         {
             battery_timer.reset();
             const int level = battery_percent();
+            battery_estimate::note(static_cast<long long>(std::time(nullptr)), level, battery_charging());
             if (level < 0 || battery_charging() || level > 20)
             {
                 battery_warned = 100;

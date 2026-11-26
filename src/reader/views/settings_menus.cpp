@@ -33,6 +33,7 @@ const Tweak TWEAKS[] = {
     {TWEAK_SMART_QUOTES, "Curly quotes"},
     {TWEAK_PLAIN_FONTS, "Ignore the book's font"},
     {TWEAK_PLAIN_PAGES, "Ignore the book's page numbers"},
+    {TWEAK_NO_WORD_COUNT, "No word count in lookups"},
 };
 
 std::vector<std::string> tweak_rows(int mask)

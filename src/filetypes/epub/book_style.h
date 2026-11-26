@@ -34,7 +34,8 @@ constexpr int TWEAK_PLAIN_CENTER = 4;   // ignore centering and left alignment
 constexpr int TWEAK_SMART_QUOTES = 8;   // curly quotes in place of straight ones
 constexpr int TWEAK_PLAIN_FONTS = 16;   // ignore the font the book carries
 constexpr int TWEAK_PLAIN_PAGES = 32;   // ignore the page numbers the book lists
-constexpr int TWEAK_COUNT = 6;
+constexpr int TWEAK_NO_WORD_COUNT = 64; // leave out how often a looked-up word turns up in the book
+constexpr int TWEAK_COUNT = 7;
 void set_style_tweaks(int mask);
 int style_tweaks();
 

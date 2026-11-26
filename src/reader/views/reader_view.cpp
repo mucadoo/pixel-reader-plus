@@ -55,6 +55,8 @@
 
 #include <algorithm>
 #include <deque>
+#include <limits>
+#include <functional>
 #include <set>
 #include <fstream>
 #include <map>
@@ -1337,9 +1339,38 @@ std::filesystem::path highlights_file_for(const ReaderViewState &state)
     return state.book_path.parent_path() / (name + " - highlights.md");
 }
 
+// The part of the book the chapter at the address covers, [from, until). All of it when there are no chapters.
+std::pair<DocAddr, DocAddr> chapter_bounds(ReaderViewState &state, DocAddr address)
+{
+    const DocAddr end = std::numeric_limits<DocAddr>::max();
+    const auto &toc = state.reader->get_table_of_contents();
+    if (toc.empty())
+    {
+        return {0, end};
+    }
+    const uint32_t index = state.reader->get_toc_position(address).toc_index;
+    if (index >= toc.size())
+    {
+        return {0, end};
+    }
+    const DocAddr from = state.reader->get_toc_item_address(index);
+    DocAddr until = end;
+    for (uint32_t next = index + 1; next < toc.size(); ++next)
+    {
+        const DocAddr found = state.reader->get_toc_item_address(next);
+        if (found > from)
+        {
+            until = found;
+            break;
+        }
+    }
+    return {from, until};
+}
+
 // Writes the highlights and their notes next to the book as a Markdown file. Each one ends with a
-// comment holding its place, so the file can be read back into the book later.
-void export_highlights(ReaderViewState &state)
+// comment holding its place, so the file can be read back into the book later. With this_chapter only
+// the highlights of the chapter being read go in, in a file of their own named after it.
+void export_highlights(ReaderViewState &state, bool this_chapter = false)
 {
     const auto &highlights = state.token_view->highlights();
     if (highlights.empty())
@@ -1348,12 +1379,48 @@ void export_highlights(ReaderViewState &state)
         return;
     }
 
-    const std::filesystem::path out_path = highlights_file_for(state);
+    std::pair<DocAddr, DocAddr> bounds = {0, std::numeric_limits<DocAddr>::max()};
+    std::string chapter_name;
+    if (this_chapter)
+    {
+        const DocAddr here = get_current_address(state);
+        bounds = chapter_bounds(state, here);
+        const auto &chapters = state.reader->get_table_of_contents();
+        const uint32_t at = state.reader->get_toc_position(here).toc_index;
+        chapter_name = at < chapters.size() ? chapters[at].display_name : std::string("this chapter");
+    }
+    std::vector<size_t> chosen;
+    for (size_t index : highlight_order(highlights))
+    {
+        if (highlights[index].first >= bounds.first && highlights[index].first < bounds.second)
+        {
+            chosen.push_back(index);
+        }
+    }
+    if (chosen.empty())
+    {
+        show_message(state, "No highlights in this chapter");
+        return;
+    }
+
+    std::filesystem::path out_path = highlights_file_for(state);
+    if (this_chapter)
+    {
+        std::string part = chapter_name;
+        for (char &c : part)
+        {
+            if (std::string("/\\:*?\"<>|").find(c) != std::string::npos)
+            {
+                c = '_';
+            }
+        }
+        out_path = out_path.parent_path() / (out_path.stem().string() + " - " + part + ".md");
+    }
     const auto &toc = state.reader->get_table_of_contents();
     std::ofstream out(out_path, std::ios::trunc);
-    out << "# " << state.book_title << "\n\n## Highlights\n\n";
+    out << "# " << state.book_title << "\n\n## Highlights" << (this_chapter ? ": " + chapter_name : std::string()) << "\n\n";
     std::string last_chapter;
-    for (size_t index : highlight_order(highlights))
+    for (size_t index : chosen)
     {
         const Highlight &highlight = highlights[index];
         const auto position = state.reader->get_toc_position(highlight.first);
@@ -1381,10 +1448,147 @@ void export_highlights(ReaderViewState &state)
     }
     state.view_stack.push(std::make_shared<DefinitionView>(
         "Highlights exported",
-        "Saved " + std::to_string(highlights.size()) + " highlights and notes to\n" + out_path.string()
+        "Saved " + std::to_string(chosen.size()) + " highlights and notes to\n" + out_path.string()
             + "\n\nImport highlights reads the file back into this book, on this or another copy of it.",
         state.sys_styling
     ));
+}
+
+// Changes to many highlights at once: this chapter's, or all of one kind.
+void open_highlight_tools(ReaderViewState &state)
+{
+    const auto &highlights = state.token_view->highlights();
+    const auto bounds = chapter_bounds(state, get_current_address(state));
+    size_t in_chapter = 0;
+    for (const Highlight &highlight : highlights)
+    {
+        if (highlight.first >= bounds.first && highlight.first < bounds.second)
+        {
+            ++in_chapter;
+        }
+    }
+    std::vector<std::string> names;
+    std::vector<std::function<void()>> runs;
+    if (in_chapter > 0)
+    {
+        names.push_back("Export this chapter's highlights (" + std::to_string(in_chapter) + ")");
+        runs.push_back([&state]() { export_highlights(state, true); });
+        names.push_back("Delete this chapter's highlights (" + std::to_string(in_chapter) + ")");
+        runs.push_back([&state, bounds, in_chapter]() {
+            auto confirm = std::make_shared<SelectionMenu>(std::vector<std::string> {"Keep them", "Delete them"}, state.sys_styling);
+            confirm->set_title("Delete " + std::to_string(in_chapter) + (in_chapter == 1 ? " highlight of this chapter?" : " highlights of this chapter?"));
+            confirm->set_compact(true);
+            confirm->set_close_on_select();
+            confirm->set_on_selection([&state, bounds](uint32_t choice) {
+                if (choice != 1)
+                {
+                    return;
+                }
+                size_t removed = 0;
+                for (size_t index = state.token_view->highlights().size(); index-- > 0;)
+                {
+                    const DocAddr first = state.token_view->highlights()[index].first;
+                    if (first >= bounds.first && first < bounds.second)
+                    {
+                        state.token_view->remove_highlight(index);
+                        ++removed;
+                    }
+                }
+                show_message(state, "Deleted " + std::to_string(removed) + (removed == 1 ? " highlight" : " highlights"));
+            });
+            state.view_stack.push(confirm);
+        });
+    }
+    // The kinds in use: 2 to 5 the four colors, 6 underlines, 7 strikeouts, as the highlight list names them.
+    std::vector<int> kinds;
+    for (int kind = 2; kind < HIGHLIGHT_FILTER_COUNT; ++kind)
+    {
+        size_t count = 0;
+        for (const Highlight &highlight : highlights)
+        {
+            count += highlight_in_filter(highlight, kind) ? 1 : 0;
+        }
+        if (count > 0)
+        {
+            kinds.push_back(kind);
+            names.push_back("All " + highlight_filter_name(kind) + " (" + std::to_string(count) + ")...");
+            runs.push_back([&state, kind, count]() {
+                const auto style_of = [](int k) {
+                    return k == 6 ? HighlightStyle::Underline : (k == 7 ? HighlightStyle::Strikeout : marker_style(k - 2));
+                };
+                std::vector<std::string> options;
+                std::vector<int> targets;
+                for (int target = 2; target < HIGHLIGHT_FILTER_COUNT; ++target)
+                {
+                    if (target != kind)
+                    {
+                        options.push_back("Make them " + highlight_filter_name(target).substr(0, highlight_filter_name(target).size() - 1));
+                        targets.push_back(target);
+                    }
+                }
+                options.push_back("Delete them");
+                auto menu = std::make_shared<SelectionMenu>(options, state.sys_styling);
+                menu->set_title(std::to_string(count) + " " + highlight_filter_name(kind));
+                menu->set_compact(true);
+                menu->set_close_on_select();
+                menu->set_on_selection([&state, kind, targets, style_of](uint32_t choice) {
+                    size_t changed = 0;
+                    if (choice < targets.size())
+                    {
+                        const HighlightStyle to = style_of(targets[choice]);
+                        for (size_t index = 0; index < state.token_view->highlights().size(); ++index)
+                        {
+                            if (highlight_in_filter(state.token_view->highlights()[index], kind))
+                            {
+                                state.token_view->set_highlight_style(index, to);
+                                ++changed;
+                            }
+                        }
+                        show_message(state, "Changed " + std::to_string(changed) + (changed == 1 ? " highlight" : " highlights"));
+                        return;
+                    }
+                    auto confirm = std::make_shared<SelectionMenu>(std::vector<std::string> {"Keep them", "Delete them"}, state.sys_styling);
+                    confirm->set_title("Delete all " + highlight_filter_name(kind) + "?");
+                    confirm->set_compact(true);
+                    confirm->set_close_on_select();
+                    confirm->set_on_selection([&state, kind](uint32_t sure) {
+                        if (sure != 1)
+                        {
+                            return;
+                        }
+                        size_t removed = 0;
+                        for (size_t index = state.token_view->highlights().size(); index-- > 0;)
+                        {
+                            if (highlight_in_filter(state.token_view->highlights()[index], kind))
+                            {
+                                state.token_view->remove_highlight(index);
+                                ++removed;
+                            }
+                        }
+                        show_message(state, "Deleted " + std::to_string(removed) + (removed == 1 ? " highlight" : " highlights"));
+                    });
+                    state.view_stack.push(confirm);
+                });
+                state.view_stack.push(menu);
+            });
+        }
+    }
+    if (names.empty())
+    {
+        show_message(state, "Nothing to change here");
+        return;
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, state.sys_styling);
+    menu->set_title("Highlight tools");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([runs](uint32_t index) {
+        if (index < runs.size())
+        {
+            runs[index]();
+        }
+    });
+    state.view_stack.push(menu);
 }
 
 // Reads the Markdown file written by Export highlights and adds what the book does not have yet.
@@ -1760,6 +1964,7 @@ void ReaderView::open_book_menu()
     if (!state->token_view->highlights().empty())
     {
         add({"Export highlights and notes", [this]() { export_highlights(*state); }});
+        add({"Highlight tools", [this]() { open_highlight_tools(*state); }});
     }
     {
         std::error_code ec;
@@ -2293,6 +2498,49 @@ void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
     });
     state.view_stack.push(menu);
 }
+// "In this book: 14 times" for a single word, with "(rare)" when it turns up only once to three times,
+// so the words worth keeping stand out. Empty for a phrase, or when the style tweak turns it off.
+std::string word_count_note(ReaderViewState &state, const std::string &lookup)
+{
+    if ((state.token_view_styling.get_tweaks() & TWEAK_NO_WORD_COUNT) || lookup.empty() || lookup.find(' ') != std::string::npos || !state.reader)
+    {
+        return "";
+    }
+    constexpr size_t LIMIT = 500;
+    std::vector<SearchHit> hits;
+    try
+    {
+        hits = search_book(*state.reader, lookup, LIMIT, [](int) {}, SearchOptions());
+    }
+    catch (...)
+    {
+        return "";
+    }
+    if (hits.empty())
+    {
+        return "";
+    }
+    const size_t count = hits.size();
+    std::string note = "In this book: ";
+    if (count >= LIMIT)
+    {
+        note += std::to_string(LIMIT) + "+ times";
+    }
+    else if (count == 1)
+    {
+        note += "once";
+    }
+    else
+    {
+        note += std::to_string(count) + " times";
+    }
+    if (count <= 3)
+    {
+        note += " (rare)";
+    }
+    return note;
+}
+
 // Looks the text up in the dictionary of the book language, falling back to English, and shows it.
 // A phrase that has no entry of its own is looked up word by word.
 void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen)
@@ -2342,6 +2590,13 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
             show_definition(state, lookup, state.dictionary_name);
             return;
         }
+        {
+            const std::string note = word_count_note(state, lookup);
+            if (!note.empty())
+            {
+                all_body = note + "\n\n" + all_body;
+            }
+        }
         auto entry = std::make_shared<DefinitionView>(lookup, all_body, state.sys_styling);
         entry->set_lookup([&state, chosen](const std::string &word) { show_definition(state, word, chosen); });
         state.view_stack.push(entry);
@@ -2369,6 +2624,11 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
     {
         body = *gloss;
         vocabulary::add(lookup, *gloss, state.book_title, now, sentence);
+        const std::string note = word_count_note(state, lookup);
+        if (!note.empty())
+        {
+            body = note + "\n\n" + body;
+        }
     }
     else
     {

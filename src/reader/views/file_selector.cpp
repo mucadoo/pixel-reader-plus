@@ -18,6 +18,8 @@
 #include "reader/book_info.h"
 #include "reader/browser_sort.h"
 #include "reader/collections.h"
+#include "reader/smart_collections.h"
+#include "reader/storage_usage.h"
 #include "reader/library_log.h"
 #include "reader/opds.h"
 #include "./book_info_view.h"
@@ -86,6 +88,7 @@ struct FSState
     bool search_active = false; // the list shows results: a search, or the books of a collection
     std::string results_title;  // heading of those results
     std::string results_up = "Clear search";
+    bool collection_smart = false; // the collection being browsed fills itself from conditions
     std::string collection;     // the collection being browsed, empty for a search
     std::string search_query;
     std::vector<std::filesystem::path> search_hits;
@@ -1300,6 +1303,7 @@ void make_folder(FSState *s, const std::string &typed)
 void show_collection(FSState *s, const std::string &name)
 {
     s->collection = name;
+    s->collection_smart = false;
     s->results_title = "Collection: " + name;
     s->results_up = "Leave collection";
     s->search_hits = collections::books(name);
@@ -1308,10 +1312,14 @@ void show_collection(FSState *s, const std::string &name)
     focus_first_item(s);
 }
 
+void show_smart_collection(FSState *s, const std::string &name);
+void new_smart_collection(FSState *s);
+
 // The list of collections, and a way to start a new one.
 void open_collections(FSState *s)
 {
     const auto shelves = collections::names();
+    const auto smart = smart_collections::names();
     std::vector<std::string> names;
     std::vector<std::string> details;
     for (const auto &name : shelves)
@@ -1319,17 +1327,34 @@ void open_collections(FSState *s)
         names.push_back(name);
         details.push_back(std::to_string(collections::count(name)) + " books");
     }
+    for (const auto &name : smart)
+    {
+        names.push_back(name);
+        details.push_back("fills itself: " + smart_collections::describe(smart_collections::rules(name)));
+    }
     names.push_back("New collection...");
+    details.push_back("");
+    names.push_back("New smart collection...");
     details.push_back("");
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_details(details);
     menu->set_title("Collections");
     menu->set_compact(true);
     menu->set_close_on_select();
-    menu->set_on_selection([s, shelves](uint32_t index) {
+    menu->set_on_selection([s, shelves, smart](uint32_t index) {
         if (index < shelves.size())
         {
             show_collection(s, shelves[index]);
+            return;
+        }
+        if (index < shelves.size() + smart.size())
+        {
+            show_smart_collection(s, smart[index - shelves.size()]);
+            return;
+        }
+        if (index == shelves.size() + smart.size() + 1)
+        {
+            new_smart_collection(s);
             return;
         }
         s->on_open_view(std::make_shared<TextInputView>(
@@ -1745,6 +1770,191 @@ std::string language_display(const std::string &code)
         return found->second;
     }
     return base.empty() ? std::string() : code;
+}
+
+// What the conditions of a smart collection look at, for one book.
+smart_collections::Facts smart_facts(FSState *s, const std::filesystem::path &book)
+{
+    smart_collections::Facts facts;
+    if (s->info)
+    {
+        s->info->load(book);
+        if (const BookInfo *info = s->info->get(book))
+        {
+            facts.author = info->author;
+            facts.tags = info->subjects;
+            facts.series = info->series;
+            facts.language = info->language + " " + language_display(info->language);
+            facts.publisher = info->publisher;
+            facts.year = info->date.size() >= 4 ? info->date.substr(0, 4) : std::string();
+        }
+    }
+    const LibraryLog::Entry *log = library_log().get(book);
+    const std::string label = status_label(log);
+    facts.status = label == "Not started" ? "unread" : lowercase(label);
+    facts.favorite = log && log->favorite;
+    facts.rating = log ? log->rating : 0;
+    facts.type = lowercase(book_kind(book.filename().string()));
+    if (facts.type == "markdown")
+    {
+        facts.type = "md";
+    }
+    return facts;
+}
+
+// Lists the books that meet the conditions of a smart collection, as a collection is shown.
+void show_smart_collection(FSState *s, const std::string &name)
+{
+    const auto rules = smart_collections::rules(name);
+    if (rules.empty() || !s->info)
+    {
+        return;
+    }
+    const auto files = library_files(s);
+    std::vector<std::pair<std::string, std::filesystem::path>> found;
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        progress_screen::show(s->styling, "Filling " + name, "", static_cast<int>(i * 100 / files.size()));
+        if (smart_collections::matches(rules, smart_facts(s, files[i])))
+        {
+            found.emplace_back(lowercase(book_title_for(s, files[i])), files[i]);
+        }
+    }
+    if (found.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info(name, "No book fits yet:\n" + smart_collections::describe(rules));
+        }
+        return;
+    }
+    std::sort(found.begin(), found.end());
+    s->search_hits.clear();
+    for (const auto &item : found)
+    {
+        s->search_hits.push_back(item.second);
+    }
+    s->collection = name;
+    s->collection_smart = true;
+    s->results_title = "Smart collection: " + name;
+    s->results_up = "Leave collection";
+    s->search_active = true;
+    refresh_path_entries(s);
+    focus_first_item(s);
+}
+
+void smart_collection_builder(FSState *s, std::string name, std::vector<smart_collections::Rule> rules);
+
+// Asks for what a new condition on a field looks for, then goes back to the builder.
+void smart_collection_value(FSState *s, std::string name, std::vector<smart_collections::Rule> rules, smart_collections::Field field)
+{
+    using smart_collections::Field;
+    const auto done = [s, name, rules, field](const std::string &value) {
+        std::string text = value;
+        while (!text.empty() && text.back() == ' ') text.pop_back();
+        while (!text.empty() && text.front() == ' ') text.erase(0, 1);
+        std::vector<smart_collections::Rule> next = rules;
+        if (!text.empty())
+        {
+            next.push_back({field, text});
+        }
+        smart_collection_builder(s, name, next);
+    };
+    if (field == Field::Status || field == Field::Type)
+    {
+        std::vector<std::string> labels;
+        std::vector<std::string> values;
+        if (field == Field::Status)
+        {
+            labels = {"Not started", "Reading", "To read", "On hold", "Finished", "Favorite", "Not finished", "Not a favorite"};
+            values = {"unread", "reading", "to read", "on hold", "finished", "favorite", "!finished", "!favorite"};
+        }
+        else
+        {
+            labels = {"epub", "txt", "md", "Not epub"};
+            values = {"epub", "txt", "md", "!epub"};
+        }
+        auto menu = std::make_shared<SelectionMenu>(labels, s->styling);
+        menu->set_title(std::string(smart_collections::field_name(field)) + " is...");
+        menu->set_compact(true);
+        menu->set_close_on_select();
+        menu->set_on_selection([values, done](uint32_t index) {
+            if (index < values.size())
+            {
+                done(values[index]);
+            }
+        });
+        s->on_open_view(menu);
+        return;
+    }
+    std::string heading = std::string(smart_collections::field_name(field)) + " contains (start with ! for not)";
+    if (field == Field::Year)
+    {
+        heading = "Year, or a range such as 1980-1989";
+    }
+    else if (field == Field::Rating)
+    {
+        heading = "At least how many stars (1 to 5)";
+    }
+    s->on_open_view(std::make_shared<TextInputView>(heading, "", done, s->styling, 60));
+}
+
+// Builds the conditions of a smart collection one at a time; Save keeps it and shows it.
+void smart_collection_builder(FSState *s, std::string name, std::vector<smart_collections::Rule> rules)
+{
+    using smart_collections::Field;
+    std::vector<std::string> names;
+    for (int i = 0; i < static_cast<int>(Field::COUNT); ++i)
+    {
+        names.push_back(std::string("Add a condition on ") + smart_collections::field_name(static_cast<Field>(i)));
+    }
+    const size_t fields = names.size();
+    if (!rules.empty())
+    {
+        names.push_back("Save and show (" + std::to_string(rules.size()) + (rules.size() == 1 ? " condition)" : " conditions)"));
+        names.push_back("Remove the last condition");
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title(name + (rules.empty() ? ": a book must meet every condition" : ": " + smart_collections::describe(rules)));
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, name, rules, fields](uint32_t index) {
+        if (index < fields)
+        {
+            smart_collection_value(s, name, rules, static_cast<smart_collections::Field>(index));
+            return;
+        }
+        if (index == fields)
+        {
+            smart_collections::set(name, rules);
+            smart_collections::flush();
+            show_smart_collection(s, name);
+            return;
+        }
+        std::vector<smart_collections::Rule> next = rules;
+        next.pop_back();
+        smart_collection_builder(s, name, next);
+    });
+    s->on_open_view(menu);
+}
+
+void new_smart_collection(FSState *s)
+{
+    s->on_open_view(std::make_shared<TextInputView>(
+        "New smart collection",
+        "",
+        [s](const std::string &typed) {
+            std::string name = typed;
+            while (!name.empty() && name.back() == ' ') name.pop_back();
+            while (!name.empty() && name.front() == ' ') name.erase(0, 1);
+            if (!name.empty())
+            {
+                smart_collection_builder(s, name, {});
+            }
+        },
+        s->styling,
+        40
+    ));
 }
 
 enum class GroupBy { Series, Author, Language, Tag, Publisher, Year };
@@ -2574,10 +2784,96 @@ void open_hidden_folders(FSState *s)
     s->on_open_view(menu);
 }
 
+// What the files of the reader take on the card, and a way to clear what is only a cache.
+void open_storage(FSState *s)
+{
+    namespace su = storage_usage;
+    if (s->store_dir.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Storage", "The reader has no folder of its own for files here.");
+        }
+        return;
+    }
+    struct Item
+    {
+        std::string name;
+        std::string detail;
+        std::string what; // empty for what is kept
+        std::function<std::uintmax_t()> clear;
+    };
+    const std::filesystem::path store = s->store_dir;
+    const std::filesystem::path backup = library_root(s) / BACKUP_FILE_NAME;
+    std::vector<Item> items;
+    items.push_back({"Covers", su::format_bytes(su::folder_size(store / "covers")), "the cover pictures. They are made again as you browse.", [store]() { return su::clear_folder(store / "covers"); }});
+    items.push_back({"Book details", su::format_bytes(su::folder_size(store / "info")), "the titles, authors and series read from the books. They are read again as you browse.", [store]() { return su::clear_folder(store / "info"); }});
+    items.push_back({"Page layouts", su::format_bytes(su::files_size(store / "books", ".cache", true)), "the saved page layouts. A book opens a little slower the next time.", [store]() { return su::clear_files(store / "books", ".cache", true); }});
+    items.push_back({"Fonts from books", su::format_bytes(su::folder_size(store / "fonts")), "the fonts copied out of epub books. They are copied again when a book needs them.", [store]() { return su::clear_folder(store / "fonts"); }});
+    std::error_code ec;
+    if (std::filesystem::exists(backup, ec))
+    {
+        const auto size = std::filesystem::file_size(backup, ec);
+        items.push_back({"Backup file", su::format_bytes(ec ? 0 : size), "the backup zip in the books folder. Make a new one from Library tools.", [backup]() {
+            std::error_code ec_file;
+            const auto bytes = std::filesystem::file_size(backup, ec_file);
+            return std::filesystem::remove(backup, ec_file) && !ec_file ? bytes : static_cast<std::uintmax_t>(0);
+        }});
+    }
+    items.push_back({"Places, highlights, bookmarks (kept)", su::format_bytes(su::files_size(store / "books", ".cache", false)), "", nullptr});
+    items.push_back({"Settings and lists (kept)", su::format_bytes(su::files_size(store, "", true)), "", nullptr});
+
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const Item &item : items)
+    {
+        names.push_back(item.name);
+        details.push_back(item.detail);
+    }
+    const long long free_bytes = su::free_bytes(store);
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title(std::string("Storage: choose a cache to clear") + (free_bytes >= 0 ? " (" + su::format_bytes(static_cast<std::uintmax_t>(free_bytes)) + " free)" : std::string()));
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, items](uint32_t index) {
+        if (index >= items.size())
+        {
+            return;
+        }
+        const Item item = items[index];
+        if (item.what.empty())
+        {
+            if (s->on_info)
+            {
+                s->on_info(item.name, "These are your own data and are never cleared here.\nLibrary tools can back them up.");
+            }
+            return;
+        }
+        auto confirm = std::make_shared<SelectionMenu>(std::vector<std::string> {"Keep it", "Clear it"}, s->styling);
+        confirm->set_title("Clear " + item.what);
+        confirm->set_compact(true);
+        confirm->set_close_on_select();
+        confirm->set_on_selection([s, item](uint32_t choice) {
+            if (choice != 1)
+            {
+                return;
+            }
+            const std::uintmax_t freed = item.clear();
+            if (s->on_info)
+            {
+                s->on_info(item.name, "Freed " + storage_usage::format_bytes(freed) + ".");
+            }
+        });
+        s->on_open_view(confirm);
+    });
+    s->on_open_view(menu);
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders", "Reading stats", "Export all highlights and notes", "Browse by publisher", "Browse by year published", "Hidden folders"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders", "Reading stats", "Export all highlights and notes", "Browse by publisher", "Browse by year published", "Hidden folders", "Storage"
     };
     const auto choose = [s](uint32_t index) {
         const std::filesystem::path zip = library_root(s) / BACKUP_FILE_NAME;
@@ -2699,6 +2995,9 @@ void open_library_tools(FSState *s)
             case 19:
                 open_hidden_folders(s);
                 break;
+            case 20:
+                open_storage(s);
+                break;
             case 15:
             {
                 if (!s->on_info)
@@ -2749,7 +3048,7 @@ void open_library_tools(FSState *s)
     const char *groups[] = {
         "Browse", "Clean up", "Browse", "Back up", "Back up", "Get books", "Get books",
         "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up", "Browse", "Back up",
-        "Browse", "Browse", "Clean up"
+        "Browse", "Browse", "Clean up", "Clean up"
     };
     std::vector<GroupedEntry> grouped;
     for (size_t i = 0; i < names.size(); ++i)
@@ -2821,7 +3120,7 @@ void open_options(FSState *s)
     {
         acts.push_back(Act::AddToCollection);
         names.push_back("Add to collection");
-        if (!s->collection.empty())
+        if (!s->collection.empty() && !s->collection_smart)
         {
             acts.push_back(Act::RemoveFromCollection);
             names.push_back("Remove from collection");
@@ -2944,8 +3243,17 @@ void open_options(FSState *s)
                 refresh_keeping_cursor(s);
                 break;
             case Act::DeleteCollection:
-                collections::delete_collection(s->collection);
-                collections::flush();
+                if (s->collection_smart)
+                {
+                    smart_collections::remove(s->collection);
+                    smart_collections::flush();
+                }
+                else
+                {
+                    collections::delete_collection(s->collection);
+                    collections::flush();
+                }
+                s->collection_smart = false;
                 s->search_active = false;
                 s->search_hits.clear();
                 s->collection.clear();

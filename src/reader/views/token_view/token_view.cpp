@@ -2394,6 +2394,17 @@ void TokenView::set_highlight_note(size_t index, const std::string &note)
     state->remember_highlights();
 }
 
+void TokenView::set_highlight_style(size_t index, HighlightStyle style)
+{
+    if (index >= state->highlights.size() || state->highlights[index].style == style)
+    {
+        return;
+    }
+    state->highlights[index].style = style;
+    state->remember_highlights();
+    state->needs_render = true;
+}
+
 size_t TokenView::merge_highlights(const std::vector<Highlight> &incoming)
 {
     size_t changed = 0;

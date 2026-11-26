@@ -18,6 +18,7 @@
 #include "./state_store.h"
 #include "./system_styling.h"
 #include "./collections.h"
+#include "./smart_collections.h"
 #include "./color_theme_def.h"
 #include <ctime>
 #include "./view_stack.h"
@@ -361,6 +362,7 @@ int main(int argc, char **argv)
     reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
     layout_profiles::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "profiles.tsv");
     collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
+    smart_collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "smart_collections.tsv");
     load_dictionary_preferences((std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "dictionaries.txt").string());
     pending_progress::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "pending_progress.tsv");
     button_actions::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "buttons.txt");

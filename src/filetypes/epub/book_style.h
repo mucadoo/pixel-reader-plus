@@ -21,9 +21,13 @@ struct BookStyle
     bool break_after_set = false;
 };
 
+// Whether the stylesheets of a book are used. Off leaves only the reader's own styling, with
+// the book's headings still larger. Set before a book is opened.
+void set_book_styles_enabled(bool enabled);
+bool book_styles_enabled();
+
 class Stylesheet
-{
-public:
+{public:
     void parse(const std::string &css);
     BookStyle apply(
         const BookStyle &parent,

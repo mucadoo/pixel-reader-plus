@@ -4,6 +4,7 @@
 #include "./goto_view.h"
 #include "./book_map_view.h"
 #include "./image_view.h"
+#include "./page_browser_view.h"
 #include "./text_input_view.h"
 #include "./popup_view.h"
 #include "./selection_menu.h"
@@ -537,7 +538,9 @@ void export_highlights(ReaderViewState &state)
     for (size_t index : highlight_order(highlights))
     {
         const Highlight &highlight = highlights[index];
+        const int color = marker_color_of(highlight.style);
         out << percent_label(state, highlight.first) << "  "
+            << (color > 0 ? std::string("[") + highlight_color_name(color) + "] " : std::string())
             << (highlight.text.empty() ? std::string("(text not saved)") : highlight.text) << "\n\n";
     }
     out.close();
@@ -556,7 +559,7 @@ void export_highlights(ReaderViewState &state)
 
 } // namespace
 
-void show_definition(ReaderViewState &state, const std::string &lookup);
+void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen = std::string());
 
 void ReaderView::open_book_menu()
 {
@@ -597,6 +600,14 @@ void ReaderView::open_book_menu()
             get_current_address(*state),
             bookmark_addresses,
             highlight_addresses,
+            [this](DocAddr address) { jump_to(address); },
+            state->sys_styling
+        ));
+    }});
+    actions->push_back({state->reader->pages_are_pictures() ? "Browse pages" : "Skim the book", [this]() {
+        state->view_stack.push(std::make_shared<PageBrowserView>(
+            state->reader,
+            get_current_address(*state),
             [this](DocAddr address) { jump_to(address); },
             state->sys_styling
         ));
@@ -976,10 +987,12 @@ static void run_search(ReaderView &reader_view, ReaderViewState &state, const st
 
 // Looks the text up in the dictionary of the book language, falling back to English, and shows it.
 // A phrase that has no entry of its own is looked up word by word.
-void show_definition(ReaderViewState &state, const std::string &lookup)
+void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen)
 {
     static std::map<std::string, Dictionary> dictionaries;
-    const std::string dictionary_name = state.dictionary_name;
+    // The dictionary asked for now, else the one in Settings, else the one for the language of the book.
+    const std::string dictionary_name = !chosen.empty() ? chosen
+        : (!state.token_view_styling.get_dictionary().empty() ? state.token_view_styling.get_dictionary() : state.dictionary_name);
     SystemStyling &styling = state.sys_styling;
     const auto load_with_bar = [&styling](Dictionary &d, const std::string &label) {
         if (!d.is_loaded())
@@ -1070,7 +1083,7 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
     const auto link = state.token_view->selected_link();
 
     // What the menu offers, in order. The footnote and link rows only appear on a link.
-    enum class Act { Note, GoTo, LookUp, Search, Highlight, Underline, Strikeout };
+    enum class Act { Note, GoTo, LookUp, LookUpIn, Search, Highlight, Underline, Strikeout };
     std::vector<Act> acts;
     std::vector<std::string> entries;
     std::optional<LinkTarget> target;
@@ -1090,6 +1103,11 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
     }
     acts.push_back(Act::LookUp);
     entries.push_back("Look up");
+    if (!lookup.empty() && dictionary_names().size() > 1)
+    {
+        acts.push_back(Act::LookUpIn);
+        entries.push_back("Look up in...");
+    }
     if (!lookup.empty())
     {
         acts.push_back(Act::Search);
@@ -1130,7 +1148,24 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
             case Act::LookUp:
                 show_definition(state, lookup);
                 break;
-            case Act::Highlight:                state.token_view->toggle_selected_highlight();
+            case Act::LookUpIn:
+            {
+                const std::vector<std::string> names = dictionary_names();
+                auto pick = std::make_shared<SelectionMenu>(names, state.sys_styling);
+                pick->set_title("Look up in");
+                pick->set_compact(true);
+                pick->set_close_on_select();
+                pick->set_on_selection([&state, names, lookup](uint32_t chosen) {
+                    if (chosen < names.size())
+                    {
+                        show_definition(state, lookup, names[chosen]);
+                    }
+                });
+                state.view_stack.push(pick);
+                break;
+            }
+            case Act::Highlight:
+                state.token_view->toggle_selected_highlight(marker_style(state.token_view_styling.get_highlight_color()));
                 break;
             case Act::Search:
                 run_search(reader_view, state, lookup);

@@ -3,6 +3,9 @@
 
 #include "reader/color_theme_def.h"
 #include "reader/font_catalog.h"
+#include "reader/dictionary.h"
+#include "reader/highlights.h"
+#include "reader/screen_dim.h"
 #include "reader/layout_options.h"
 #include "reader/settings_store.h"
 #include "reader/shoulder_keymap.h"
@@ -178,6 +181,10 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Thin bar", token_view_styling.get_thin_bar() ? "On" : "Off", true, sys_font},
         {"Word spacing", word_spacing_label(token_view_styling.get_word_spacing()), true, sys_font},
         {"Scroll overlap", std::to_string(token_view_styling.get_scroll_overlap()) + (token_view_styling.get_scroll_overlap() == 1 ? " line" : " lines"), true, sys_font},
+        {"Dictionary", token_view_styling.get_dictionary().empty() ? std::string("Auto") : token_view_styling.get_dictionary(), true, sys_font},
+        {"Screen dim", screen_dim::label_for_level(token_view_styling.get_screen_dim()), true, sys_font},
+        {"Book styles", token_view_styling.get_book_styles() ? "On" : "Off", true, sys_font},
+        {"Highlight color", highlight_color_name(token_view_styling.get_highlight_color()), true, sys_font},
         {"Night theme", night_value, true, sys_font},
         {"Night from", hour_label(token_view_styling.get_night_from()), true, sys_font},
         {"Night until", hour_label(token_view_styling.get_night_until()), true, sys_font},
@@ -536,6 +543,40 @@ void SettingsView::on_keypress(SDLKey key)
                 {
                     token_view_styling.set_cover_sleep(
                         (token_view_styling.get_cover_sleep() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_DICTIONARY)
+                {
+                    std::vector<std::string> choices = {""};
+                    for (const std::string &name : dictionary_names())
+                    {
+                        choices.push_back(name);
+                    }
+                    size_t at = 0;
+                    for (size_t i = 0; i < choices.size(); ++i)
+                    {
+                        if (choices[i] == token_view_styling.get_dictionary())
+                        {
+                            at = i;
+                        }
+                    }
+                    at = (at + choices.size() + static_cast<size_t>(dir + static_cast<int>(choices.size()))) % choices.size();
+                    token_view_styling.set_dictionary(choices[at]);
+                }
+                else if (line_selected == ROW_SCREEN_DIM)
+                {
+                    token_view_styling.set_screen_dim(
+                        (token_view_styling.get_screen_dim() + screen_dim::LEVEL_COUNT + dir) % screen_dim::LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_BOOK_STYLES)
+                {
+                    token_view_styling.set_book_styles(!token_view_styling.get_book_styles());
+                }
+                else if (line_selected == ROW_HILITE)
+                {
+                    token_view_styling.set_highlight_color(
+                        (token_view_styling.get_highlight_color() + HIGHLIGHT_COLOR_COUNT + dir) % HIGHLIGHT_COLOR_COUNT
                     );
                 }
                 else if (line_selected == ROW_NIGHT)

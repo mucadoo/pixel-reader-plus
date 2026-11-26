@@ -30,12 +30,16 @@ std::vector<Highlight> load_highlights(const std::filesystem::path &path)
         {
             text.erase(0, 1);
         }
-        // An optional {u} or {s} in front of the text names the style.
+        // An optional {u}, {s}, {g}, {b} or {p} in front of the text names the style.
         HighlightStyle style = HighlightStyle::Marker;
-        if (text.size() >= 3 && text[0] == '{' && text[2] == '}' && (text[1] == 'u' || text[1] == 's')
+        if (text.size() >= 3 && text[0] == '{' && text[2] == '}'
+            && (text[1] == 'u' || text[1] == 's' || text[1] == 'g' || text[1] == 'b' || text[1] == 'p')
             && (text.size() == 3 || text[3] == ' '))
         {
-            style = text[1] == 'u' ? HighlightStyle::Underline : HighlightStyle::Strikeout;
+            style = text[1] == 'u' ? HighlightStyle::Underline
+                : text[1] == 's' ? HighlightStyle::Strikeout
+                : text[1] == 'g' ? HighlightStyle::MarkerGreen
+                : text[1] == 'b' ? HighlightStyle::MarkerBlue : HighlightStyle::MarkerPink;
             text.erase(0, text.size() == 3 ? 3 : 4);
         }
         highlights.emplace_back(begin, end, text, style);
@@ -57,6 +61,18 @@ void save_highlights(const std::filesystem::path &path, const std::vector<Highli
         {
             out << " {s}";
         }
+        else if (highlight.style == HighlightStyle::MarkerGreen)
+        {
+            out << " {g}";
+        }
+        else if (highlight.style == HighlightStyle::MarkerBlue)
+        {
+            out << " {b}";
+        }
+        else if (highlight.style == HighlightStyle::MarkerPink)
+        {
+            out << " {p}";
+        }
         if (!highlight.text.empty())
         {
             out << ' ' << highlight.text;
@@ -75,6 +91,19 @@ bool highlights_cover(const std::vector<Highlight> &highlights, DocAddr begin)
         }
     }
     return false;
+}
+
+int highlight_marker_at(const std::vector<Highlight> &highlights, DocAddr begin)
+{
+    for (const Highlight &highlight : highlights)
+    {
+        const int color = marker_color_of(highlight.style);
+        if (color >= 0 && begin >= highlight.first && begin < highlight.second)
+        {
+            return color;
+        }
+    }
+    return -1;
 }
 
 bool highlights_cover_style(const std::vector<Highlight> &highlights, DocAddr begin, HighlightStyle style)

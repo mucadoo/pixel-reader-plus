@@ -65,6 +65,23 @@ public:
     int get_word_spacing() const;
     void set_word_spacing(int level);
 
+    // Whether the stylesheets of epub books are used. Takes effect when the next book is opened.
+    bool get_book_styles() const;
+    void set_book_styles(bool on);
+
+    // How much the whole picture is darkened (see screen_dim.h): 0 Off to 3 Dimmest
+    int get_screen_dim() const;
+    void set_screen_dim(int level);
+
+    // The dictionary to look words up in: a name from dictionary_names(), or empty to follow the
+    // language of the book.
+    const std::string &get_dictionary() const;
+    void set_dictionary(const std::string &name);
+
+    // Color of new highlights: 0 Yellow, 1 Green, 2 Blue, 3 Pink
+    int get_highlight_color() const;
+    void set_highlight_color(int color);
+
     // Idle time before the cover is shown: 0 Off, then the steps of cover_sleep_minutes()
     int get_cover_sleep() const;
     void set_cover_sleep(int step);

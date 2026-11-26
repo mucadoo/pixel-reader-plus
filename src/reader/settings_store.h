@@ -72,6 +72,9 @@ std::optional<int> settings_get_picture_mode(const StateStore &state_store);
 void settings_set_picture_mode(StateStore &state_store, int mode);
 
 // Automatic night theme
+std::optional<std::string> settings_get_dictionary(const StateStore &state_store);
+void settings_set_dictionary(StateStore &state_store, const std::string &name);
+
 std::optional<std::string> settings_get_night_theme(const StateStore &state_store);
 void settings_set_night_theme(StateStore &state_store, const std::string &name);
 std::optional<int> settings_get_night_hour(const StateStore &state_store, bool from);

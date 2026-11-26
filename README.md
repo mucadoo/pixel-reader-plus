@@ -1,6 +1,6 @@
 # Spruce E-Reader
 
-An ebook reader for the Miyoo Flip on spruceOS. It opens epub, FB2, HTML, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
+An ebook reader for the Miyoo Flip on spruceOS. It opens epub, FB2, HTML, Markdown, text and comic (CBZ) books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
 On spruce the app is **E-Reader**. This build replaces the stock Pixel Reader binary. Your books, reading position, and highlights stay on the card.
 
@@ -14,6 +14,7 @@ The reader remembers the folder and the position in the book. The next time you 
 
 Besides epub, the reader opens:
 
+- **Comic books** (`.cbz`, a zip of pictures): each picture is a page, in file-name order with numbers compared by value (page2 before page10), fitted to the whole screen. Page mode shows one picture per page and is the natural choice. The first page is the cover. **Select** has **Browse pages**, a grid of page thumbnails, and **View pictures** opens the page full screen with zoom. There are no chapters, word lookup or highlights, and no time-left estimate.
 - **FB2** (FictionBook): paragraphs, titles, emphasis, poems and epigraphs. Titles become the chapters, and the title, author, language and series are read from the file. Pictures inside an FB2 are not shown.
 - **HTML** (`.html`, `.htm`, `.xhtml`): the text of the page, with headings, lists, quotes, preformatted text and bold and italic. Headings become the chapters. Scripts, styles and pictures are left out. The `<title>` and the author and language `<meta>` tags are read.
 - **Markdown** (`.md`, `.markdown`): headings, paragraphs, bold and italic, lists, quotes, code blocks and rules. A link shows its text. Headings become the chapters and the first heading is the title.
@@ -33,11 +34,13 @@ A name that is too long for its row slides once the row is selected: it waits a 
 
 - **Properties** shows the name, title, author, series, language, type, size, and the folder it is in. Any button closes it.
 - **Add to favorites** or **Remove from favorites**, for a book. A favorite has `* ` in front of its name. Favorites in other folders are listed at the top of every folder, under **Continue**, so they are one press away.
-- **Mark as finished** or **Mark as not finished**, for a book. A book at 99% or more counts as finished by itself, shows **Done**, and has a **Done** label on its cover. Marking it as not finished overrides that, and marking an unfinished book as finished overrides the percent.
+- A book at 99% or more counts as finished by itself, shows **Done**, and has a **Done** label on its cover. **Status** (below) can override that either way.
 - **Hide finished books** or **Show finished books**, for the whole list. Hidden books stay on the card and come back when you show them. A favorite is never hidden. The choice is saved.
 - **Recent books** lists the last 40 books you opened, newest first, with the percent or Done and the date. **A** opens one.
 - **Collections** are shelves of your own. The list shows each collection and **New collection...**; **A** opens a collection as a list of its books, and the Y menu there has **Remove from collection**, **Delete collection** and **Leave collection**. **Add to collection** in the Y menu puts the selected book in one. Collections are kept in `collections.tsv` in the store, and follow a book when you rename or delete it.
 - In the list, a book you have opened shows the time left to read at your speed, and an unopened text, Markdown, HTML or FB2 book shows an estimate such as `~2h 10m`. Properties has a **Reading time** row. An unopened epub shows none, because its length is unknown until it is opened.
+- **Status** sets a book to Automatic (by progress), To read, Reading, On hold or Finished; it replaces the old finished mark. A book you marked To read or On hold shows that in the list. **Library tools** holds: **Books by status** (To read, Reading, On hold, Finished and Favorites, each as a list of books), **Find copies** (books with the same name apart from case and punctuation, or the same file type and exact size, listed together so you can delete the extra one), **Books not opened yet**, **Back up settings and notes** and **Restore from backup**.
+- **Back up settings and notes** writes `PixelReader backup.zip` in the books folder: the settings, your place in every book, the library history and statuses, collections, the word list, reading stats, and the bookmarks, highlights and layout of every book. Covers, book info and page counts are not included, because they are made again. **Restore from backup** puts the files back and then closes the reader, so open it again afterwards. Restoring replaces what is on the card now.
 - **Search library** opens an on-screen keyboard. The words you type are looked for in the file name, title, author and series of every book under the top folder, in all its subfolders. A **Searching library** screen with a bar shows how far it has got. The matches replace the list, with the title and the folder they are in; **A** opens one, and **Clear search** (the first row, **B**, or the same entry in the Y menu) goes back to the folders. A search shows up to 500 books.
 - **Rename file**, for a book, asks for a new name with the keyboard. The extension stays, and the progress, favorite mark, highlights and bookmarks go with the book.
 - **Delete book**, for a book, asks you to confirm and then removes the file together with its progress, highlights, bookmarks and layout.
@@ -74,7 +77,7 @@ These are the printed buttons on the Flip.
 | B | Close the book and return to the file list. |
 | X | Settings. |
 | Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
-| Select | The book menu: chapters, bookmarks, next and previous mark, book map, go to a percent, go to a page, view pictures, jump back, look up a word, reading stats, word list, highlights. Press Select again to close it. |
+| Select | The book menu: chapters, bookmarks, next and previous mark, book map, skim the book, go to a percent, go to a page, view pictures, jump back, look up a word, reading stats, word list, highlights. Press Select again to close it. |
 | Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
@@ -94,7 +97,7 @@ Press **Y** on a page. A cursor sits on a word near the middle of the page, and 
 | --- | --- |
 | D-pad | Move the cursor. Hold to repeat. Left at the start of the page, or right at the end, turns the page. Until you extend, each move is still one word. |
 | Start | Keep the first word and add every word you move through. Press Start again to stop extending. The next move returns to one word. |
-| A | Open a small menu over the page, with **Look up**, **Search book**, **Highlight**, **Underline**, and **Strike out**. Look up and Search use the word at the cursor. The three marks cover the whole selection. If that stretch is already marked, the last rows are replaced by **Remove highlight**. **B** returns to the word. |
+| A | Open a small menu over the page, with **Look up**, **Look up in...** (when there is more than one dictionary), **Search book**, **Highlight**, **Underline**, and **Strike out**. Look up and Search use the word at the cursor. The three marks cover the whole selection. If that stretch is already marked, the last rows are replaced by **Remove highlight**. **B** returns to the word. |
 | B or Y | Leave word selection. The shoulders still turn the page. |
 
 **Look up** opens the definition full screen. Up and down scroll a long definition. Any other button closes it.
@@ -113,6 +116,8 @@ On a word that is a link in the book, such as a footnote number, the **A** menu 
 **Search book** finds the word everywhere in the book, ignoring capitals and matching whole words, and lists the places with the words around each one and their place as a percent. **A** goes there and **Jump back** returns. The list has one row for each paragraph that holds the word, up to 300 rows. The search reads the whole book, so a **Searching** screen with a bar shows how far it has got. If the word is split between two lines with a hyphen, Look up and Search use the whole word.
 
 Every word you look up is added to the **Word list**, newest first, with its meaning and the book it came from. Looking a word up again moves it to the top. **A** shows the meaning, **X** deletes a word. **Export word list** in the book menu writes them to `Word list.txt` in the folder of the book. The list is kept in `vocabulary.tsv` in the store and is shared by all books.
+
+New highlights use the color chosen in Settings (**Highlight color**: Yellow, Green, Blue or Pink), and each highlight keeps its own color, so you can change the setting and go on with another color. Colors are tuned for light and dark themes. Exports mark colored ones, such as `[Green]`.
 
 **Highlight** marks the selected words and saves them with the book, along with the words themselves. A highlight is a bar behind each word. **Underline** draws a line under the words instead, and **Strike out** draws one through them. Each mark remembers its own style. Punctuation between the words is not painted. It is still there after you close the book. Removing it deletes the marks that overlap the selection. Installing the reader again does not delete highlights.
 
@@ -145,6 +150,7 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 - **Next mark** and **Previous mark** go to the next or previous bookmark or highlight in book order, from where you are. They appear when the book has any, and say so when there is none further on.
 - **Book map** shows the whole book as one bar: the part you have read is filled, thin lines cut the bar at each chapter start, small squares above it are bookmarks and below it are highlights, and a tall marker is the place the map points at. Left and right move it by 1%, **L1** and **R1** by 10%, up and down jump to the previous or next chapter, and the chapter name is shown below the bar. **A** goes there, **B** closes the map.
 - **View picture** or **View pictures** appears when a picture is on the screen. It opens the picture full screen, or a short list to choose from when there are several. **A** zooms in step by step (100%, 150%, 200%, 300%, 400% of the size that fits the screen) and then returns, **L1** and **R1** zoom out and in, **Y** fits the picture to the screen, the D-pad moves around a zoomed picture (hold to keep moving), and **B** closes it.
+- **Skim the book** shows the book as a grid of 50 tiles, one for every 2%, each with the first words found there and the chapter it is in; the tile of your place is marked with `>`. The D-pad moves, **L1** and **R1** go a screen at a time, **A** goes there. For a comic it is **Browse pages**, a grid of page thumbnails that fills in as it goes.
 - **Look up a word** opens the on-screen keyboard. Type a word and the dictionary entry opens. When a selected phrase of several words has no entry as a whole, Look up shows the entry of each word in turn (up to six).
 - **Go to %** is a small picker, starting at where you are. Left and right move 1, up and down move 10, **A** goes, **B** cancels. The percent is of the whole book.
 - **Go to page** appears in Page mode once the pages are counted. It works like Go to %, starting at the current page, and goes to the top of the chosen page. The page count follows the Progress row, so in Chapter mode the pages are the chapter's.
@@ -169,6 +175,10 @@ Press **X**. The book stays behind the menu. Each row has the name on the left a
 - **Indent.** None (the default), Small, Medium or Large: the space before the first line of each paragraph.
 - **Paragraph gap.** On (the default) keeps the empty line between paragraphs. Off removes it, which looks best together with an indent. Changing these counts the pages again.
 - **Bold text.** Draws all body text in bold. Off is the default.
+- **Dictionary.** Auto follows the language of the book. Any other choice is a dictionary on the card, for every book. The dictionaries are the `.txt` files in `resources/dictionary` (English, French and Portuguese come with the reader): one `word<TAB>meaning` line for each word, with the word in lowercase. The file does not have to be sorted. Put your own file there and it appears in this row and in **Look up in...**. The Word list is the history of everything you looked up.
+- **Screen dim.** Off, Dim, Dimmer or Dimmest: 25%, 50% or 70% darker, drawn by the reader on top of the backlight, for the dark where the lowest backlight step is still too bright. It does not save battery.
+- **Book styles.** On follows the stylesheet of an epub (sizes, bold, italic, centering, page breaks). Off ignores it and uses the reader's own look, which fixes books with a bad stylesheet. It applies from the next time a book is opened.
+- **Highlight color.** Yellow, Green, Blue or Pink for new highlights.
 - **Word spacing.** Tight, Normal (the default), Wide or Wider: extra pixels in every space between words. Counts the pages again.
 - **Scroll overlap.** 0 to 3 lines of the old screen stay at the top when left or right scrolls a screen in Scroll mode, so you do not lose your place.
 - **Pictures.** Normal, Inverted, High contrast or Hidden. Inverted and High contrast are for dark themes and for line art. Hidden removes pictures from the text.
@@ -192,6 +202,7 @@ The reader writes under `App/PixelReader/.pixel_reader_store`.
 
 - Reading position and the last folder you browsed.
 - Theme, font, font size, shoulder buttons, whether the progress line is shown, the bar, clock, margins, line spacing, justify, the book list order, and your reading speed.
+- A backup file only when you ask for one, in the books folder.
 - Highlights, bookmarks and the layout, one file for each of them per book, named from the book file.
 - `stats.log` and `vocabulary.tsv`: the reading time for each day and book, and the words you looked up.
 - `library.log`: for each book you opened, how far you got and when, whether it is a favorite or marked finished, and the name of its saved data. The list uses it for progress, sorting by recent, Continue, favorites and finished.

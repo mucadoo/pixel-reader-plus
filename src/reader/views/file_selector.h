@@ -46,6 +46,8 @@ public:
     void set_on_info(std::function<void(const std::string &, const std::string &)> on_info);
 
     // Where cover thumbnails are kept. Without it the grid shows plain covers only.
+    // Called before a backup, so the settings and places in books are on disk.
+    void set_flush_state(std::function<void()> callback);
     void set_cover_cache_dir(std::filesystem::path dir);
     // Where the titles and authors read from epubs are kept. Without it the
     // browser shows file names.

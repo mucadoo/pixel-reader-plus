@@ -69,6 +69,9 @@ public:
     virtual std::shared_ptr<TokenIter> get_iter(DocAddr address = 0) const = 0;
 
     virtual std::vector<char> load_resource(const std::filesystem::path &path) const = 0;
+
+    // True for a comic book, whose pages are pictures that should be shown whole.
+    virtual bool pages_are_pictures() const { return false; }
 };
 
 #endif

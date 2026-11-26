@@ -18,7 +18,9 @@ public:
     enum class Status {
         Auto,
         Finished,
-        Reading
+        Reading,
+        ToRead,
+        OnHold
     };
 
     struct Entry
@@ -65,6 +67,8 @@ public:
     // How many books have been opened, and how many of them are finished.
     int started_count() const;
     int finished_count() const;
+    // Every book the log knows about that still exists, with what it knows, in path order.
+    std::vector<std::pair<std::filesystem::path, Entry>> all() const;
     // The favorite books that still exist, in the order of their path.
     std::vector<std::filesystem::path> favorites() const;
 };

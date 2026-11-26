@@ -3,6 +3,7 @@
 #include "./book_grid.h"
 #include "./selection_menu.h"
 #include "filetypes/open_doc.h"
+#include "reader/backup.h"
 #include "reader/book_covers.h"
 #include "reader/book_info.h"
 #include "reader/browser_sort.h"
@@ -20,6 +21,8 @@
 #include <ctime>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <SDL/SDL.h>
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -45,6 +48,8 @@ struct FSState
     std::function<void(std::shared_ptr<View>)> on_open_view;
     std::function<void(bool)> on_hide_finished_change;
     std::function<void(const std::string &)> on_book_deleted;
+    std::filesystem::path store_dir;     // where the reader keeps its files, for backups
+    std::function<void()> flush_state;   // writes the settings and book places to disk
 
     bool search_active = false; // the list shows results: a search, or the books of a collection
     std::string results_title;  // heading of those results
@@ -115,6 +120,10 @@ std::string reading_time_text(const FSEntry &entry, const LibraryLog::Entry *log
 {
     long long seconds = -1;
     bool rough = false;
+    if (book_kind(entry.name) == "CBZ")
+    {
+        return ""; // pages are pictures, not words
+    }
     if (log && log->units > 0)
     {
         if (log->finished())
@@ -424,7 +433,9 @@ void rebuild_views(FSState *s)
             }
             if (log)
             {
-                detail = (log->finished() ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
+                detail = (log->status == LibraryLog::Status::ToRead ? std::string("To read")
+                          : log->status == LibraryLog::Status::OnHold ? "On hold " + std::to_string(log->percent) + "%"
+                          : log->finished() ? std::string("Done") : std::to_string(log->percent) + "%") + ", " + detail;
             }
             menu_details.push_back(detail);
             item.kind = BookGrid::Item::Kind::Book;
@@ -915,6 +926,359 @@ void open_history(FSState *s)
     s->on_open_view(menu);
 }
 
+// The reading status of a book as the lists show it.
+std::string status_label(const LibraryLog::Entry *log)
+{
+    if (!log)
+    {
+        return "Not started";
+    }
+    switch (log->status)
+    {
+        case LibraryLog::Status::ToRead:
+            return "To read";
+        case LibraryLog::Status::OnHold:
+            return "On hold";
+        default:
+            break;
+    }
+    if (log->finished())
+    {
+        return "Finished";
+    }
+    return log->status == LibraryLog::Status::Reading || log->percent > 0 ? "Reading" : "Not started";
+}
+
+// 0 To read, 1 Reading, 2 On hold, 3 Finished, -1 none of them.
+int status_shelf(const LibraryLog::Entry &log)
+{
+    if (log.status == LibraryLog::Status::ToRead) return 0;
+    if (log.status == LibraryLog::Status::OnHold) return 2;
+    if (log.finished()) return 3;
+    if (log.status == LibraryLog::Status::Reading || log.last_opened > 0) return 1;
+    return -1;
+}
+
+// The place the library is searched from.
+std::filesystem::path library_root(const FSState *s)
+{
+    return s->top_folder.empty() ? s->path : s->top_folder;
+}
+
+// Every supported book under the library root, in the order the disk lists them.
+std::vector<std::filesystem::path> library_files(const FSState *s)
+{
+    std::vector<std::filesystem::path> files;
+    std::error_code ec;
+    std::filesystem::recursive_directory_iterator it(library_root(s), std::filesystem::directory_options::skip_permission_denied, ec);
+    const std::filesystem::recursive_directory_iterator end;
+    for (; !ec && it != end; it.increment(ec))
+    {
+        std::error_code ec_file;
+        if (it->is_regular_file(ec_file) && file_type_is_supported(it->path().filename().string()))
+        {
+            files.push_back(it->path());
+        }
+    }
+    return files;
+}
+
+// The title the lists show for a book on disk, loading its info when needed.
+std::string book_title_for(FSState *s, const std::filesystem::path &book)
+{
+    if (s->info)
+    {
+        s->info->load(book);
+        if (const BookInfo *info = s->info->get(book))
+        {
+            if (!info->title.empty())
+            {
+                return info->title;
+            }
+        }
+    }
+    return book.stem().string();
+}
+
+// Puts a list of books in place of the folder, as a search or a collection does.
+void show_results(FSState *s, const std::string &title, const std::string &up, const std::vector<std::filesystem::path> &hits)
+{
+    s->results_title = title;
+    s->results_up = up;
+    s->collection.clear();
+    s->search_hits = hits;
+    s->search_active = true;
+    refresh_path_entries(s);
+    focus_first_item(s);
+}
+
+// Books grouped by the status you gave them, or by how far along they are.
+void browse_by_status(FSState *s)
+{
+    static const char *labels[] = {"To read", "Reading", "On hold", "Finished"};
+    std::vector<std::filesystem::path> shelves[4];
+    for (const auto &item : library_log().all())
+    {
+        const int shelf = status_shelf(item.second);
+        if (shelf >= 0)
+        {
+            shelves[shelf].push_back(item.first);
+        }
+    }
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (int i = 0; i < 4; ++i)
+    {
+        names.push_back(labels[i]);
+        details.push_back(std::to_string(shelves[i].size()) + " books");
+    }
+    const auto favorites = library_log().favorites();
+    names.push_back("Favorites");
+    details.push_back(std::to_string(favorites.size()) + " books");
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title("Books by status");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, shelves0 = shelves[0], shelves1 = shelves[1], shelves2 = shelves[2], shelves3 = shelves[3], favorites](uint32_t index) {
+        const std::vector<std::filesystem::path> *chosen[5] = {&shelves0, &shelves1, &shelves2, &shelves3, &favorites};
+        if (index >= 5)
+        {
+            return;
+        }
+        std::vector<std::pair<std::string, std::filesystem::path>> sorted;
+        for (const auto &book : *chosen[index])
+        {
+            sorted.emplace_back(lowercase(book_title_for(s, book)), book);
+        }
+        std::sort(sorted.begin(), sorted.end());
+        std::vector<std::filesystem::path> hits;
+        for (const auto &item : sorted)
+        {
+            hits.push_back(item.second);
+        }
+        static const char *titles[] = {"To read", "Reading", "On hold", "Finished", "Favorites"};
+        show_results(s, titles[index], "Back to folders", hits);
+    });
+    s->on_open_view(menu);
+}
+
+// Sets the status of one book from a short list.
+void choose_status(FSState *s, const std::filesystem::path &book)
+{
+    const std::vector<std::string> names = {"Automatic (by progress)", "To read", "Reading", "On hold", "Finished"};
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title("Status: " + status_label(library_log().get(book)));
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, book](uint32_t index) {
+        static const LibraryLog::Status values[] = {
+            LibraryLog::Status::Auto,
+            LibraryLog::Status::ToRead,
+            LibraryLog::Status::Reading,
+            LibraryLog::Status::OnHold,
+            LibraryLog::Status::Finished
+        };
+        if (index < 5)
+        {
+            library_log().set_status(book, values[index]);
+            library_log().flush();
+            refresh_keeping_cursor(s);
+        }
+    });
+    s->on_open_view(menu);
+}
+
+// A name reduced to letters and digits, to spot the same book saved twice.
+std::string normalized_stem(const std::filesystem::path &book)
+{
+    std::string key;
+    for (char c : book.stem().string())
+    {
+        if (std::isalnum(static_cast<unsigned char>(c)))
+        {
+            key.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return key;
+}
+
+// Books that look like copies of each other: the same name apart from punctuation and case,
+// or the same file type and exact size. Copies are listed together.
+void find_duplicates(FSState *s)
+{
+    const auto files = library_files(s);
+    std::map<std::string, std::vector<size_t>> by_name;
+    std::map<std::string, std::vector<size_t>> by_size;
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        progress_screen::show(s->styling, "Looking for copies", "", static_cast<int>(i * 100 / files.size()));
+        const std::string name = normalized_stem(files[i]);
+        if (!name.empty())
+        {
+            by_name[name + "." + lowercase(files[i].extension().string())].push_back(i);
+        }
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(files[i], ec);
+        if (!ec && size > 20000)
+        {
+            by_size[lowercase(files[i].extension().string()) + std::to_string(size)].push_back(i);
+        }
+    }
+    std::vector<std::filesystem::path> hits;
+    std::vector<bool> used(files.size(), false);
+    const auto add_groups = [&](const std::map<std::string, std::vector<size_t>> &groups) {
+        for (const auto &group : groups)
+        {
+            if (group.second.size() < 2)
+            {
+                continue;
+            }
+            for (size_t index : group.second)
+            {
+                if (!used[index] && hits.size() < 500)
+                {
+                    used[index] = true;
+                    hits.push_back(files[index]);
+                }
+            }
+        }
+    };
+    add_groups(by_name);
+    add_groups(by_size);
+    if (hits.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Copies", "No book looks like a copy of another.");
+        }
+        return;
+    }
+    show_results(s, "Copies", "Back to folders", hits);
+}
+
+// Books that have never been opened, by title.
+void find_unopened(FSState *s)
+{
+    const auto files = library_files(s);
+    std::vector<std::pair<std::string, std::filesystem::path>> found;
+    for (size_t i = 0; i < files.size() && found.size() < 500; ++i)
+    {
+        progress_screen::show(s->styling, "Looking for new books", "", static_cast<int>(i * 100 / files.size()));
+        const LibraryLog::Entry *log = library_log().get(files[i]);
+        if (!log || log->last_opened == 0)
+        {
+            found.emplace_back(lowercase(book_title_for(s, files[i])), files[i]);
+        }
+    }
+    if (found.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Not opened", "Every book has been opened.");
+        }
+        return;
+    }
+    std::sort(found.begin(), found.end());
+    std::vector<std::filesystem::path> hits;
+    for (const auto &item : found)
+    {
+        hits.push_back(item.second);
+    }
+    show_results(s, "Not opened yet", "Back to folders", hits);
+}
+
+const char *BACKUP_FILE_NAME = "PixelReader backup.zip";
+
+void open_library_tools(FSState *s)
+{
+    const std::vector<std::string> names = {
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup"
+    };
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title("Library tools");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s](uint32_t index) {
+        const std::filesystem::path zip = library_root(s) / BACKUP_FILE_NAME;
+        switch (index)
+        {
+            case 0:
+                browse_by_status(s);
+                break;
+            case 1:
+                find_duplicates(s);
+                break;
+            case 2:
+                find_unopened(s);
+                break;
+            case 3:
+            {
+                if (s->store_dir.empty())
+                {
+                    return;
+                }
+                library_log().flush();
+                collections::flush();
+                if (s->flush_state)
+                {
+                    s->flush_state();
+                }
+                const backup::Result result = backup::write(s->store_dir, zip);
+                if (s->on_info)
+                {
+                    s->on_info(
+                        "Back up",
+                        result.ok ? "Saved " + std::to_string(result.files) + " files to\n" + zip.string() : result.message
+                    );
+                }
+                break;
+            }
+            case 4:
+            {
+                std::error_code ec;
+                if (s->store_dir.empty() || !std::filesystem::exists(zip, ec))
+                {
+                    if (s->on_info)
+                    {
+                        s->on_info("Restore", "There is no backup. Put the file\n" + std::string(BACKUP_FILE_NAME) + "\nin the books folder first.");
+                    }
+                    return;
+                }
+                auto confirm = std::make_shared<SelectionMenu>(
+                    std::vector<std::string> {"Keep what I have", "Restore, then close the reader"},
+                    s->styling
+                );
+                confirm->set_title("Replace your settings and notes?");
+                confirm->set_compact(true);
+                confirm->set_close_on_select();
+                confirm->set_on_selection([s, zip](uint32_t choice) {
+                    if (choice != 1)
+                    {
+                        return;
+                    }
+                    const backup::Result result = backup::restore(s->store_dir, zip);
+                    if (!result.ok)
+                    {
+                        if (s->on_info)
+                        {
+                            s->on_info("Restore", result.message);
+                        }
+                        return;
+                    }
+                    progress_screen::show(s->styling, "Restored", std::to_string(result.files) + " files. Closing...", 100);
+                    SDL_Delay(2500);
+                    std::_Exit(0); // leave without saving, so the restored files stay as they are
+                });
+                s->on_open_view(confirm);
+                break;
+            }
+            default:
+                break;
+        }
+    });
+    s->on_open_view(menu);
+}
 // The Y menu: properties, and for a book its favorite and finished marks, plus
 // whether finished books are listed at all.
 void open_options(FSState *s)
@@ -932,15 +1296,15 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Finished, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection };
+    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
     {
         acts.push_back(Act::Favorite);
         names.push_back(log && log->favorite ? "Remove from favorites" : "Add to favorites");
-        acts.push_back(Act::Finished);
-        names.push_back(log && log->finished() ? "Mark as not finished" : "Mark as finished");
+        acts.push_back(Act::Status);
+        names.push_back("Status: " + status_label(log));
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
@@ -950,6 +1314,8 @@ void open_options(FSState *s)
     names.push_back("Search library");
     acts.push_back(Act::Collections);
     names.push_back("Collections");
+    acts.push_back(Act::LibraryTools);
+    names.push_back("Library tools");
     if (s->search_active)
     {
         acts.push_back(Act::ClearSearch);
@@ -998,17 +1364,11 @@ void open_options(FSState *s)
                 library_log().flush();
                 refresh_keeping_cursor(s);
                 break;
-            case Act::Finished:
-                if (now && now->finished())
-                {
-                    library_log().set_status(book, now->percent >= 99 ? LibraryLog::Status::Reading : LibraryLog::Status::Auto);
-                }
-                else
-                {
-                    library_log().set_status(book, LibraryLog::Status::Finished);
-                }
-                library_log().flush();
-                refresh_keeping_cursor(s);
+            case Act::Status:
+                choose_status(s, book);
+                break;
+            case Act::LibraryTools:
+                open_library_tools(s);
                 break;
             case Act::History:
                 open_history(s);
@@ -1385,8 +1745,14 @@ void FileSelector::set_on_info(std::function<void(const std::string &, const std
     state->on_info = callback;
 }
 
+void FileSelector::set_flush_state(std::function<void()> callback)
+{
+    state->flush_state = callback;
+}
+
 void FileSelector::set_cover_cache_dir(std::filesystem::path dir)
 {
+    state->store_dir = dir.parent_path();
     state->covers = std::make_unique<BookCovers>(dir);
     state->grid.set_covers(state->covers.get());
 }

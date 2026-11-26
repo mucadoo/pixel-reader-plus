@@ -1,5 +1,7 @@
 #include "./progress_screen.h"
 
+#include "./screen_dim.h"
+
 #include "./system_styling.h"
 #include "./views/menu_draw.h"
 #include "sys/screen.h"
@@ -93,6 +95,7 @@ void show(SystemStyling &styling, const std::string &title, const std::string &d
         return;
     }
     draw(video, styling, title, detail, percent);
+    screen_dim::apply(video);
     SDL_Flip(video);
 }
 

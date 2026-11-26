@@ -21,10 +21,14 @@ struct TokenViewStylingState
     int indent_level = DEFAULT_INDENT_LEVEL;
     bool paragraph_gap = true;
     std::string night_theme;
+    std::string dictionary;
     bool thin_bar = false;
     int scroll_overlap = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
+    int highlight_color = 0;
+    int screen_dim = 0;
+    bool book_styles = true;
     int picture_mode = 0;
     int night_from = 21;
     int night_until = 7;
@@ -228,6 +232,50 @@ void TokenViewStyling::set_word_spacing(int level)
     }
 }
 
+int TokenViewStyling::get_screen_dim() const
+{
+    return state->screen_dim;
+}
+
+void TokenViewStyling::set_screen_dim(int level)
+{
+    level = std::clamp(level, 0, 3);
+    if (state->screen_dim != level)
+    {
+        state->screen_dim = level;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_book_styles() const
+{
+    return state->book_styles;
+}
+
+void TokenViewStyling::set_book_styles(bool on)
+{
+    if (state->book_styles != on)
+    {
+        state->book_styles = on;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_highlight_color() const
+{
+    return state->highlight_color;
+}
+
+void TokenViewStyling::set_highlight_color(int color)
+{
+    color = std::clamp(color, 0, 3);
+    if (state->highlight_color != color)
+    {
+        state->highlight_color = color;
+        notify_subscribers();
+    }
+}
+
 int TokenViewStyling::get_cover_sleep() const
 {
     return state->cover_sleep;
@@ -268,6 +316,20 @@ void TokenViewStyling::set_thin_bar(bool on)
     if (state->thin_bar != on)
     {
         state->thin_bar = on;
+        notify_subscribers();
+    }
+}
+
+const std::string &TokenViewStyling::get_dictionary() const
+{
+    return state->dictionary;
+}
+
+void TokenViewStyling::set_dictionary(const std::string &name)
+{
+    if (state->dictionary != name)
+    {
+        state->dictionary = name;
         notify_subscribers();
     }
 }

@@ -19,6 +19,7 @@
 #include "./views/reader_bootstrap_view.h"
 #include "./views/image_view.h"
 #include "./book_covers.h"
+#include "./screen_dim.h"
 #include "./layout_options.h"
 #include "./views/settings_view.h"
 #include "reader/controls_guide.h"
@@ -171,6 +172,12 @@ void initialize_views(
         });
         fs->set_on_book_deleted([&state_store](const std::string &book_id) {
             state_store.forget_book(book_id);
+        });
+        fs->set_flush_state([&state_store]() {
+            state_store.flush();
+            reading_speed::flush();
+            reading_stats::flush();
+            vocabulary::flush();
         });
         fs->set_cover_cache_dir(store_path / "covers");
         fs->set_info_cache_dir(store_path / "info");
@@ -359,6 +366,11 @@ int main(int argc, char **argv)
     token_view_styling.set_scroll_overlap(settings_get_small_int(state_store, "scroll_overlap").value_or(0));
     token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
     token_view_styling.set_cover_sleep(settings_get_small_int(state_store, "cover_sleep").value_or(0));
+    token_view_styling.set_screen_dim(settings_get_small_int(state_store, "screen_dim").value_or(0));
+    screen_dim::set_level(token_view_styling.get_screen_dim());
+    token_view_styling.set_book_styles(settings_get_small_int(state_store, "book_styles").value_or(1) != 0);
+    token_view_styling.set_highlight_color(settings_get_small_int(state_store, "highlight_color").value_or(0));
+    token_view_styling.set_dictionary(settings_get_dictionary(state_store).value_or(std::string()));
     token_view_styling.set_night_theme(settings_get_night_theme(state_store).value_or(std::string()));
     token_view_styling.set_night_from(settings_get_night_hour(state_store, true).value_or(21));
     token_view_styling.set_night_until(settings_get_night_hour(state_store, false).value_or(7));
@@ -392,6 +404,11 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "scroll_overlap", token_view_styling.get_scroll_overlap());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
             settings_set_small_int(state_store, "cover_sleep", token_view_styling.get_cover_sleep());
+            settings_set_small_int(state_store, "screen_dim", token_view_styling.get_screen_dim());
+            screen_dim::set_level(token_view_styling.get_screen_dim());
+            settings_set_small_int(state_store, "book_styles", token_view_styling.get_book_styles() ? 1 : 0);
+            settings_set_small_int(state_store, "highlight_color", token_view_styling.get_highlight_color());
+            settings_set_dictionary(state_store, token_view_styling.get_dictionary());
             settings_set_night_theme(state_store, token_view_styling.get_night_theme());
             settings_set_night_hour(state_store, true, token_view_styling.get_night_from());
             settings_set_night_hour(state_store, false, token_view_styling.get_night_until());
@@ -564,6 +581,7 @@ int main(int argc, char **argv)
     // Initial render
     view_stack.render(screen, true);
     SDL_BlitSurface(screen, NULL, video, NULL);
+    screen_dim::apply(video);
     SDL_Flip(video);
 
     while (!quit)
@@ -636,6 +654,7 @@ int main(int argc, char **argv)
             if (view_stack.render(screen, force_render))
             {
                 SDL_BlitSurface(screen, NULL, video, NULL);
+                screen_dim::apply(video);
                 SDL_Flip(video);
             }
         }
@@ -681,6 +700,7 @@ int main(int argc, char **argv)
                         view_stack.push(cover);
                         view_stack.render(screen, true);
                         SDL_BlitSurface(screen, NULL, video, NULL);
+                        screen_dim::apply(video);
                         SDL_Flip(video);
                     }
                 }

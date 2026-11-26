@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <set>
 #include <vector>
 
 namespace
@@ -52,6 +54,34 @@ std::string dictionary_name_for_language(const std::string &language)
     return "english";
 }
 
+std::vector<std::string> dictionary_names()
+{
+    std::set<std::string> names;
+    const char *folders[] = {"resources/dictionary", "/mnt/SDCARD/App/PixelReader/resources/dictionary"};
+    for (const char *folder : folders)
+    {
+        std::error_code ec;
+        for (const auto &item : std::filesystem::directory_iterator(folder, ec))
+        {
+            std::error_code ec_file;
+            if (!item.is_regular_file(ec_file) || item.path().extension() != ".txt")
+            {
+                continue;
+            }
+            std::string name = item.path().stem().string();
+            std::string lower = name;
+            for (char &c : lower)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if (lower.compare(0, 7, "license") != 0)
+            {
+                names.insert(name);
+            }
+        }
+    }
+    return std::vector<std::string>(names.begin(), names.end());
+}
 void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
 {
     if (loaded)
@@ -120,6 +150,29 @@ void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
         lines.pop_back();
     }
     ok = done > 0 && !lines.empty();
+
+    // Dictionaries that came with the reader are sorted. One of your own may not be.
+    if (ok && name != "english" && name != "french" && name != "portuguese")
+    {
+        const auto key_end = [this](uint32_t start) {
+            size_t tab = data.find('\t', start);
+            const size_t eol = data.find('\n', start);
+            if (tab == std::string::npos || (eol != std::string::npos && tab > eol))
+            {
+                tab = eol == std::string::npos ? data.size() : eol;
+            }
+            return tab;
+        };
+        const auto less = [this, &key_end](uint32_t a, uint32_t b) {
+            const size_t ea = key_end(a);
+            const size_t eb = key_end(b);
+            return compare_key(std::string(data, a, ea - a), data.data() + b, eb - b) < 0;
+        };
+        if (!std::is_sorted(lines.begin(), lines.end(), less))
+        {
+            std::stable_sort(lines.begin(), lines.end(), less);
+        }
+    }
 }
 
 void Dictionary::load(const std::function<void(int)> &progress)

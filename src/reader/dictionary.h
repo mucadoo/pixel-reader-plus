@@ -30,6 +30,11 @@ public:
     void load(const std::function<void(int)> &progress);
 };
 
+// The names of the dictionaries on the card: every .txt file in resources/dictionary except the
+// license notes. Drop a file of "word<TAB>meaning" lines in that folder to add your own; words are
+// written in lowercase, and the file need not be sorted.
+std::vector<std::string> dictionary_names();
+
 // The dictionary that suits a book language such as "pt-BR" or "fr". Unknown
 // languages get the English one.
 std::string dictionary_name_for_language(const std::string &language);

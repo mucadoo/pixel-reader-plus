@@ -51,7 +51,8 @@ void LibraryLog::load(std::filesystem::path path)
             if (parts.size() >= 5)
             {
                 const int status = std::stoi(parts[2]);
-                entry.status = status == 1 ? Status::Finished : (status == 2 ? Status::Reading : Status::Auto);
+                entry.status = status == 1 ? Status::Finished
+                    : (status == 2 ? Status::Reading : (status == 3 ? Status::ToRead : (status == 4 ? Status::OnHold : Status::Auto)));
                 entry.favorite = parts[3] == "1";
                 size_t path_at = 4;
                 if (parts.size() >= 6)
@@ -97,7 +98,7 @@ void LibraryLog::flush()
     {
         const Entry &e = item.second;
         out << e.percent << '\t' << e.last_opened << '\t'
-            << (e.status == Status::Finished ? 1 : (e.status == Status::Reading ? 2 : 0)) << '\t'
+            << (e.status == Status::Finished ? 1 : (e.status == Status::Reading ? 2 : (e.status == Status::ToRead ? 3 : (e.status == Status::OnHold ? 4 : 0)))) << '\t'
             << (e.favorite ? 1 : 0) << '\t' << e.book_id << (e.units ? "," + std::to_string(e.units) : std::string()) << '\t' << item.first << '\n';
     }
     dirty = false;
@@ -207,7 +208,29 @@ void LibraryLog::rename(const std::filesystem::path &from, const std::filesystem
 
 int LibraryLog::started_count() const
 {
-    return static_cast<int>(entries.size());
+    int count = 0;
+    for (const auto &item : entries)
+    {
+        if (item.second.last_opened > 0)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::vector<std::pair<std::filesystem::path, LibraryLog::Entry>> LibraryLog::all() const
+{
+    std::vector<std::pair<std::filesystem::path, Entry>> result;
+    for (const auto &item : entries)
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(item.first, ec))
+        {
+            result.emplace_back(item.first, item.second);
+        }
+    }
+    return result;
 }
 
 int LibraryLog::finished_count() const

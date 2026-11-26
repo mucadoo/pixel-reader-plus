@@ -3,6 +3,8 @@
 #include "./popup_view.h"
 #include "./reader_view.h"
 #include "doc_api/open_progress.h"
+#include "./token_view/token_view_styling.h"
+#include "filetypes/epub/book_style.h"
 #include "filetypes/open_doc.h"
 #include "reader/progress_screen.h"
 #include "reader/book_layout.h"
@@ -54,6 +56,7 @@ void ReaderBootstrapView::load_reader()
     auto &view_stack = state->view_stack;
     auto &state_store = state->state_store;
 
+    set_book_styles_enabled(token_view_styling.get_book_styles());
     std::shared_ptr<DocReader> reader = create_doc_reader(book_path);
     SSDocReaderCache cache(state_store);
     // The first time a book is opened every part of it is measured. Show how far that is.

@@ -58,6 +58,18 @@ float scale_to_fit_width(int w)
 
 } // namespace
 
+// The scale a picture is shown at. A picture of a book fits the width of the screen. A page of a
+// comic fits the whole page, and a small one is enlarged up to twice.
+float TokenLineScroller::image_scale(int w, int h) const
+{
+    if (!reader || !reader->pages_are_pictures() || w <= 0 || h <= 0)
+    {
+        return scale_to_fit_width(w);
+    }
+    const float page_h = static_cast<float>(std::max(1, static_cast<int>(SCREEN_HEIGHT) - 3 * static_cast<int>(line_height_pixels)));
+    return std::min(2.f, std::min(static_cast<float>(SCREEN_WIDTH) / w, page_h / h));
+}
+
 std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_lines(const ImageDocToken &token)
 {
     SDL_Surface *image = load_scaled_image(token.path);
@@ -316,7 +328,7 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
             int h = 0;
             if (!data.empty() && image_pixel_size(data.data(), static_cast<uint32_t>(data.size()), w, h))
             {
-                float scale = scale_to_fit_width(w);
+                float scale = image_scale(w, h);
                 int scaled_h = std::max(1, static_cast<int>(h * scale));
                 slots = std::max(1, (scaled_h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
             }
@@ -546,7 +558,7 @@ SDL_Surface *TokenLineScroller::load_scaled_image(const std::filesystem::path &p
         return nullptr;
     }
 
-    float scale = scale_to_fit_width(img_surface->w);
+    float scale = image_scale(img_surface->w, img_surface->h);
     surface_unique_ptr shown = scale != 1
         ? surface_unique_ptr { zoomSurface(img_surface.get(), scale, scale, 0) }
         : std::move(img_surface);

@@ -33,8 +33,27 @@ std::string lower_copy(std::string s)
 
 } // namespace
 
+namespace
+{
+bool g_book_styles = true;
+} // namespace
+
+void set_book_styles_enabled(bool enabled)
+{
+    g_book_styles = enabled;
+}
+
+bool book_styles_enabled()
+{
+    return g_book_styles;
+}
+
 void Stylesheet::parse(const std::string &css)
 {
+    if (!g_book_styles)
+    {
+        return;
+    }
     std::string text;
     text.reserve(css.size());
     for (size_t i = 0; i < css.size(); ++i)

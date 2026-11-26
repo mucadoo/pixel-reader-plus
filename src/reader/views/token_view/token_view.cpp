@@ -4,6 +4,7 @@
 #include "./token_view_styling.h"
 
 #include "doc_api/doc_reader.h"
+#include "filetypes/epub/book_style.h"
 #include "reader/highlights.h"
 #include "reader/hyphenation.h"
 #include "reader/layout_options.h"
@@ -586,22 +587,28 @@ static void draw_text_line_body(
         return;
     }
 
-    int lum = theme.background.r + theme.background.g + theme.background.b;
-    SDL_Color marker = lum < 380
-        ? SDL_Color{120, 92, 40, 0}
-        : SDL_Color{255, 224, 120, 0};
+    const bool dark_theme = theme.background.r + theme.background.g + theme.background.b < 380;
+    const auto marker_color = [dark_theme](int color) {
+        static const SDL_Color light[HIGHLIGHT_COLOR_COUNT] = {
+            {255, 224, 120, 0}, {170, 230, 150, 0}, {150, 200, 250, 0}, {250, 170, 200, 0}
+        };
+        static const SDL_Color dark[HIGHLIGHT_COLOR_COUNT] = {
+            {120, 92, 40, 0}, {50, 100, 55, 0}, {45, 80, 120, 0}, {120, 55, 85, 0}
+        };
+        return dark_theme ? dark[color] : light[color];
+    };
 
     for (const LayoutWord &word : visual.layout.words)
     {
         DocAddr range_begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
         DocAddr range_end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
         bool selected = state.selecting && state.has_selection && word.begin >= range_begin && word.begin < range_end;
-        bool marked = highlights_cover_style(state.highlights, word.begin, HighlightStyle::Marker);
-        if (!selected && !marked)
+        const int marker_index = highlight_marker_at(state.highlights, word.begin);
+        if (!selected && marker_index < 0)
         {
             continue;
         }
-        SDL_Color color = selected ? theme.highlight_background : marker;
+        SDL_Color color = selected ? theme.highlight_background : marker_color(marker_index);
         SDL_Rect rect = {
             static_cast<Sint16>(word.x),
             static_cast<Sint16>(visual.text_y),
@@ -645,9 +652,10 @@ static void draw_text_line_body(
             {
                 return theme.highlight_background;
             }
-            if (highlights_cover_style(state.highlights, word.begin, HighlightStyle::Marker))
+            const int marker_index = highlight_marker_at(state.highlights, word.begin);
+            if (marker_index >= 0)
             {
-                bg = marker;
+                bg = marker_color(marker_index);
             }
         }
         return bg;
@@ -1395,7 +1403,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += ",ws" + std::to_string(state.word_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
+    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');
     if (!chapter)
     {

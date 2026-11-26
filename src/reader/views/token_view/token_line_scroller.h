@@ -73,6 +73,8 @@ public:
     void set_line_height_pixels(uint32_t line_height_pixels);
     // Space left empty at each side of the text. Call reset_buffer to wrap again.
     void set_side_margin(int pixels);
+    // The factor a picture of this size is drawn at.
+    float image_scale(int w, int h) const;
     // First-line indent in pixels, whether blank lines separate paragraphs, and bold body text.
     // Call reset_buffer to wrap again.
     // How pictures are shown, a PictureMode. Call reset_buffer to lay out again.

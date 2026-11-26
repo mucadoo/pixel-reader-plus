@@ -572,7 +572,7 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
                 return "";
             }
             const char *mark = (book ? state.title_book_estimated : state.title_chapter_estimated) ? "~" : "";
-            snprintf(text, sizeof(text), "%s %s%d / %s%d", book ? "Book pg" : "Ch pg", mark, page, mark, pages);
+            snprintf(text, sizeof(text), "%s%d / %s%d", mark, page, mark, pages);
             return text;
         }
         case BarItem::Battery:

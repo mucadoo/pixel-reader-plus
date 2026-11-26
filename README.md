@@ -63,7 +63,7 @@ A book you have opened has a progress bar along the bottom of its cover. In ever
 | --- | --- |
 | D-pad up / down | List: move one row. Grid: move one row of covers. Hold to keep moving. |
 | D-pad left / right | List: move half a screen. Grid: move one cover. |
-| L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. Settings can move this to L2 / R2. |
+| L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. |
 | A | Open the book or folder. |
 | Y | The options of the selected entry: properties, favorite, finished, hide finished, **Show** (switches which books the folder lists: all, not opened, in progress, favorites, finished), search, rename, delete. |
 | Select | Switch between the list and the grid. |
@@ -80,13 +80,13 @@ These are the printed buttons on the Flip.
 | --- | --- |
 | D-pad up / down | Previous or next line. Hold to keep moving. |
 | D-pad left / right | Previous or next page. |
-| L1 / R1 | Previous or next page. Settings can move this to L2 / R2. The other shoulder pair (L2 / R2, or L1 / R1 after the swap) jumps to the previous or next chapter: the first press goes to the start of the current chapter, and a second one, or one within the first 3% of a chapter, to the one before. |
+| L1 / R1 | Previous or next page. The other shoulder pair (L2 / R2) jumps to the previous or next chapter: the first press goes to the start of the current chapter, and a second one, or one within the first 3% of a chapter, to the one before. |
 | A | Show or hide the progress line. |
 | B | Close the book and return to the file list. |
 | X | Settings. |
 | Y | Select a word near the middle of the page. Commas, periods, and quotes are left outside the selection. |
 | Select | The book menu: chapters, search in book, bookmarks, next and previous mark, book map, skim the book, go to a percent, go to a page, view pictures, jump back, look up a word, reading stats, word list, highlights. Press Select again to close it. |
-| Start | Open the controls guide. Up and down scroll it. Any other button closes it. |
+| Start | Add a bookmark on this page, or remove the one that is there. |
 | Menu | Quit the app. A tap of Menu quits. A Menu chord, such as the brightness shortcut, does not. |
 
 The progress line shows the chapter name and how far you are.
@@ -191,7 +191,6 @@ Press **X**. The book stays behind the menu. The first screen lists groups: **Th
 - **Theme.** The menu shows Spruce, Night, Light, Sepia, Vampire and Custom. Spruce is the dark theme with cream text.
 - **Font size.** Body text, from 18 to 40. Titles scale with it. **A** on this row or on **Font** opens a preview: a sample paragraph (with quotes, numbers and accented letters) in the font and size you are looking at. Up and down change the font, left and right the size, **A** keeps both and **B** leaves them as they were.
 - **Font.** The fonts shipped in `resources/fonts`, including DejaVu Sans, DejaVu Serif, and Merriweather. Merriweather uses its bold file for bold text. The other fonts use a synthetic bold.
-- **Shoulders.** `L1 / R1` uses L1 and R1 to turn pages. `L2 / R2` uses L2 and R2 instead.
 - **Progress.** `Book` or `Chapter`. The percentage, and the page count in Page mode, both follow that choice.
 - **Reading.** `Scroll` shows the percentage. `Page` shows a real page count that moves one number at a time.
 - **Bar left, Bar middle, Bar right.** What the line under the text shows in each of its three places. The choices are Nothing, Chapter title, Book title, Page and %, Page, Chapter %, Book %, Time, Date, Chapter x of y, Pages left in chapter, Pages left in book, and Battery. Chapter x of y shows `Ch 3 / 20`. The pages left items, such as `Ch 12 pg left` and `Book 340 pg left`, are shown in page mode: the count for what the Progress row measures is exact, and the other is estimated from the text that is left. Book title is the title inside the book when it has one. A bar saved with one of the old time left items shows nothing in that place. Battery is read from the system and the item stays empty when the device does not report it. Page and % is the usual 12 / 248  34%, and its percent follows the Progress row. Chapter % and Book % always show their own number, so they can sit side by side. The line starts as Chapter title on the left and Page and % on the right. The right place keeps what it needs, the middle place comes next, and the left place gets what is left and is cut short if it has to be.
@@ -226,7 +225,7 @@ Press **X**. The book stays behind the menu. The first screen lists groups: **Th
 - **Justify.** On spreads the words of each line so it fills the width, except the last line of a paragraph, headings, centered text, and preformatted text. A line that falls well short of full is left alone. Off is the default.
 - **On start.** Library (the default) or Last book: with Last book the reader opens the book you read last as soon as it starts, unless that book is finished.
 - **Low battery.** Warn (the default) or Off. When the charge falls to 15% a message says to charge soon; at 5% your place and settings are saved first. Nothing shows while charging.
-- **Controls.** **Controls guide** opens the shortcut guide; while reading it is also in the book menu under **Tools**. **Button actions** sets what the **Start** button and the **A** button do while reading, and what **holding** A, Y or Start (for about 0.7 seconds) does. Each of the five can be: toggle a bookmark (Start's default), show or hide the bar (A's default), Chapters, Search in book, Go to %, Book map, Jump back, Next chapter, Previous chapter, Book menu, Pick a word, Next layout profile, Next color theme, Bigger text, Smaller text, Look up a word, Word list, Highlights, Bookmarks, or nothing (the default for the three holds). A button that has a hold action does its normal job when you tap and release it, and the hold action when you keep it down. The choices are kept in `buttons.txt` in the store. Select always opens the book menu. Chords such as Select with another button are not available.
+- **Controls.** **Controls guide** opens the guide to the buttons; while reading it is also in the book menu under **Tools**. It has one screen for each topic (Reading, Select a word, Book menu, Book list, Settings and Pages), each a list of buttons with what they do. **Left** and **right** (or the shoulder buttons) change the topic, **up** and **down** scroll, **A** or **B** close it. The buttons themselves cannot be reassigned: Start toggles a bookmark, A shows or hides the bar, and the shoulder buttons are L1 / R1 for pages and L2 / R2 for chapters. Select always opens the book menu. Chords such as Select with another button are not available.
 - **Color themes.** The Theme row cycles Spruce, Night, Light, Sepia, Vampire, Solarized light, Solarized dark, Amber night, Dark sepia, Paper gray, Yellow on black and Custom. Any of them can also be the night theme.
 - **Text contrast.** In Theme and colors: Normal, High or Highest. It moves the text color of the theme (and the quiet text) toward black on a light page or white on a dark one, so thin fonts read better on the screen. **Bold text** and the **Paragraph gap**, **Indent** and **Word spacing** rows already change the weight and spacing of the body text.
 - **Dictionary order.** In Reading: lists the dictionaries on the card. **A** moves one up, **Y** moves it down, **X** hides or shows it. The order is the order of **Look up in...**, of the Dictionary setting's choices and of the sections of an All-at-once lookup; hidden dictionaries are left out of those (you cannot hide the last one). The Auto setting still follows the language of the book. Kept in `dictionaries.txt` in the store.
@@ -244,7 +243,7 @@ The four margins, Line spacing, Justify, Indent, Paragraph gap, Bold text, Hyphe
 The reader writes under `App/PixelReader/.pixel_reader_store`.
 
 - Reading position and the last folder you browsed.
-- Theme, font, font size, shoulder buttons, whether the progress line is shown, the bar, clock, margins, line spacing, justify, and the book list order.
+- Theme, font, font size, whether the progress line is shown, the bar, clock, margins, line spacing, justify, and the book list order.
 - A backup file only when you ask for one, in the books folder.
 - Highlights, bookmarks and the layout, one file for each of them per book, named from the book file. A highlight line also holds the style, the time it was made (`@` and the seconds since 1970), its words and its note.
 - `stats.log` and `vocabulary.tsv`: the reading time for each day and book, and the words you looked up.
@@ -253,7 +252,7 @@ The reader writes under `App/PixelReader/.pixel_reader_store`.
 - `hidden_folders.txt`: the folders hidden from the library, one path a line.
 - `folders.tsv` and `profiles.tsv`: the view chosen for each folder, and the saved layout profiles.
 - `opening.txt`: exists only while a book is opening and shortly after; if it is found at the next start the reader stopped, and asks what to do (see After a crash). It is not part of a backup you need to keep.
-- `buttons.txt`, `dictionaries.txt`, `vocabulary_review.tsv` and `vocabulary_context.tsv`: the button actions, the dictionary order, the flash card schedule and the sentences kept with looked-up words.
+- `dictionaries.txt`, `vocabulary_review.tsv` and `vocabulary_context.tsv`: the dictionary order, the flash card schedule and the sentences kept with looked-up words.
 - `library.log`: for each book you opened, how far you got and when, whether it is a favorite or marked finished, its rating, and the name of its saved data. The list uses it for progress, sorting by recent, Continue, favorites and finished.
 - `info`, `covers`, `fonts` and the `.cache` files in `books`: the titles, the cover pictures, the fonts copied out of books and the saved page layouts. They can be deleted at any time and are made again; **Library tools > Storage** does it for you and shows their size.
 

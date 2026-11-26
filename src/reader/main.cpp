@@ -11,7 +11,6 @@
 #include "./library_log.h"
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
-#include "./button_actions.h"
 #include "./pending_progress.h"
 #include "./dictionary.h"
 #include "./state_store.h"
@@ -37,7 +36,7 @@
 #include "./layout_options.h"
 #include "./views/font_preview_view.h"
 #include "./views/settings_view.h"
-#include "reader/controls_guide.h"
+#include "reader/views/guide_view.h"
 #include "./views/token_view/token_view_styling.h"
 #include "filetypes/open_doc.h"
 #include "reader/book_fonts.h"
@@ -403,7 +402,6 @@ int main(int argc, char **argv)
     smart_collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "smart_collections.tsv");
     load_dictionary_preferences((std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "dictionaries.txt").string());
     pending_progress::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "pending_progress.tsv");
-    button_actions::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "buttons.txt");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
     // Preload & check fonts
@@ -442,7 +440,7 @@ int main(int argc, char **argv)
         init_font_name,
         init_font_size,
         get_valid_theme(settings_get_color_theme(state_store).value_or(DEFAULT_COLOR_THEME)),
-        get_valid_shoulder_keymap(settings_get_shoulder_keymap(state_store).value_or(DEFAULT_SHOULDER_KEYMAP))
+        DEFAULT_SHOULDER_KEYMAP
     );
     // True while the automatic night theme is being applied, so it is not saved as the chosen theme.
     bool applying_night_theme = false;
@@ -461,7 +459,6 @@ int main(int argc, char **argv)
                 background.r, background.g, background.b, text.r, text.g, text.b, highlight.r, highlight.g, highlight.b);
             settings_set_custom_colors(state_store, colors);
         }
-        settings_set_shoulder_keymap(state_store, sys_styling.get_shoulder_keymap());
         settings_set_small_int(state_store, "text_contrast", sys_styling.get_text_contrast());
         if (book_layout::active())
         {
@@ -629,15 +626,8 @@ int main(int argc, char **argv)
     settings_view->set_row_action(SettingsView::DICTIONARY_ORDER_ROW, [&view_stack, &sys_styling]() {
         open_dictionary_order_menu(view_stack, sys_styling);
     });
-    settings_view->set_row_action(SettingsView::BUTTONS_ROW, [&view_stack, &sys_styling]() {
-        open_button_actions_menu(view_stack, sys_styling);
-    });
     settings_view->set_controls_action([&view_stack, &sys_styling]() {
-        view_stack.push(std::make_shared<DefinitionView>(
-            "Controls",
-            controls_guide_text(),
-            sys_styling
-        ));
+        view_stack.push(std::make_shared<GuideView>(sys_styling));
     });
 
     // Track held keys

@@ -1,11 +1,8 @@
 #ifndef BUTTON_ACTIONS_H_
 #define BUTTON_ACTIONS_H_
 
-#include <filesystem>
-#include <string>
-
 // What the Start button and the A button do while reading, and what holding A, Y or Start does.
-// Each can be given any of the actions below.
+// The jobs are fixed: Start toggles a bookmark, A shows or hides the bar, the holds do nothing.
 namespace button_actions
 {
 
@@ -44,22 +41,11 @@ enum Action
     ACTION_COUNT = 20,
 };
 
-void load(std::filesystem::path file);
-
-int get(Slot slot);
-void set(Slot slot, int action);
-
 // How long a button is held for the hold action, in milliseconds.
 constexpr unsigned HOLD_MILLISECONDS = 700;
 
-// What the slot does until it is changed.
-int default_for(Slot slot);
-
-const char *action_name(int action);
-const char *slot_name(Slot slot);
-
-// The action for a number read from a file: anything unknown gives the default for the slot.
-int valid_action(int value, Slot slot);
+// What the slot does.
+int get(Slot slot);
 
 } // namespace button_actions
 

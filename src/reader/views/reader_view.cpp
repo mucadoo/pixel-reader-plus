@@ -20,7 +20,7 @@
 #include "reader/book_layout.h"
 #include "reader/bookmarks.h"
 #include "reader/book_layout.h"
-#include "reader/controls_guide.h"
+#include "reader/views/guide_view.h"
 #include "./token_view/token_view.h"
 #include "./token_view/token_view_styling.h"
 
@@ -2474,11 +2474,7 @@ bool ReaderView::tick(uint32_t elapsed_ms)
 
 static void open_controls_guide(ReaderViewState &state)
 {
-    state.view_stack.push(std::make_shared<DefinitionView>(
-        "Controls",
-        controls_guide_text(),
-        state.sys_styling
-    ));
+    state.view_stack.push(std::make_shared<GuideView>(state.sys_styling));
 }
 
 // Puts the search at the front of the remembered searches.

@@ -20,7 +20,4 @@ void open_layout_profiles_menu(ViewStack &stack, SystemStyling &system, TokenVie
 // The order the dictionaries are listed and used in, and which ones are hidden.
 void open_dictionary_order_menu(ViewStack &stack, SystemStyling &system);
 
-// What the Start and A buttons do while reading.
-void open_button_actions_menu(ViewStack &stack, SystemStyling &system);
-
 #endif

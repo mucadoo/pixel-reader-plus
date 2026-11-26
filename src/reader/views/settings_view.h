@@ -84,7 +84,6 @@ class SettingsView: public View
 
 public:
     static constexpr uint32_t TWEAKS_ROW = ROW_TWEAKS;
-    static constexpr uint32_t BUTTONS_ROW = ROW_BUTTONS;
     static constexpr uint32_t DICTIONARY_ORDER_ROW = ROW_DICTIONARY_ORDER;
     static constexpr uint32_t PROFILES_ROW = ROW_PROFILES;
     static constexpr uint32_t CUSTOM_COLORS_ROW = ROW_CUSTOM_COLORS;

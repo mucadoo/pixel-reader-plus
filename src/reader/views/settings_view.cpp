@@ -56,10 +56,10 @@ const std::vector<Category> &categories()
         {"Theme and colors", {0, 46, 1, 2, 39, 30, 31, 32, 33, 28}, false},
         {"Page layout", {10, 11, 12, 13, 14, 15, 16, 17, 18, 38}, false},
         {"Text", {19, 20, 23, 24, 40, 29, 37}, false},
-        {"Reading", {5, 4, 3, 25, 26, 21, 27, 47}, false},
+        {"Reading", {5, 4, 25, 26, 21, 27, 47}, false},
         {"Bar and clock", {6, 7, 8, 9, 22}, false},
         {"Library and power", {36, 41, 44, 34, 35, 42}, false},
-        {"Controls", {43, 45}, false},
+        {"Controls", {43}, true},
     };
     return list;
 }

@@ -53,6 +53,14 @@ public:
     void set_margin_bottom(int level);
 
     // Reading ruler mode: 0 off, 1 line, 2 focus
+    // Size of the tiles in the book grid: 0 large, 1 medium, 2 small
+    int get_grid_size() const;
+    void set_grid_size(int level);
+
+    // Extra space after each letter: 0 normal, 1 slight, 2 wide, 3 wider
+    int get_letter_spacing() const;
+    void set_letter_spacing(int level);
+
     int get_ruler() const;
     void set_ruler(int mode);
 

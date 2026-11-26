@@ -65,6 +65,7 @@ struct TokenViewState
     bool paragraph_gap = true;
     bool bold_text = false;
     int word_spacing = 1;   // level of the word spacing setting
+    int letter_spacing = 0; // level of the letter spacing setting
     int left_margin;    // pixels left empty at the left of the text
     int right_margin;
     int top_margin;     // pixels left empty above and below the lines
@@ -226,6 +227,7 @@ struct TokenViewState
               if (change_id == SystemStyling::ChangeId::FONT_SIZE || change_id == SystemStyling::ChangeId::FONT_NAME)
               {
                   current_font = this->sys_styling.get_loaded_font();
+                  clear_glyph_cache();
                   line_height = detect_line_height(current_font) + line_padding + spacing_extra;
                   line_scroller.set_line_height_pixels(line_height);
                   line_scroller.reset_buffer();  // need to re-wrap lines if font-size changed
@@ -272,6 +274,8 @@ struct TokenViewState
         line_scroller.set_picture_mode(picture_mode);
         word_spacing = token_view_styling.get_word_spacing();
         set_word_spacing(word_spacing_pixels(word_spacing));
+        letter_spacing = token_view_styling.get_letter_spacing();
+        set_letter_spacing(letter_spacing_pixels(letter_spacing));
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -325,6 +329,14 @@ struct TokenViewState
         {
             word_spacing = spacing_level;
             set_word_spacing(word_spacing_pixels(spacing_level));
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (token_view_styling.get_letter_spacing() != letter_spacing)
+        {
+            letter_spacing = token_view_styling.get_letter_spacing();
+            set_letter_spacing(letter_spacing_pixels(letter_spacing));
+            clear_glyph_cache();
             line_scroller.reset_buffer();
             needs_render = true;
         }
@@ -707,12 +719,12 @@ static void draw_text_line_body(
     }
 
     // One shaded string for a plain line. Blended text, once per word, is what stalls a page turn.
-    if (uniform && !marked && sample && !text_line->text.empty())
+    if (uniform && !marked && sample && !text_line->text.empty() && !(spacing_is_custom() && !visual.layout.justified))
     {
         TTF_Font *font = font_for(sample->style, sample->scale);
         if (font)
         {
-            SDL_Surface *surface = TTF_RenderUTF8_Shaded(font, text_line->text.c_str(), theme.main_text, theme.background);
+            SDL_Surface *surface = render_text_shaded(font, text_line->text.c_str(), theme.main_text, theme.background);
             if (surface)
             {
                 if (visual.layout.justified)
@@ -777,7 +789,7 @@ static void draw_text_line_body(
             && bg.g == theme.highlight_background.g
             && bg.b == theme.highlight_background.b;
         SDL_Color fg = on_selection ? theme.highlight_text : theme.main_text;
-        SDL_Surface *surface = TTF_RenderUTF8_Shaded(run_font, piece.text.c_str(), fg, bg);
+        SDL_Surface *surface = render_text_shaded(run_font, piece.text.c_str(), fg, bg);
         if (!surface)
         {
             continue;
@@ -1531,7 +1543,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
+    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');
     if (!chapter)
     {

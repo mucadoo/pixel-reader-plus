@@ -10,6 +10,8 @@
 #include "reader/collections.h"
 #include "reader/library_log.h"
 #include "reader/opds.h"
+#include "./book_info_view.h"
+#include "./upload_view.h"
 #include "reader/progress_screen.h"
 #include "reader/reading_speed.h"
 #include "reader/reading_stats.h"
@@ -21,6 +23,8 @@
 #include <algorithm>
 #include <ctime>
 #include <cctype>
+#include <cstring>
+#include <sys/stat.h>
 #include <fstream>
 #include <cstdio>
 #include <cstdlib>
@@ -445,6 +449,10 @@ void rebuild_views(FSState *s)
             item.tag = kind;
             item.progress = log ? (log->finished() ? 100 : log->percent) : -1;
             item.finished = log && log->finished();
+            item.badge = !log ? std::string()
+                : log->status == LibraryLog::Status::ToRead ? std::string("To read")
+                : log->status == LibraryLog::Status::OnHold ? std::string("On hold")
+                : log->finished() ? std::string("Done") : std::string();
         }
         grid_items.push_back(item);
     }
@@ -1389,7 +1397,7 @@ void open_online_books(FSState *s)
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -1471,6 +1479,14 @@ void open_library_tools(FSState *s)
             }
             case 5:
                 open_online_books(s);
+                break;
+            case 6:
+                s->on_open_view(std::make_shared<UploadView>(library_root(s) / "Downloads", s->styling, [s]() {
+                    if (!s->search_active)
+                    {
+                        refresh_keeping_cursor(s);
+                    }
+                }));
                 break;
             default:
                 break;
@@ -1656,7 +1672,74 @@ void show_info(FSState *s)
     {
         return;
     }
-    s->on_info("Properties", properties_text(s, entry));
+    if (!s->on_open_view)
+    {
+        s->on_info("Properties", properties_text(s, entry));
+        return;
+    }
+
+    // The page of facts about the book, with its cover when one is ready
+    const std::filesystem::path book = s->path / entry.name;
+    std::vector<std::pair<std::string, std::string>> facts;
+    std::string description;
+    std::string heading = entry.name;
+    const BookInfo *info = (!entry.is_dir && s->info) ? s->info->get(book) : nullptr;
+    if (info)
+    {
+        facts.push_back({"Title", info->title});
+        facts.push_back({"Author", info->author});
+        if (!info->series.empty())
+        {
+            facts.push_back({"Series", info->series + (info->series_index.empty() ? std::string() : " #" + info->series_index)});
+        }
+        facts.push_back({"Language", info->language});
+        facts.push_back({"Publisher", info->publisher});
+        facts.push_back({"Published", info->date});
+        description = info->description;
+        if (!info->title.empty())
+        {
+            heading = info->title;
+        }
+    }
+    if (entry.is_dir)
+    {
+        facts.push_back({"Type", "Folder"});
+    }
+    else
+    {
+        const std::string kind = book_kind(entry.name);
+        facts.push_back({"Type", kind.empty() ? std::string("Book") : kind + " book"});
+        facts.push_back({"Size", format_size(entry.size)});
+        const LibraryLog::Entry *log = library_log().get(book);
+        facts.push_back({"Status", status_label(log)});
+        if (log && (log->percent > 0 || log->finished()))
+        {
+            facts.push_back({"Progress", std::to_string(log->finished() ? 100 : log->percent) + "%"});
+        }
+        facts.push_back({"Reading time", reading_time_text(entry, log)});
+        struct stat st;
+        if (::stat(book.c_str(), &st) == 0)
+        {
+            char day[16];
+            const time_t modified = st.st_mtime;
+            if (std::strftime(day, sizeof(day), "%Y-%m-%d", std::localtime(&modified)) > 0)
+            {
+                facts.push_back({"File date", day});
+            }
+        }
+    }
+    facts.push_back({"File", entry.name});
+    facts.push_back({"Folder", s->path.string()});
+    SDL_Surface *cover = nullptr;
+    if (s->covers && !entry.is_dir)
+    {
+        cover = s->covers->get(book);
+        if (!cover)
+        {
+            s->covers->want({book});
+        }
+    }
+    s->on_open_view(std::make_shared<BookInfoView>(heading, std::move(facts), description, cover, s->styling));
 }
 
 // Go to the parent folder, with the cursor on the folder we came from.

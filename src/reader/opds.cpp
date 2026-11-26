@@ -24,7 +24,7 @@ namespace opds
 namespace
 {
 
-constexpr int TIMEOUT_SECONDS = 20;
+int g_timeout_seconds = 20;
 constexpr int MAX_REDIRECTS = 6;
 constexpr size_t MAX_HEADER_BYTES = 64 * 1024;
 constexpr size_t MAX_PAGE_BYTES = 8 * 1024 * 1024;
@@ -168,7 +168,7 @@ bool connect_to(const Url &url, Socket &sock, std::string &error)
             continue;
         }
         timeval tv;
-        tv.tv_sec = TIMEOUT_SECONDS;
+        tv.tv_sec = g_timeout_seconds;
         tv.tv_usec = 0;
         ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -185,8 +185,16 @@ bool connect_to(const Url &url, Socket &sock, std::string &error)
 
 using Sink = std::function<bool(const char *, size_t)>;
 
+struct RequestOptions
+{
+    std::string method = "GET";
+    std::vector<std::pair<std::string, std::string>> headers;
+    std::string body;
+    int *status = nullptr; // when set, any status is accepted and reported here
+};
+
 // One request with redirects. The sink gets the body of the final answer.
-bool request(const std::string &start, const Sink &sink, const Progress &progress, std::string &error)
+bool request(const std::string &start, const Sink &sink, const Progress &progress, std::string &error, const RequestOptions &options = RequestOptions())
 {
     std::string current = start;
     for (int hop = 0; hop <= MAX_REDIRECTS; ++hop)
@@ -211,13 +219,31 @@ bool request(const std::string &start, const Sink &sink, const Progress &progres
         {
             host_header += ":" + url.port;
         }
-        std::string req = "GET " + encode_path(url.path) + " HTTP/1.1\r\nHost: " + host_header
-            + "\r\nUser-Agent: PixelReader\r\nAccept: application/atom+xml, application/xml, */*\r\nConnection: close\r\n";
+        std::string req = options.method + " " + encode_path(url.path) + " HTTP/1.1\r\nHost: " + host_header
+            + "\r\nUser-Agent: PixelReader\r\nConnection: close\r\n";
+        bool has_accept = false;
+        for (const auto &header : options.headers)
+        {
+            has_accept = has_accept || lower(header.first) == "accept";
+        }
+        if (!has_accept)
+        {
+            req += "Accept: application/atom+xml, application/xml, */*\r\n";
+        }
         if (!url.credentials.empty())
         {
             req += "Authorization: Basic " + base64(url.credentials) + "\r\n";
         }
+        for (const auto &header : options.headers)
+        {
+            req += header.first + ": " + header.second + "\r\n";
+        }
+        if (!options.body.empty() || options.method == "POST" || options.method == "PUT")
+        {
+            req += "Content-Length: " + std::to_string(options.body.size()) + "\r\n";
+        }
         req += "\r\n";
+        req += options.body;
         if (!send_all(sock.fd, req))
         {
             error = "The connection was lost";
@@ -307,12 +333,16 @@ bool request(const std::string &start, const Sink &sink, const Progress &progres
             current = resolve(current, location);
             continue;
         }
-        if (code == 401 || code == 403)
+        if (options.status)
+        {
+            *options.status = code;
+        }
+        else if (code == 401 || code == 403)
         {
             error = "The server wants a login. Put it in the address as http://name:password@host";
             return false;
         }
-        if (code != 200)
+        if (!options.status && code != 200)
         {
             error = "The server answered " + std::to_string(code);
             return false;
@@ -774,6 +804,42 @@ bool ChunkDecoder::feed(const char *data, size_t length, std::string &out)
         }
     }
     return true;
+}
+
+void set_timeout(int seconds)
+{
+    g_timeout_seconds = std::max(1, seconds);
+}
+
+bool call(
+    const std::string &method,
+    const std::string &url,
+    const std::vector<std::pair<std::string, std::string>> &headers,
+    const std::string &body,
+    Response &response,
+    std::string &error
+)
+{
+    response = Response();
+    RequestOptions options;
+    options.method = method;
+    options.headers = headers;
+    options.body = body;
+    options.status = &response.status;
+    return request(
+        url,
+        [&response](const char *data, size_t len) {
+            if (response.body.size() + len > MAX_PAGE_BYTES)
+            {
+                return false;
+            }
+            response.body.append(data, len);
+            return true;
+        },
+        nullptr,
+        error,
+        options
+    );
 }
 
 bool fetch(const std::string &url, std::string &body, std::string &error, const Progress &progress)

@@ -15,6 +15,10 @@ struct BookInfo
     std::string series;
     // The number in the series as the book writes it, such as "2" or "1.5". Empty when there is none.
     std::string series_index;
+    // The blurb, publisher and publication date, when the book gives them (epub). One line each.
+    std::string description;
+    std::string publisher;
+    std::string date;
 
     bool empty() const { return title.empty() && author.empty() && language.empty() && series.empty(); }
 

@@ -183,6 +183,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Pictures", picture_mode_label(token_view_styling.get_picture_mode()), true, sys_font},
         {"Thin bar", token_view_styling.get_thin_bar() ? "On" : "Off", true, sys_font},
         {"Word spacing", word_spacing_label(token_view_styling.get_word_spacing()), true, sys_font},
+        {"Letter spacing", letter_spacing_label(token_view_styling.get_letter_spacing()), true, sys_font},
         {"Scroll overlap", std::to_string(token_view_styling.get_scroll_overlap()) + (token_view_styling.get_scroll_overlap() == 1 ? " line" : " lines"), true, sys_font},
         {"Reading ruler", ruler_label(token_view_styling.get_ruler()), true, sys_font},
         {"Dictionary", token_view_styling.get_dictionary().empty() ? std::string("Auto") : token_view_styling.get_dictionary(), true, sys_font},
@@ -194,6 +195,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Night until", hour_label(token_view_styling.get_night_until()), true, sys_font},
         {"Auto exit", auto_exit_label(token_view_styling.get_auto_exit_minutes()), true, sys_font},
         {"Cover screen", cover_sleep_label(token_view_styling.get_cover_sleep()), true, sys_font},
+        {"Book grid", grid_size_label(token_view_styling.get_grid_size()), true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -559,11 +561,21 @@ void SettingsView::on_keypress(SDLKey key)
                         (token_view_styling.get_word_spacing() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
                 }
+                else if (line_selected == ROW_LETTER_SPACING)
+                {
+                    token_view_styling.set_letter_spacing(
+                        (token_view_styling.get_letter_spacing() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
                 else if (line_selected == ROW_OVERLAP)
                 {
                     token_view_styling.set_scroll_overlap(
                         (token_view_styling.get_scroll_overlap() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
+                }
+                else if (line_selected == ROW_GRID)
+                {
+                    token_view_styling.set_grid_size((token_view_styling.get_grid_size() + 3 + dir) % 3);
                 }
                 else if (line_selected == ROW_COVER_SLEEP)
                 {

@@ -60,12 +60,19 @@ void outline(SDL_Surface *dest, int x, int y, int w, int h, uint32_t color)
     fill(dest, x + w - 1, y, 1, h, color);
 }
 
+int g_density = 0;
+
 bool is_move_key(SDLKey key)
 {
     return key == SW_BTN_UP || key == SW_BTN_DOWN || key == SW_BTN_LEFT || key == SW_BTN_RIGHT;
 }
 
 } // namespace
+
+void BookGrid::set_density(int level)
+{
+    g_density = std::clamp(level, 0, 2);
+}
 
 BookGrid::BookGrid(SystemStyling &styling)
     : styling(styling),
@@ -165,7 +172,8 @@ BookGrid::Layout BookGrid::compute_layout() const
     const int height = static_cast<int>(SCREEN_HEIGHT);
     const int area_h = std::max(1, height - l.line_height * 2);
 
-    l.rows = std::clamp(area_h / 200, 1, 4);
+    static const int row_heights[3] = {200, 135, 100};
+    l.rows = std::clamp(area_h / row_heights[g_density], 1, 5);
     l.cell_h = area_h / l.rows;
     l.cover_h = std::max(MIN_COVER_H, l.cell_h - l.caption_height - CELL_PAD * 2);
     l.cover_w = l.cover_h * 2 / 3;
@@ -460,9 +468,9 @@ void BookGrid::draw_cell(SDL_Surface *dest, const Layout &l, uint32_t index, int
     }
 
     // A read book wears a small label in the top corner.
-    if (item.kind == Item::Kind::Book && item.finished && art_w > 40)
+    if (item.kind == Item::Kind::Book && !item.badge.empty() && art_w > 40)
     {
-        auto badge = shade(font, "Done", theme.background, theme.main_text);
+        auto badge = shade(font, item.badge, theme.background, theme.main_text);
         if (badge)
         {
             fill(dest, art_x + 2, art_y + 2, badge->w + 4, badge->h + 2, map_color(dest, theme.main_text));

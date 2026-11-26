@@ -28,7 +28,9 @@
 #include "reader/shoulder_keymap.h"
 #include "reader/system_styling.h"
 #include "reader/work_pump.h"
+#include "reader/kosync.h"
 #include "reader/view_stack.h"
+#include "reader/wifi_upload.h"
 
 #include "doc_api/doc_reader.h"
 #include <ctime>
@@ -83,6 +85,7 @@ struct ReaderViewState
     // The count of pages is on screen instead of the text, and the percent drawn.
     bool counting_shown = false;
     int counting_drawn = -1;
+    bool sync_checked = false; // the server was asked about this book once, when it opened
 
     ReaderViewState(std::filesystem::path path, DocAddr seek_address, std::shared_ptr<DocReader> reader, SystemStyling &sys_styling, TokenViewStyling &token_view_styling, uint32_t token_view_styling_sub_id, ViewStack &view_stack, std::filesystem::path highlights_path)
         : filename(path.filename()),
@@ -226,6 +229,236 @@ void show_message(ReaderViewState &state, const std::string &message)
 std::string percent_label(const ReaderViewState &state, DocAddr address)
 {
     return std::to_string(state.reader->get_global_progress_percent(address)) + "%";
+}
+
+// ---- Progress sync (a KOReader sync server)
+
+// The place in the book as a fraction of the whole, for the server.
+static double current_fraction(ReaderViewState &state)
+{
+    const auto extent = state.reader->get_progress_extent(get_current_address(state), false);
+    return extent.second > 0 ? std::min(1.0, static_cast<double>(extent.first) / static_cast<double>(extent.second)) : 0.0;
+}
+
+// The settings, and whether a request can be made now. Says why not unless quiet.
+static bool sync_ready(ReaderViewState &state, kosync::Config &config, bool quiet)
+{
+    config = kosync::load();
+    if (!config.configured())
+    {
+        if (!quiet)
+        {
+            show_message(state, "Set up the sync server first");
+        }
+        return false;
+    }
+    if (local_ip_address().empty())
+    {
+        if (!quiet)
+        {
+            show_message(state, "No wifi connection");
+        }
+        return false;
+    }
+    return true;
+}
+
+static void sync_push(ReaderViewState &state, bool quiet)
+{
+    kosync::Config config;
+    if (!sync_ready(state, config, quiet))
+    {
+        return;
+    }
+    progress_screen::show(state.sys_styling, "Sync", "Sending your place...", -1);
+    std::string error;
+    const bool ok = kosync::push(
+        config,
+        kosync::document_id(state.book_path),
+        std::to_string(get_current_address(state)),
+        current_fraction(state),
+        error
+    );
+    state.token_view->invalidate();
+    if (!quiet)
+    {
+        show_message(state, ok ? "Place sent" : error);
+    }
+}
+
+// Asks the server where the book was left. A quiet call only speaks up when the server is further on.
+static void sync_pull(ReaderView &reader_view, ReaderViewState &state, bool quiet)
+{
+    kosync::Config config;
+    if (!sync_ready(state, config, quiet))
+    {
+        return;
+    }
+    progress_screen::show(state.sys_styling, "Sync", "Asking the server...", -1);
+    kosync::Place place;
+    std::string error;
+    const bool ok = kosync::pull(config, kosync::document_id(state.book_path), place, error);
+    state.token_view->invalidate();
+    if (!ok)
+    {
+        if (!quiet)
+        {
+            show_message(state, error);
+        }
+        return;
+    }
+    if (!place.found)
+    {
+        if (!quiet)
+        {
+            show_message(state, "Nothing is saved on the server for this book yet");
+        }
+        return;
+    }
+    const int remote = static_cast<int>(place.percentage * 100.0 + 0.5);
+    const int local = static_cast<int>(state.reader->get_global_progress_percent(get_current_address(state)));
+    if (remote == local || (quiet && remote < local))
+    {
+        if (!quiet)
+        {
+            show_message(state, "You are already at the same place");
+        }
+        return;
+    }
+    // The address the other device wrote, when it agrees with the percent; else the percent
+    DocAddr target = state.reader->get_address_at_percent(static_cast<uint32_t>(remote));
+    if (!place.progress.empty() && place.progress.find_first_not_of("0123456789") == std::string::npos && place.progress.size() < 19)
+    {
+        const DocAddr written = static_cast<DocAddr>(std::strtoull(place.progress.c_str(), nullptr, 10));
+        const int written_percent = static_cast<int>(state.reader->get_global_progress_percent(written));
+        if (std::abs(written_percent - remote) <= 2)
+        {
+            target = written;
+        }
+    }
+    auto menu = std::make_shared<SelectionMenu>(
+        std::vector<std::string> {
+            "Go to " + std::to_string(remote) + "%" + (place.device.empty() ? std::string() : " (" + place.device + ")"),
+            "Stay at " + std::to_string(local) + "%"
+        },
+        state.sys_styling
+    );
+    menu->set_title("The server has another place");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([&reader_view, target](uint32_t index) {
+        if (index == 0)
+        {
+            reader_view.jump_to(target);
+        }
+    });
+    state.view_stack.push(menu);
+}
+
+// Server address, user name and password, one after the other, then a test.
+static void sync_setup(ReaderViewState &state, int step, kosync::Config config)
+{
+    static const char *headings[3] = {"Server address (http://...)", "User name", "Password"};
+    const std::string initial = step == 0 ? (config.server.empty() ? std::string("http://") : config.server)
+        : step == 1 ? config.user : std::string();
+    state.view_stack.push(std::make_shared<TextInputView>(
+        headings[step],
+        initial,
+        [&state, step, config](const std::string &typed) mutable {
+            std::string value = typed;
+            while (!value.empty() && value.back() == ' ') value.pop_back();
+            if (step == 0)
+            {
+                config.server = value;
+            }
+            else if (step == 1)
+            {
+                config.user = value;
+            }
+            else
+            {
+                config.key = kosync::md5_hex(value);
+            }
+            if (step < 2)
+            {
+                sync_setup(state, step + 1, config);
+                return;
+            }
+            kosync::save(config);
+            if (!config.configured())
+            {
+                show_message(state, "Saved, but something is missing");
+                return;
+            }
+            if (local_ip_address().empty())
+            {
+                show_message(state, "Saved. There is no wifi to test it now.");
+                return;
+            }
+            progress_screen::show(state.sys_styling, "Sync", "Testing the login...", -1);
+            std::string error;
+            const bool ok = kosync::check_login(config, error);
+            state.token_view->invalidate();
+            show_message(state, ok ? "Saved. The server accepted the login." : "Saved. " + error + ". If the user does not exist yet, use Create account.");
+        },
+        state.sys_styling,
+        step == 0 ? 200 : 60
+    ));
+}
+
+static void open_sync_menu(ReaderView &reader_view, ReaderViewState &state)
+{
+    const kosync::Config config = kosync::load();
+    std::vector<std::string> names = {
+        "Send my place now",
+        "Get the place from the server",
+        std::string("Sync when opening and leaving: ") + (config.auto_sync ? "On" : "Off"),
+        "Server settings...",
+        "Create account on the server"
+    };
+    auto menu = std::make_shared<SelectionMenu>(names, state.sys_styling);
+    menu->set_title(config.configured() ? "Sync: " + config.user : std::string("Sync (not set up)"));
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([&reader_view, &state, config](uint32_t index) {
+        switch (index)
+        {
+            case 0:
+                sync_push(state, false);
+                break;
+            case 1:
+                sync_pull(reader_view, state, false);
+                break;
+            case 2:
+            {
+                kosync::Config changed = config;
+                changed.auto_sync = !changed.auto_sync;
+                kosync::save(changed);
+                open_sync_menu(reader_view, state);
+                break;
+            }
+            case 3:
+                sync_setup(state, 0, config);
+                break;
+            case 4:
+            {
+                kosync::Config now;
+                if (!sync_ready(state, now, false))
+                {
+                    break;
+                }
+                progress_screen::show(state.sys_styling, "Sync", "Creating the account...", -1);
+                std::string error;
+                const bool ok = kosync::create_account(now, error);
+                state.token_view->invalidate();
+                show_message(state, ok ? "Account created" : error);
+                break;
+            }
+            default:
+                break;
+        }
+    });
+    state.view_stack.push(menu);
 }
 
 void add_bookmark(ReaderViewState &state)
@@ -702,6 +935,7 @@ void ReaderView::open_book_menu()
     {
         actions->push_back({"Jump back", [this]() { jump_back(); }});
     }
+    actions->push_back({"Sync progress", [this]() { open_sync_menu(*this, *state); }});
     actions->push_back({"Look up a word", [this]() {
         state->view_stack.push(std::make_shared<TextInputView>(
             "Look up a word",
@@ -826,6 +1060,16 @@ ReaderView::ReaderView(
 
 ReaderView::~ReaderView()
 {
+    try
+    {
+        if (kosync::load().auto_sync)
+        {
+            sync_push(*state, true);
+        }
+    }
+    catch (...)
+    {
+    }
     reading_speed::flush();
     library_log().flush();
     reader_clear_work();
@@ -978,6 +1222,14 @@ bool ReaderView::is_done()
 
 bool ReaderView::tick(uint32_t elapsed_ms)
 {
+    if (!state->sync_checked)
+    {
+        state->sync_checked = true;
+        if (kosync::load().auto_sync)
+        {
+            sync_pull(*this, *state, true);
+        }
+    }
     return state->token_view->tick(elapsed_ms);
 }
 

@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <map>
+#include <vector>
 
 int style_flags(bool bold, bool italic)
 {
@@ -118,6 +120,21 @@ bool is_word_cp(uint32_t cp)
     return true;
 }
 
+int g_letter_spacing = 0;
+
+size_t count_codepoints(const char *s, uint32_t len)
+{
+    size_t count = 0;
+    for (uint32_t i = 0; i < len; ++i)
+    {
+        if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
 int measure_plain(TTF_Font *font, const char *s, uint32_t len)
 {
     if (!font || len == 0)
@@ -131,6 +148,10 @@ int measure_plain(TTF_Font *font, const char *s, uint32_t len)
     int h = 0;
     TTF_SizeUTF8(font, mut, &w, &h);
     mut[len] = saved;
+    if (g_letter_spacing > 0)
+    {
+        w += static_cast<int>(count_codepoints(s, len)) * g_letter_spacing;
+    }
     return w;
 }
 
@@ -156,6 +177,144 @@ int spacing_for(const char *s, const char *e)
 void set_word_spacing(int pixels)
 {
     g_word_spacing = pixels;
+}
+
+void set_letter_spacing(int pixels)
+{
+    g_letter_spacing = std::max(0, pixels);
+}
+
+bool spacing_is_custom()
+{
+    return g_word_spacing != 0 || g_letter_spacing != 0;
+}
+
+namespace
+{
+
+struct GlyphKey
+{
+    TTF_Font *font;
+    uint32_t glyph; // up to four bytes of UTF-8
+    uint32_t fg;
+    uint32_t bg;
+
+    bool operator<(const GlyphKey &o) const
+    {
+        if (font != o.font) return font < o.font;
+        if (glyph != o.glyph) return glyph < o.glyph;
+        if (fg != o.fg) return fg < o.fg;
+        return bg < o.bg;
+    }
+};
+
+std::map<GlyphKey, SDL_Surface *> g_glyphs;
+constexpr size_t MAX_GLYPHS = 3000;
+
+uint32_t pack_color(SDL_Color c)
+{
+    return (static_cast<uint32_t>(c.r) << 16) | (static_cast<uint32_t>(c.g) << 8) | c.b;
+}
+
+} // namespace
+
+void clear_glyph_cache()
+{
+    for (auto &entry : g_glyphs)
+    {
+        if (entry.second)
+        {
+            SDL_FreeSurface(entry.second);
+        }
+    }
+    g_glyphs.clear();
+}
+
+SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, SDL_Color bg)
+{
+    if (g_letter_spacing <= 0 || !font || !text || !*text)
+    {
+        return TTF_RenderUTF8_Shaded(font, text ? text : "", fg, bg);
+    }
+    if (g_glyphs.size() > MAX_GLYPHS)
+    {
+        clear_glyph_cache();
+    }
+
+    struct Placed
+    {
+        SDL_Surface *glyph;
+        int x;
+    };
+    std::vector<Placed> placed;
+    int x = 0;
+    SDL_Surface *palette_from = nullptr;
+    for (const char *p = text; *p;)
+    {
+        const char *next = utf8_step(p);
+        if (next == p)
+        {
+            break;
+        }
+        std::string one(p, next);
+        // Where this letter starts is the width of all before it, so kerning agrees with the layout.
+        int w = 0;
+        int h = 0;
+        if (p != text)
+        {
+            const std::string before(text, p);
+            TTF_SizeUTF8(font, before.c_str(), &w, &h);
+        }
+        x = w + static_cast<int>(placed.size()) * g_letter_spacing;
+        SDL_Surface *glyph = nullptr;
+        if (one != " " && one != "\t")
+        {
+            uint32_t packed = 0;
+            for (unsigned char byte : one)
+            {
+                packed = (packed << 8) | byte;
+            }
+            const GlyphKey key = {font, packed, pack_color(fg), pack_color(bg)};
+            auto found = g_glyphs.find(key);
+            if (found == g_glyphs.end())
+            {
+                found = g_glyphs.emplace(key, TTF_RenderUTF8_Shaded(font, one.c_str(), fg, bg)).first;
+            }
+            glyph = found->second;
+            if (glyph && !palette_from)
+            {
+                palette_from = glyph;
+            }
+        }
+        placed.push_back({glyph, x});
+        p = next;
+    }
+    {
+        int w = 0;
+        int h = 0;
+        TTF_SizeUTF8(font, text, &w, &h);
+        x = w + static_cast<int>(placed.size()) * g_letter_spacing;
+    }
+    if (!palette_from)
+    {
+        return TTF_RenderUTF8_Shaded(font, " ", fg, bg); // nothing to see but spaces
+    }
+    SDL_Surface *out = SDL_CreateRGBSurface(SDL_SWSURFACE, std::max(1, x), palette_from->h, 8, 0, 0, 0, 0);
+    if (!out)
+    {
+        return nullptr;
+    }
+    SDL_SetColors(out, palette_from->format->palette->colors, 0, palette_from->format->palette->ncolors);
+    SDL_FillRect(out, nullptr, 0);
+    for (const Placed &item : placed)
+    {
+        if (item.glyph)
+        {
+            SDL_Rect where = {static_cast<Sint16>(item.x), 0, 0, 0};
+            SDL_BlitSurface(item.glyph, nullptr, out, &where);
+        }
+    }
+    return out;
 }
 
 // Lowercase for dictionary lookup: ASCII, and the accented capitals of the

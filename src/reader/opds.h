@@ -47,6 +47,25 @@ std::string resolve(const std::string &base, const std::string &href);
 // Called with the bytes received so far and the total, or 0 when it is not known.
 using Progress = std::function<void(size_t received, size_t total)>;
 
+// How long to wait for the server, in seconds, for every request that follows.
+void set_timeout(int seconds);
+
+// Any request, with headers and a body. The status is reported instead of turned
+// into an error, so the caller can tell a missing item from a failed login.
+struct Response
+{
+    int status = 0;
+    std::string body;
+};
+bool call(
+    const std::string &method,
+    const std::string &url,
+    const std::vector<std::pair<std::string, std::string>> &headers,
+    const std::string &body,
+    Response &response,
+    std::string &error
+);
+
 // Reads a page into body. Follows a few redirects. False with an error message when it fails.
 bool fetch(const std::string &url, std::string &body, std::string &error, const Progress &progress = nullptr);
 

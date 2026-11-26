@@ -42,6 +42,24 @@ inline const char *ruler_label(int mode)
     return labels[mode < 0 ? 0 : (mode >= RULER_MODE_COUNT ? RULER_MODE_COUNT - 1 : mode)];
 }
 
+// Extra pixels after each letter.
+inline int letter_spacing_pixels(int level)
+{
+    return level < 0 ? 0 : (level > LAYOUT_LEVEL_COUNT - 1 ? LAYOUT_LEVEL_COUNT - 1 : level);
+}
+
+inline const char *letter_spacing_label(int level)
+{
+    static const char *labels[LAYOUT_LEVEL_COUNT] = {"Normal", "Slight", "Wide", "Wider"};
+    return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+inline const char *grid_size_label(int level)
+{
+    static const char *labels[3] = {"Large", "Medium", "Small"};
+    return labels[level < 0 ? 0 : (level > 2 ? 2 : level)];
+}
+
 // Pixels added to the height of every line, on top of the font's own.
 inline int spacing_pixels(int level)
 {

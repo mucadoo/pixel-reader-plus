@@ -11,12 +11,13 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <utility>
 #include <vector>
 
 namespace
 {
 
-constexpr const char *CACHE_MAGIC = "PXI2";
+constexpr const char *CACHE_MAGIC = "PXI3";
 
 bool is_epub(const std::filesystem::path &book)
 {
@@ -39,6 +40,51 @@ bool has_info(const std::filesystem::path &book)
 
 std::string tidy(const std::string &text);
 
+// The description often holds HTML such as <p>...</p>. Keep the words.
+std::string strip_tags(const std::string &text)
+{
+    std::string out;
+    bool in_tag = false;
+    for (char c : text)
+    {
+        if (c == '<')
+        {
+            in_tag = true;
+            out.push_back(' ');
+        }
+        else if (c == '>' && in_tag)
+        {
+            in_tag = false;
+        }
+        else if (!in_tag)
+        {
+            out.push_back(c);
+        }
+    }
+    static const std::pair<const char *, char> entities[] = {{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&#39;", '\''}, {"&apos;", '\''}, {"&nbsp;", ' '}};
+    for (const auto &entity : entities)
+    {
+        size_t at = 0;
+        const std::string name = entity.first;
+        while ((at = out.find(name, at)) != std::string::npos)
+        {
+            out.replace(at, name.size(), 1, entity.second);
+            ++at;
+        }
+    }
+    constexpr size_t MAX_DESCRIPTION = 1500;
+    if (out.size() > MAX_DESCRIPTION)
+    {
+        size_t cut = MAX_DESCRIPTION;
+        while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80)
+        {
+            --cut;
+        }
+        out.resize(cut);
+        out += "...";
+    }
+    return tidy(out);
+}
 std::optional<BookInfo> read_markup_book_info(const std::filesystem::path &book, markup::Format format)
 {
     std::ifstream in(book, std::ios::binary);
@@ -126,6 +172,13 @@ std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
             info.language = tidy(package.language);
             info.series = tidy(package.series);
             info.series_index = tidy(package.series_index);
+            info.description = strip_tags(tidy(package.description));
+            info.publisher = tidy(package.publisher);
+            info.date = tidy(package.date);
+            if (info.date.size() > 10)
+            {
+                info.date.resize(10); // 2019-05-03T00:00:00Z -> 2019-05-03
+            }
             if (!info.empty())
             {
                 result = info;
@@ -231,6 +284,9 @@ void BookInfoCache::load(const std::filesystem::path &book)
             std::getline(in, info.language);
             std::getline(in, info.series);
             std::getline(in, info.series_index);
+            std::getline(in, info.description);
+            std::getline(in, info.publisher);
+            std::getline(in, info.date);
             known[path] = info.empty() ? std::nullopt : std::optional<BookInfo>(info);
             return;
         }
@@ -248,7 +304,7 @@ void BookInfoCache::load(const std::filesystem::path &book)
             return;
         }
         BookInfo shown = info.value_or(BookInfo {});
-        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n' << shown.series << '\n' << shown.series_index << '\n';
+        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n' << shown.series << '\n' << shown.series_index << '\n' << shown.description << '\n' << shown.publisher << '\n' << shown.date << '\n';
         if (!out)
         {
             return;

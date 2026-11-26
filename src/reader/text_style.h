@@ -19,6 +19,18 @@ std::string lookup_lowercase(const std::string &word);
 // Extra pixels added to every space between words (negative to tighten). Applies to later layouts.
 void set_word_spacing(int pixels);
 
+// Extra pixels added after every letter (0 for none). Applies to later layouts and drawing.
+void set_letter_spacing(int pixels);
+
+// True when the word or letter spacing is not the font's own, so a line cannot be drawn as one plain string.
+bool spacing_is_custom();
+
+// TTF_RenderUTF8_Shaded, with the letter spacing applied. The caller frees the surface.
+SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, SDL_Color bg);
+
+// Forget the letters kept for drawing, for example after the font changed.
+void clear_glyph_cache();
+
 using RunFontFn = std::function<TTF_Font *(int style, float scale)>;
 
 // Width of text[offset, offset+len), applying bold, italic, and size runs.

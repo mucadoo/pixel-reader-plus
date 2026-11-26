@@ -30,6 +30,8 @@ struct TokenViewStylingState
     int margin_top = 0;
     int margin_bottom = 0;
     int ruler = 0;
+    int letter_spacing = 0;
+    int grid_size = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
     int highlight_color = 0;
@@ -220,6 +222,36 @@ void TokenViewStyling::set_margin_bottom(int level)
     if (state->margin_bottom != level)
     {
         state->margin_bottom = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_grid_size() const
+{
+    return state->grid_size;
+}
+
+void TokenViewStyling::set_grid_size(int level)
+{
+    level = std::clamp(level, 0, 2);
+    if (state->grid_size != level)
+    {
+        state->grid_size = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_letter_spacing() const
+{
+    return state->letter_spacing;
+}
+
+void TokenViewStyling::set_letter_spacing(int level)
+{
+    level = std::clamp(level, 0, LAYOUT_LEVEL_COUNT - 1);
+    if (state->letter_spacing != level)
+    {
+        state->letter_spacing = level;
         notify_subscribers();
     }
 }

@@ -264,6 +264,18 @@ bool epub_parse_package_contents(const std::string &rootfile_path, const char *p
             {
                 target = &out_package.language;
             }
+            else if (xmlStrEqual(child->name, BAD_CAST "description"))
+            {
+                target = &out_package.description;
+            }
+            else if (xmlStrEqual(child->name, BAD_CAST "publisher"))
+            {
+                target = &out_package.publisher;
+            }
+            else if (xmlStrEqual(child->name, BAD_CAST "date"))
+            {
+                target = &out_package.date;
+            }
             if (!target || !target->empty())
             {
                 continue; // not one we want, or already have the first one

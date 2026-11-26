@@ -32,6 +32,7 @@ public:
         std::string tag; // file type for a book, such as EPUB
         int progress = -1; // percent read, or -1 for a book never opened
         bool finished = false;
+        std::string badge; // a short label for the corner of the cover, such as Done or To read
         std::filesystem::path path;
     };
 
@@ -76,6 +77,9 @@ private:
     void draw_placeholder(SDL_Surface *dest, const Item &item, int x, int y, int w, int h, bool selected);
 
 public:
+    // How big the tiles are: 0 large, 1 medium, 2 small. Shared by every grid.
+    static void set_density(int level);
+
     explicit BookGrid(SystemStyling &styling);
     ~BookGrid();
     BookGrid(const BookGrid &) = delete;

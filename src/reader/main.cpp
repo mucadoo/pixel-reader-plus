@@ -15,6 +15,8 @@
 #include <ctime>
 #include "./view_stack.h"
 #include "./views/definition_view.h"
+#include "./kosync.h"
+#include "./views/book_grid.h"
 #include "./views/file_selector.h"
 #include "./views/reader_bootstrap_view.h"
 #include "./views/image_view.h"
@@ -364,10 +366,14 @@ int main(int argc, char **argv)
     token_view_styling.set_picture_mode(settings_get_picture_mode(state_store).value_or(0));
     token_view_styling.set_thin_bar(settings_get_thin_bar(state_store).value_or(false));
     token_view_styling.set_scroll_overlap(settings_get_small_int(state_store, "scroll_overlap").value_or(0));
+    kosync::set_config_path(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "sync");
     token_view_styling.set_margin_right(settings_get_small_int(state_store, "margin_right").value_or(token_view_styling.get_margin_level()));
     token_view_styling.set_margin_top(settings_get_small_int(state_store, "margin_top").value_or(0));
     token_view_styling.set_margin_bottom(settings_get_small_int(state_store, "margin_bottom").value_or(0));
     token_view_styling.set_ruler(settings_get_small_int(state_store, "ruler").value_or(0));
+    token_view_styling.set_letter_spacing(settings_get_small_int(state_store, "letter_spacing").value_or(0));
+    token_view_styling.set_grid_size(settings_get_small_int(state_store, "grid_size").value_or(0));
+    BookGrid::set_density(token_view_styling.get_grid_size());
     token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
     token_view_styling.set_cover_sleep(settings_get_small_int(state_store, "cover_sleep").value_or(0));
     token_view_styling.set_screen_dim(settings_get_small_int(state_store, "screen_dim").value_or(0));
@@ -412,6 +418,9 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "margin_top", token_view_styling.get_margin_top());
             settings_set_small_int(state_store, "margin_bottom", token_view_styling.get_margin_bottom());
             settings_set_small_int(state_store, "ruler", token_view_styling.get_ruler());
+            settings_set_small_int(state_store, "letter_spacing", token_view_styling.get_letter_spacing());
+            settings_set_small_int(state_store, "grid_size", token_view_styling.get_grid_size());
+            BookGrid::set_density(token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
             settings_set_small_int(state_store, "cover_sleep", token_view_styling.get_cover_sleep());
             settings_set_small_int(state_store, "screen_dim", token_view_styling.get_screen_dim());

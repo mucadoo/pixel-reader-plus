@@ -8,9 +8,11 @@
 #include "util/zip_utils.h"
 
 #include "doc_api/token_addressing.h"
+#include "util/utf8.h"
 
 #include <libxml/parser.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <memory>
@@ -75,6 +77,7 @@ const std::unordered_map<std::string, ElementType> _elem_name_to_enum {
     {"table", ElementType::Table},
     {"tr",    ElementType::Tr},
     {"td",    ElementType::Td},
+    {"th",    ElementType::Td},
 };
 
 ElementType elem_name_to_enum(const xmlChar *elem_name)
@@ -109,6 +112,243 @@ std::string escape_newlines(const xmlChar *str)
         }
     }
     return result;
+}
+
+// ---- Tables
+//
+// A table whose cells are plain text is set as aligned columns in the monospace
+// font. Only spaces are added, so the addresses of the words stay what they were.
+
+constexpr int TABLE_CHAR_BUDGET = 44; // characters in a row before the columns are squeezed
+constexpr int TABLE_MIN_COLUMN = 6;
+
+size_t char_count(const std::string &text)
+{
+    size_t count = 0;
+    for (const char *p = text.c_str(); *p; p = utf8_step(p))
+    {
+        ++count;
+    }
+    return count;
+}
+
+// The text cut into pieces of at most width characters, at spaces where it can.
+std::vector<std::string> wrap_cell(const std::string &text, size_t width)
+{
+    std::vector<std::string> lines;
+    std::string line;
+    size_t line_chars = 0;
+    auto flush = [&]() {
+        lines.push_back(line);
+        line.clear();
+        line_chars = 0;
+    };
+    size_t i = 0;
+    while (i < text.size())
+    {
+        while (i < text.size() && text[i] == ' ')
+        {
+            ++i;
+        }
+        if (i >= text.size())
+        {
+            break;
+        }
+        size_t end = i;
+        while (end < text.size() && text[end] != ' ')
+        {
+            ++end;
+        }
+        std::string word = text.substr(i, end - i);
+        i = end;
+        size_t word_chars = char_count(word);
+        if (line_chars > 0 && line_chars + 1 + word_chars > width)
+        {
+            flush();
+        }
+        // A word longer than the column is cut by letters
+        while (word_chars > width)
+        {
+            size_t take = 0;
+            const char *p = word.c_str();
+            while (take < width)
+            {
+                p = utf8_step(p);
+                ++take;
+            }
+            const size_t bytes = static_cast<size_t>(p - word.c_str());
+            if (line_chars > 0)
+            {
+                flush();
+            }
+            line = word.substr(0, bytes);
+            line_chars = width;
+            flush();
+            word = word.substr(bytes);
+            word_chars -= width;
+        }
+        if (line_chars > 0)
+        {
+            line += ' ';
+            ++line_chars;
+        }
+        line += word;
+        line_chars += word_chars;
+    }
+    if (line_chars > 0 || lines.empty())
+    {
+        flush();
+    }
+    return lines;
+}
+
+std::string format_table(const std::vector<std::vector<std::string>> &rows)
+{
+    size_t cols = 0;
+    for (const auto &row : rows)
+    {
+        cols = std::max(cols, row.size());
+    }
+    std::vector<size_t> widths(cols, 1);
+    for (const auto &row : rows)
+    {
+        for (size_t c = 0; c < row.size(); ++c)
+        {
+            widths[c] = std::max(widths[c], char_count(row[c]));
+        }
+    }
+    auto total = [&]() {
+        size_t sum = cols > 0 ? (cols - 1) * 2 : 0;
+        for (size_t w : widths)
+        {
+            sum += w;
+        }
+        return sum;
+    };
+    while (total() > static_cast<size_t>(TABLE_CHAR_BUDGET))
+    {
+        size_t widest = 0;
+        for (size_t c = 1; c < cols; ++c)
+        {
+            if (widths[c] > widths[widest])
+            {
+                widest = c;
+            }
+        }
+        if (widths[widest] <= static_cast<size_t>(TABLE_MIN_COLUMN))
+        {
+            break;
+        }
+        --widths[widest];
+    }
+
+    std::vector<std::vector<std::vector<std::string>>> wrapped; // row, cell, lines
+    bool tall = false;
+    for (const auto &row : rows)
+    {
+        std::vector<std::vector<std::string>> cells;
+        size_t height = 1;
+        for (size_t c = 0; c < cols; ++c)
+        {
+            cells.push_back(wrap_cell(c < row.size() ? row[c] : std::string(), widths[c]));
+            height = std::max(height, cells.back().size());
+        }
+        tall = tall || height > 1;
+        wrapped.push_back(std::move(cells));
+    }
+
+    std::string out;
+    for (size_t r = 0; r < wrapped.size(); ++r)
+    {
+        size_t height = 1;
+        for (const auto &cell : wrapped[r])
+        {
+            height = std::max(height, cell.size());
+        }
+        for (size_t h = 0; h < height; ++h)
+        {
+            std::string line;
+            for (size_t c = 0; c < cols; ++c)
+            {
+                const std::string piece = h < wrapped[r][c].size() ? wrapped[r][c][h] : std::string();
+                line += piece;
+                if (c + 1 < cols)
+                {
+                    line.append(widths[c] - char_count(piece) + 2, ' ');
+                }
+            }
+            if (!out.empty())
+            {
+                out += '\n';
+            }
+            out += line;
+        }
+        if (tall && r + 1 < wrapped.size())
+        {
+            out += "\n"; // a blank line between rows that take more than one line
+        }
+    }
+    return out;
+}
+
+// Whether a table can be set as columns: only text in its cells, no merged cells, and room for two columns.
+bool table_is_simple(xmlNodePtr table)
+{
+    bool two_columns = false;
+    std::function<bool(xmlNodePtr, bool)> visit = [&](xmlNodePtr node, bool top) -> bool {
+        for (xmlNodePtr child = node ? node->children : nullptr; child; child = child->next)
+        {
+            if (child->type != XML_ELEMENT_NODE || !child->name)
+            {
+                continue;
+            }
+            const char *name = (const char *)child->name;
+            static const char *refused[] = {"table", "img", "image", "svg", "ul", "ol", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "math"};
+            for (const char *bad : refused)
+            {
+                if (strcmp(name, bad) == 0)
+                {
+                    return false;
+                }
+            }
+            if (strcmp(name, "td") == 0 || strcmp(name, "th") == 0)
+            {
+                for (const char *attr : {"colspan", "rowspan"})
+                {
+                    xmlChar *value = xmlGetProp(child, BAD_CAST attr);
+                    if (value)
+                    {
+                        const bool merged = std::atoi((const char *)value) > 1;
+                        xmlFree(value);
+                        if (merged)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if (strcmp(name, "tr") == 0)
+            {
+                int cells = 0;
+                for (xmlNodePtr cell = child->children; cell; cell = cell->next)
+                {
+                    if (cell->type == XML_ELEMENT_NODE && cell->name
+                        && (strcmp((const char *)cell->name, "td") == 0 || strcmp((const char *)cell->name, "th") == 0))
+                    {
+                        ++cells;
+                    }
+                }
+                two_columns = two_columns || cells >= 2;
+            }
+            if (!visit(child, false))
+            {
+                return false;
+            }
+        }
+        (void)top;
+        return true;
+    };
+    return visit(table, true) && two_columns;
 }
 
 // Decorate xml nodes with additional context. Intermediate structure to
@@ -223,6 +463,41 @@ class NodeProcessor
     std::unordered_map<std::string, DocAddr> &id_to_addr;
     std::filesystem::path file_path;
     std::vector<std::shared_ptr<const std::string>> link_stack; // one per open <a>
+
+    // A table being gathered into aligned columns
+    bool collecting = false;
+    DocAddr table_start = 0;
+    std::vector<std::vector<std::string>> table_rows;
+    std::vector<std::string> table_row;
+    std::string table_cell;
+    std::string table_preface; // text before the first row, such as a caption
+    bool in_cell = false;
+
+    static std::string trimmed(const std::string &text)
+    {
+        return compact_whitespace(text.c_str());
+    }
+
+    void finish_table(int node_depth)
+    {
+        collecting = false;
+        std::string body = format_table(table_rows);
+        const std::string preface = trimmed(table_preface);
+        if (!preface.empty())
+        {
+            body = preface + "\n" + body;
+        }
+        table_rows.clear();
+        table_preface.clear();
+        if (body.empty())
+        {
+            return;
+        }
+        const DocAddr saved = current_address;
+        current_address = table_start;
+        emit_node(node_depth, Node::Type::InlinePre, nullptr, body);
+        current_address = saved;
+    }
 
     void attach_pending_ids(DocAddr address)
     {
@@ -416,6 +691,23 @@ public:
     {
         DEBUG_LOG("\"" << escape_newlines(node->content) << "\"");
 
+        if (collecting)
+        {
+            if (node->content)
+            {
+                if (in_cell)
+                {
+                    table_cell += (const char *)node->content;
+                }
+                else
+                {
+                    table_preface += (const char *)node->content;
+                }
+                current_address += get_address_width((const char *)node->content);
+            }
+            return;
+        }
+
         if (node->content && xmlStrlen(node->content))
         {
             Node::Type type;
@@ -535,7 +827,30 @@ public:
                 break;
             case ElementType::Table:
                 emit_node(node_depth, Node::Type::SectionSeparator, node);
+                if (table_depth == 0 && table_is_simple(node))
+                {
+                    collecting = true;
+                    table_start = current_address;
+                    table_rows.clear();
+                    table_row.clear();
+                    table_cell.clear();
+                    table_preface.clear();
+                    in_cell = false;
+                }
                 ++table_depth;
+                break;
+            case ElementType::Tr:
+                if (collecting)
+                {
+                    table_row.clear();
+                }
+                break;
+            case ElementType::Td:
+                if (collecting)
+                {
+                    table_cell.clear();
+                    in_cell = true;
+                }
                 break;
             case ElementType::Image:
                 emit_node(node_depth, Node::Type::Image, node);
@@ -590,14 +905,38 @@ public:
                 --pre_depth;
                 break;
             case ElementType::Table:
+                if (collecting && table_depth == 1)
+                {
+                    finish_table(node_depth);
+                }
                 emit_node(node_depth, Node::Type::SectionSeparator, node);
                 --table_depth;
                 break;
             case ElementType::Tr:
-                emit_node(node_depth, Node::Type::InlineBreak, node);
+                if (collecting)
+                {
+                    if (!table_row.empty())
+                    {
+                        table_rows.push_back(table_row);
+                    }
+                    table_row.clear();
+                }
+                else
+                {
+                    emit_node(node_depth, Node::Type::InlineBreak, node);
+                }
                 break;
             case ElementType::Td:
-                emit_node(node_depth, Node::Type::InlineText, node, SPACE);
+                if (collecting)
+                {
+                    table_row.push_back(trimmed(table_cell));
+                    table_cell.clear();
+                    in_cell = false;
+                }
+                else
+                {
+                    emit_node(node_depth, Node::Type::InlineText, node, SPACE);
+                }
                 break;
             default:
                 break;

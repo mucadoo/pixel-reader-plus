@@ -37,6 +37,14 @@ public:
 
     // When the view is now on top of the stack.
     virtual void on_focus() {}
+
+    // Set by a view that ended by doing what it was opened for (a place was chosen, a word was
+    // typed), as opposed to being backed out of with B. The menu that opened it closes too.
+    bool completed() const { return _completed; }
+    void mark_completed() { _completed = true; }
+
+protected:
+    bool _completed = false;
 };
 
 #endif

@@ -20,6 +20,8 @@ enum class BarItem {
     ChapterNumber,    // chapter x of y
     ChapterPagesLeft, // pages left in the chapter
     BookPagesLeft,    // pages left in the book
+    BookPageOf,       // the page of the whole book, such as 500 / 600
+    ChapterPageOf,    // the page of the chapter, such as 12 / 30
     Battery
 };
 

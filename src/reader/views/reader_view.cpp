@@ -2212,7 +2212,9 @@ void ReaderView::open_book_menu()
                 (*actions)[index].run();
             }
         },
-        {"Go to", "Search", "Marks", "Words", "Pictures", "Tools"}
+        {"Go to", "Search", "Marks", "Words", "Pictures", "Tools"},
+        SW_BTN_SELECT,
+        [this]() { return state->view_stack.top_view(); }
     );
 }
 
@@ -2349,6 +2351,33 @@ void ReaderView::update_token_view_title(DocAddr address)
         }
         const int index = toc_position.toc_index < toc.size() ? static_cast<int>(toc_position.toc_index) + 1 : 0;
         state->token_view->set_bar_extras(index, static_cast<int>(toc.size()), chapter_pages_left, book_pages_left);
+
+        // The page of the whole book and of the chapter: exact for the one the progress setting
+        // measures, and worked out from the length of the text for the other (marked as estimated).
+        int book_page = -1;
+        int book_pages = -1;
+        int chapter_page = -1;
+        int chapter_pages = -1;
+        if (pages > 0)
+        {
+            const auto here_chapter = state->reader->get_progress_extent(address, true);
+            const auto scope = chapter ? here_chapter : book_extent;
+            const auto other = chapter ? book_extent : here_chapter;
+            const int shown_page = static_cast<int>(std::min(page, pages));
+            int other_page = -1;
+            int other_pages = -1;
+            if (scope.second > 0 && other.second > 0)
+            {
+                const double per_unit = static_cast<double>(pages) / scope.second;
+                other_pages = std::max(1, static_cast<int>(std::ceil(other.second * per_unit)));
+                other_page = std::clamp(static_cast<int>(std::floor(other.first * per_unit)) + 1, 1, other_pages);
+            }
+            book_page = chapter ? other_page : shown_page;
+            book_pages = chapter ? other_pages : static_cast<int>(pages);
+            chapter_page = chapter ? shown_page : other_page;
+            chapter_pages = chapter ? static_cast<int>(pages) : other_pages;
+        }
+        state->token_view->set_bar_pages(book_page, book_pages, chapter, chapter_page, chapter_pages, !chapter);
     }
 
     // The printed page number, when the book lists its pages.

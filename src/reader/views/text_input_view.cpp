@@ -238,6 +238,7 @@ void TextInputView::on_keypress(SDLKey key)
             break;
         case SW_BTN_START:
             _is_done = true;
+            mark_completed();
             if (on_done)
             {
                 on_done(text);

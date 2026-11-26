@@ -259,6 +259,7 @@ void BookMapView::on_keypress(SDLKey key)
         case SW_BTN_A:
         {
             _is_done = true;
+            mark_completed();
             if (on_go)
             {
                 DocAddr address;

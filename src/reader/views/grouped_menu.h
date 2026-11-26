@@ -34,7 +34,10 @@ void open_grouped_menu(
     std::function<void(uint32_t)> on_choose,
     std::vector<std::string> group_order = {},
     // The key that opened the menu: pressing it again closes the menu, from any screen of it.
-    SDLKey close_key = SW_BTN_SELECT
+    SDLKey close_key = SW_BTN_SELECT,
+    // Returns the view on top of the stack. With it a choice that opens another view (a list, a
+    // picture) leaves the menu under it, so B there comes back to the menu.
+    std::function<std::shared_ptr<View>()> top_view = nullptr
 );
 
 #endif

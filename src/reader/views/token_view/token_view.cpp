@@ -90,6 +90,14 @@ struct TokenViewState
     int title_chapter_count = 0;
     int title_chapter_pages_left = -1; // -1 when unknown
     int title_book_pages_left = -1;
+    // The page of the whole book and of the chapter, whichever the progress setting does not measure
+    // is estimated from the text. -1 when unknown.
+    int title_book_page = -1;
+    int title_book_pages = -1;
+    bool title_book_estimated = false;
+    int title_chapter_page = -1;
+    int title_chapter_pages = -1;
+    bool title_chapter_estimated = false;
     uint32_t title_page = 0;
     uint32_t title_pages = 0;
     std::string title_label; // the printed page number the book gives, empty when it gives none
@@ -551,6 +559,20 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
                 return "";
             }
             snprintf(text, sizeof(text), "%s %d pg left", item == BarItem::ChapterPagesLeft ? "Ch" : "Book", left);
+            return text;
+        }
+        case BarItem::BookPageOf:
+        case BarItem::ChapterPageOf:
+        {
+            const bool book = item == BarItem::BookPageOf;
+            const int page = book ? state.title_book_page : state.title_chapter_page;
+            const int pages = book ? state.title_book_pages : state.title_chapter_pages;
+            if (page < 0 || pages <= 0)
+            {
+                return "";
+            }
+            const char *mark = (book ? state.title_book_estimated : state.title_chapter_estimated) ? "~" : "";
+            snprintf(text, sizeof(text), "%s %s%d / %s%d", book ? "Book pg" : "Ch pg", mark, page, mark, pages);
             return text;
         }
         case BarItem::Battery:
@@ -1665,6 +1687,22 @@ void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, i
         state->title_pages = pages;
         state->title_chapter_percent = chapter_percent;
         state->title_book_percent = book_percent;
+        state->needs_render = true;
+    }
+}
+
+void TokenView::set_bar_pages(int book_page, int book_pages, bool book_estimated, int chapter_page, int chapter_pages, bool chapter_estimated)
+{
+    if (book_page != state->title_book_page || book_pages != state->title_book_pages
+        || book_estimated != state->title_book_estimated || chapter_page != state->title_chapter_page
+        || chapter_pages != state->title_chapter_pages || chapter_estimated != state->title_chapter_estimated)
+    {
+        state->title_book_page = book_page;
+        state->title_book_pages = book_pages;
+        state->title_book_estimated = book_estimated;
+        state->title_chapter_page = chapter_page;
+        state->title_chapter_pages = chapter_pages;
+        state->title_chapter_estimated = chapter_estimated;
         state->needs_render = true;
     }
 }

@@ -286,6 +286,7 @@ void GalleryView::on_keypress(SDLKey key)
             if (cursor < static_cast<int>(pictures.size()))
             {
                 _is_done = true;
+                mark_completed();
                 if (on_go)
                 {
                     on_go(pictures[cursor].address);

@@ -190,6 +190,7 @@ void initialize_views(
         fs->set_on_open_view([&view_stack](std::shared_ptr<View> view) {
             view_stack.push(view);
         });
+        fs->set_top_view([&view_stack]() { return view_stack.top_view(); });
         fs->set_hide_finished(settings_get_hide_finished(state_store).value_or(false));
         fs->set_on_hide_finished_change([&state_store](bool hide) {
             settings_set_hide_finished(state_store, hide);

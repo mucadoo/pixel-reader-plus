@@ -81,6 +81,7 @@ struct FSState
     std::string prefs_for;
     SystemStyling &styling;
     std::function<void(std::shared_ptr<View>)> on_open_view;
+    std::function<std::shared_ptr<View>()> top_view;
     std::function<void(bool)> on_hide_finished_change;
     std::function<void(const std::string &)> on_book_deleted;
     std::filesystem::path store_dir;     // where the reader keeps its files, for backups
@@ -3075,7 +3076,7 @@ void open_library_tools(FSState *s)
     {
         grouped.push_back({names[i], "", i < sizeof(groups) / sizeof(groups[0]) ? groups[i] : ""});
     }
-    open_grouped_menu(s->on_open_view, s->styling, "Library tools", std::move(grouped), choose, {"Browse", "Clean up", "Get books", "Back up"});
+    open_grouped_menu(s->on_open_view, s->styling, "Library tools", std::move(grouped), choose, {"Browse", "Clean up", "Get books", "Back up"}, SW_BTN_SELECT, s->top_view);
 }
 // The Y menu: properties, and for a book its favorite and finished marks, plus
 // whether finished books are listed at all.
@@ -3435,7 +3436,8 @@ void open_options(FSState *s)
         entry.is_dir ? folder_title(book) : entry_title(s, entry),
         std::move(grouped), choose,
         {"View", "Collections", "Files"},
-        SW_BTN_Y
+        SW_BTN_Y,
+        s->top_view
     );
 }
 
@@ -3906,6 +3908,11 @@ void FileSelector::set_on_open_at(std::function<void(const std::filesystem::path
 void FileSelector::set_on_open_view(std::function<void(std::shared_ptr<View>)> callback)
 {
     state->on_open_view = callback;
+}
+
+void FileSelector::set_top_view(std::function<std::shared_ptr<View>()> callback)
+{
+    state->top_view = callback;
 }
 
 void FileSelector::set_hide_finished(bool hide)

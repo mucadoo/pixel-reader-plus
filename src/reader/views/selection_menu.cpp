@@ -128,7 +128,7 @@ void SelectionMenu::set_on_selection(std::function<void(uint32_t)> callback)
 
 void SelectionMenu::set_on_focus(std::function<void(uint32_t)> callback)
 {
-    on_focus = callback;
+    on_item_focus = callback;
 }
 
 void SelectionMenu::set_default_on_keypress(std::function<void(SDLKey, SelectionMenu &)> callback)
@@ -180,9 +180,9 @@ void SelectionMenu::set_cursor_pos(uint32_t new_cursor_pos)
 
     cursor_pos = new_cursor_pos;
     marquee.reset();
-    if (on_focus)
+    if (on_item_focus)
     {
-        on_focus(cursor_pos);
+        on_item_focus(cursor_pos);
     }
 
     int num_lines = num_display_lines();
@@ -499,6 +499,12 @@ bool SelectionMenu::is_modal()
 bool SelectionMenu::tick(uint32_t elapsed_ms)
 {
     bool changed = false;
+    if (_is_done && !close_reported)
+    {
+        // Closed from outside (not by a key): let the stack notice.
+        close_reported = true;
+        changed = true;
+    }
     if (show_status)
     {
         status_elapsed_ms += elapsed_ms;
@@ -539,9 +545,9 @@ void SelectionMenu::on_move_down(uint32_t step)
             scroll_pos = cursor_pos - num_display_lines() + 1;
         }
         marquee.reset();
-        if (on_focus)
+        if (on_item_focus)
         {
-            on_focus(cursor_pos);
+            on_item_focus(cursor_pos);
         }
 
         needs_render = true;
@@ -556,9 +562,9 @@ void SelectionMenu::on_move_up(uint32_t step)
         scroll_pos = std::min(scroll_pos, cursor_pos);
         marquee.reset();
 
-        if (on_focus)
+        if (on_item_focus)
         {
-            on_focus(cursor_pos);
+            on_item_focus(cursor_pos);
         }
 
         needs_render = true;
@@ -575,6 +581,7 @@ void SelectionMenu::on_select_entry()
     if (close_on_select)
     {
         _is_done = true;
+        mark_completed(); // a choice was made: the menu that opened this one closes too
     }
 }
 

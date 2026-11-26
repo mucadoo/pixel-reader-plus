@@ -1,6 +1,7 @@
 #include "./grouped_menu.h"
 
 #include "./selection_menu.h"
+#include "./popup_view.h"
 #include "sys/keymap.h"
 
 #include <algorithm>
@@ -25,6 +26,8 @@ struct Nav
     std::string open_group;       // empty on the first screen
     size_t open_top_row = 0;      // the row of the first screen that opened the group
     std::function<void(uint32_t)> on_choose;
+    std::function<std::shared_ptr<View>()> top_view;
+    std::shared_ptr<View> opened; // the view a choice opened over the menu, which stays under it
 };
 
 void show_top(Nav &nav, SelectionMenu &menu, size_t cursor)
@@ -65,6 +68,23 @@ void show_group(Nav &nav, SelectionMenu &menu, const std::string &group)
     menu.set_hints({"A  Choose", "B  Back"});
 }
 
+// Runs the choice. A choice that opens another view (a list, a picture, a field) leaves the menu under
+// it, so B in that view comes back here. A choice that just does something closes the menu.
+void run_choice(Nav &nav, SelectionMenu &menu, uint32_t entry)
+{
+    nav.opened.reset();
+    const auto before = nav.top_view ? nav.top_view() : nullptr;
+    nav.on_choose(entry);
+    const auto after = nav.top_view ? nav.top_view() : nullptr;
+    if (after && after != before && !std::dynamic_pointer_cast<PopupView>(after))
+    {
+        nav.opened = after;
+        return;
+    }
+    menu.mark_completed();
+    menu.close();
+}
+
 } // namespace
 
 void open_grouped_menu(
@@ -74,13 +94,15 @@ void open_grouped_menu(
     std::vector<GroupedEntry> entries,
     std::function<void(uint32_t)> on_choose,
     std::vector<std::string> group_order,
-    SDLKey close_key
+    SDLKey close_key,
+    std::function<std::shared_ptr<View>()> top_view
 )
 {
     auto nav = std::make_shared<Nav>();
     nav->title = title;
     nav->entries = std::move(entries);
     nav->on_choose = std::move(on_choose);
+    nav->top_view = std::move(top_view);
 
     // How many rows each group has, and the order the groups first appear in.
     std::vector<std::string> groups = group_order;
@@ -146,13 +168,27 @@ void open_grouped_menu(
                 show_group(*nav, *menu, group);
                 return;
             }
-            nav->on_choose(static_cast<uint32_t>(row.entry));
-            menu->close();
+            run_choice(*nav, *menu, static_cast<uint32_t>(row.entry));
             return;
         }
         if (index < nav->listed.size())
         {
-            nav->on_choose(static_cast<uint32_t>(nav->listed[index]));
+            run_choice(*nav, *menu, static_cast<uint32_t>(nav->listed[index]));
+        }
+    });
+    menu->set_on_refocus([nav, weak]() {
+        auto menu = weak.lock();
+        if (!menu || !nav->opened)
+        {
+            return;
+        }
+        // Back from the view a choice opened. If that view ended by doing its job (a place was
+        // chosen), this menu has no more to do; if it was backed out of with B, this menu is here again.
+        const bool done = nav->opened->completed();
+        nav->opened.reset();
+        if (done)
+        {
+            menu->mark_completed();
             menu->close();
         }
     });

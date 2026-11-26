@@ -108,6 +108,7 @@ void GotoView::on_keypress(SDLKey key)
             break;
         case SW_BTN_A:
             _is_done = true;
+            mark_completed();
             if (on_choose)
             {
                 on_choose(percent);

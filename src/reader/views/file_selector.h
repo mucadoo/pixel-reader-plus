@@ -41,6 +41,8 @@ public:
     // Opens a book at a place, for the list of all highlights.
     void set_on_open_at(std::function<void(const std::filesystem::path &, DocAddr)> callback);
     void set_on_open_view(std::function<void(std::shared_ptr<View>)> on_open_view);
+    // Gives the view on top of the stack, so a menu can tell when a choice opened another view.
+    void set_top_view(std::function<std::shared_ptr<View>()> top_view);
     // Leave finished books out of the list.
     void set_hide_finished(bool hide);
     void set_on_hide_finished_change(std::function<void(bool)> callback);

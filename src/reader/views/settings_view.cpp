@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <vector>
 
 SettingsView::SettingsView(
     SystemStyling &sys_styling,
@@ -40,6 +41,28 @@ SettingsView::~SettingsView()
 
 namespace
 {
+
+// The groups of rows on the first screen. Each lists the ROW_ constants it holds, as numbers.
+struct Category
+{
+    const char *name;
+    std::vector<uint32_t> rows;
+    bool opens_directly; // the single row has an action of its own, so the group is not entered
+};
+
+const std::vector<Category> &categories()
+{
+    static const std::vector<Category> list = {
+        {"Theme and colors", {0, 1, 2, 39, 30, 31, 32, 33, 28}, false},
+        {"Page layout", {10, 11, 12, 13, 14, 15, 16, 17, 18, 38}, false},
+        {"Text", {19, 20, 23, 24, 40, 29, 37}, false},
+        {"Reading", {5, 4, 3, 25, 26, 21, 27}, false},
+        {"Bar and clock", {6, 7, 8, 9, 22}, false},
+        {"Library and power", {36, 41, 34, 35, 42}, false},
+        {"Controls", {43}, true},
+    };
+    return list;
+}
 
 SDL_Color quiet_text(const ColorTheme &theme)
 {
@@ -207,6 +230,24 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Controls", "Open", false, sys_font},
     };
 
+    // What is on screen: the groups, or the rows of the group that was opened.
+    std::vector<Row> display;
+    if (category < 0)
+    {
+        for (const Category &entry : categories())
+        {
+            display.push_back({entry.name, entry.opens_directly ? "" : ">", false, sys_font});
+        }
+    }
+    else
+    {
+        for (const uint32_t id : categories()[category].rows)
+        {
+            display.push_back(rows[id]);
+        }
+    }
+    const int item_count = static_cast<int>(display.size());
+
     dim_screen(dest_surface);
     if (!sys_font)
     {
@@ -226,18 +267,18 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
     const int panel_w = static_cast<int>(SCREEN_WIDTH) - margin * 2;
     const int max_panel_h = static_cast<int>(SCREEN_HEIGHT) - margin * 2;
     int chrome = pad * 2 + title_h + footer_h + 8;
-    int shown = std::min(num_menu_items, std::max(1, (max_panel_h - chrome) / std::max(1, row_h)));
-    if (shown >= num_menu_items)
+    int shown = std::min(item_count, std::max(1, (max_panel_h - chrome) / std::max(1, row_h)));
+    if (shown >= item_count)
     {
         scroll_position = 0;
     }
-    else if (line_selected < scroll_position)
+    else if (position < scroll_position)
     {
-        scroll_position = line_selected;
+        scroll_position = position;
     }
-    else if (line_selected >= scroll_position + static_cast<uint32_t>(shown))
+    else if (position >= scroll_position + static_cast<uint32_t>(shown))
     {
-        scroll_position = line_selected + 1 - shown;
+        scroll_position = position + 1 - shown;
     }
 
     int panel_h = chrome + shown * row_h;
@@ -262,7 +303,11 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
     frame.h -= 2;
     SDL_FillRect(dest_surface, &frame, bg);
 
-    auto heading = shade(sys_font, "Settings", theme.main_text, theme.background);
+    auto heading = shade(
+        sys_font,
+        category < 0 ? std::string("Settings") : std::string("Settings: ") + categories()[category].name,
+        theme.main_text, theme.background
+    );
     blit_crop(
         heading.get(),
         dest_surface,
@@ -287,12 +332,12 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
     for (int i = 0; i < shown; ++i)
     {
         uint32_t index = scroll_position + static_cast<uint32_t>(i);
-        if (index >= static_cast<uint32_t>(num_menu_items))
+        if (index >= static_cast<uint32_t>(item_count))
         {
             break;
         }
-        const Row &row = rows[index];
-        bool selected = index == line_selected;
+        const Row &row = display[index];
+        bool selected = index == position;
         if (selected)
         {
             SDL_Rect bar = {
@@ -345,9 +390,9 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         y += row_h;
     }
 
-    const char *footer_left = row_actions.count(line_selected) ? "A  Open" : "Left / right";
+    const char *footer_left = (category < 0 || row_actions.count(line_selected)) ? "A  Open" : "Left / right";
     auto footer = shade(sys_font, footer_left, quiet, theme.background);
-    auto close = shade(sys_font, "B  Close", quiet, theme.background);
+    auto close = shade(sys_font, category < 0 ? "B  Close" : "B  Back", quiet, theme.background);
     int footer_y = panel_y + panel_h - pad - footer_h;
     SDL_Rect footer_rule = {
         static_cast<Sint16>(panel_x + pad),
@@ -448,19 +493,32 @@ void SettingsView::on_change_reading()
     );
 }
 
+size_t SettingsView::visible_count() const
+{
+    return category < 0 ? categories().size() : categories()[category].rows.size();
+}
+
+void SettingsView::sync_selected_row()
+{
+    line_selected = category < 0 ? UINT32_MAX : categories()[category].rows[position];
+}
+
 void SettingsView::on_keypress(SDLKey key)
 {
     switch (key) {
         case SW_BTN_UP:
-            line_selected = (line_selected + num_menu_items - 1) % num_menu_items;
+            position = static_cast<uint32_t>((position + visible_count() - 1) % visible_count());
+            sync_selected_row();
             needs_render = true;
             break;
         case SW_BTN_DOWN:
-            line_selected = (line_selected + 1) % num_menu_items;
+            position = static_cast<uint32_t>((position + 1) % visible_count());
+            sync_selected_row();
             needs_render = true;
             break;
         case SW_BTN_LEFT:
         case SW_BTN_RIGHT:
+            if (category >= 0)
             {
                 int dir = (key == SW_BTN_LEFT) ? -1 : 1;
                 if (line_selected == 0)
@@ -675,12 +733,40 @@ void SettingsView::on_keypress(SDLKey key)
             }
             break;
         case SW_BTN_A:
-            if (const auto action = row_actions.find(line_selected); action != row_actions.end() && action->second)
+            if (category < 0)
+            {
+                const Category &entry = categories()[position];
+                if (entry.opens_directly)
+                {
+                    if (const auto action = row_actions.find(entry.rows[0]); action != row_actions.end() && action->second)
+                    {
+                        action->second();
+                    }
+                }
+                else
+                {
+                    category = static_cast<int>(position);
+                    position = 0;
+                    scroll_position = 0;
+                    sync_selected_row();
+                    needs_render = true;
+                }
+            }
+            else if (const auto action = row_actions.find(line_selected); action != row_actions.end() && action->second)
             {
                 action->second();
             }
             break;
         case SW_BTN_B:
+            if (category >= 0)
+            {
+                position = static_cast<uint32_t>(category);
+                category = -1;
+                scroll_position = 0;
+                sync_selected_row();
+                needs_render = true;
+            }
+            else
             {
                 _is_done = true;
             }

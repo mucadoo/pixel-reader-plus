@@ -1,6 +1,7 @@
 #include "./file_selector.h"
 
 #include "./book_grid.h"
+#include "./grouped_menu.h"
 #include "./selection_menu.h"
 #include "doc_api/doc_reader.h"
 #include "filetypes/open_doc.h"
@@ -2234,11 +2235,7 @@ void open_library_tools(FSState *s)
     const std::vector<std::string> names = {
         "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders"
     };
-    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
-    menu->set_title("Library tools");
-    menu->set_compact(true);
-    menu->set_close_on_select();
-    menu->set_on_selection([s](uint32_t index) {
+    const auto choose = [s](uint32_t index) {
         const std::filesystem::path zip = library_root(s) / BACKUP_FILE_NAME;
         switch (index)
         {
@@ -2366,8 +2363,18 @@ void open_library_tools(FSState *s)
             default:
                 break;
         }
-    });
-    s->on_open_view(menu);
+    };
+    // Index in `names` above to the group the tool belongs to.
+    const char *groups[] = {
+        "Browse", "Clean up", "Browse", "Back up", "Back up", "Get books", "Get books",
+        "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up"
+    };
+    std::vector<GroupedEntry> grouped;
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        grouped.push_back({names[i], "", i < sizeof(groups) / sizeof(groups[0]) ? groups[i] : ""});
+    }
+    open_grouped_menu(s->on_open_view, s->styling, "Library tools", std::move(grouped), choose, {"Browse", "Clean up", "Get books", "Back up"});
 }
 // The Y menu: properties, and for a book its favorite and finished marks, plus
 // whether finished books are listed at all.
@@ -2476,11 +2483,7 @@ void open_options(FSState *s)
         }
     }
 
-    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
-    menu->set_title(entry.is_dir ? folder_title(book) : entry_title(s, entry));
-    menu->set_compact(true);
-    menu->set_close_on_select();
-    menu->set_on_selection([s, acts, book](uint32_t index) {
+    const auto choose = [s, acts, book](uint32_t index) {
         if (index >= acts.size())
         {
             return;
@@ -2638,8 +2641,48 @@ void open_options(FSState *s)
                 refresh_keeping_cursor(s);
                 break;
         }
-    });
-    s->on_open_view(menu);
+    };
+    // The common things stay on the first screen. The rest is grouped by what it is about.
+    std::vector<GroupedEntry> grouped;
+    for (size_t i = 0; i < acts.size(); ++i)
+    {
+        std::string group;
+        switch (acts[i])
+        {
+            case Act::HideFinished:
+            case Act::Filter:
+            case Act::ResetView:
+            case Act::History:
+                group = "View";
+                break;
+            case Act::AddToCollection:
+            case Act::RemoveFromCollection:
+            case Act::DeleteCollection:
+            case Act::Collections:
+                group = "Collections";
+                break;
+            case Act::Rename:
+            case Act::Delete:
+            case Act::Mark:
+            case Act::CopyBooks:
+            case Act::MoveBooks:
+            case Act::DeleteBooks:
+            case Act::ClearMarks:
+            case Act::Paste:
+            case Act::NewFolder:
+                group = "Files";
+                break;
+            default:
+                break; // Properties, Favorite, Status, Search, Library tools, Clear search
+        }
+        grouped.push_back({names[i], "", group});
+    }
+    open_grouped_menu(
+        s->on_open_view, s->styling,
+        entry.is_dir ? folder_title(book) : entry_title(s, entry),
+        std::move(grouped), choose,
+        {"View", "Collections", "Files"}
+    );
 }
 
 void show_info(FSState *s)

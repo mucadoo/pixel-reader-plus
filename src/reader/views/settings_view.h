@@ -54,7 +54,10 @@ class SettingsView: public View
 
     bool _is_done = false;
     bool needs_render = true;
-    uint32_t line_selected = 0;
+    // The first screen lists themed groups of rows. category is the group being shown, or -1 for that screen.
+    int category = -1;
+    uint32_t position = 0;      // the row under the cursor on the screen being shown
+    uint32_t line_selected = UINT32_MAX; // the ROW_ constant under the cursor, or UINT32_MAX on the first screen
     uint32_t scroll_position = 0;
     std::string font_name;
 
@@ -65,6 +68,8 @@ class SettingsView: public View
     int num_menu_items;
     std::map<uint32_t, std::function<void()>> row_actions; // rows that open something on A
 
+    size_t visible_count() const;
+    void sync_selected_row();
     void on_change_theme(int dir);
     void on_change_font_size(int dir);
     void on_change_font_name(int dir);

@@ -551,6 +551,11 @@ void SelectionMenu::on_keypress(SDLKey key)
             on_select_entry();
             break;
         case SW_BTN_B:
+            if (on_back && on_back())
+            {
+                needs_render = true;
+                break;
+            }
             _is_done = true;
             break;
         default:

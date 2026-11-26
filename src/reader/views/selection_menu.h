@@ -43,6 +43,7 @@ class SelectionMenu: public View
     bool _is_done = false;
     std::function<void(uint32_t)> on_selection;
     std::function<void(uint32_t)> on_focus;
+    std::function<bool()> on_back;
     std::function<void(SDLKey, SelectionMenu&)> default_on_keypress;
 
     void on_move_down(uint32_t step);
@@ -61,6 +62,8 @@ public:
     // Define fallback keypress handler
     void set_default_on_keypress(std::function<void(SDLKey, SelectionMenu &)> callback);
     void set_close_on_select();
+    // B calls this first. When it returns true the press is handled and the menu stays open.
+    void set_on_back(std::function<bool()> callback) { on_back = std::move(callback); }
     // The menu uses the X button itself, for example to delete a row.
     void set_uses_x(bool uses) { x_is_used = uses; }
     bool consumes_x() const override { return x_is_used; }

@@ -4,6 +4,7 @@
 #include "./goto_view.h"
 #include "./book_map_view.h"
 #include "./gallery_view.h"
+#include "./grouped_menu.h"
 #include "./image_view.h"
 #include "./page_browser_view.h"
 #include "./text_input_view.h"
@@ -928,24 +929,33 @@ void ReaderView::open_book_menu()
     {
         std::string name;
         std::function<void()> run;
+        std::string group;
     };
     auto actions = std::make_shared<std::vector<Action>>();
+    // The rows are grouped by what they are about. Empty puts a row on the first screen.
+    std::string group;
+    const auto add = [&actions, &group](Action action) {
+        action.group = group;
+        actions->push_back(std::move(action));
+    };
 
     if (!state->reader->get_table_of_contents().empty())
     {
-        actions->push_back({"Chapters", [this]() { open_toc_menu(*this, *state); }});
+        add({"Chapters", [this]() { open_toc_menu(*this, *state); }});
     }
     if (state->search_hits && !state->search_hits->empty())
     {
         const std::string place = std::to_string(state->search_index + 1) + " / " + std::to_string(state->search_hits->size());
-        actions->push_back({"Next match (" + place + ")", [this]() { step_match(*this, *state, 1); }});
-        actions->push_back({"Previous match", [this]() { step_match(*this, *state, -1); }});
-        actions->push_back({"Clear search", [this]() {
+        add({"Next match (" + place + ")", [this]() { step_match(*this, *state, 1); }});
+        add({"Previous match", [this]() { step_match(*this, *state, -1); }});
+        group = "Search";
+        add({"Clear search", [this]() {
             state->search_hits.reset();
             state->token_view->set_search_marks("", "");
         }});
     }
-    actions->push_back({
+    group = "Words";
+    add({
         "Book language: " + (state->token_view_styling.get_book_language().empty() ? "auto (" + state->dictionary_name + ")" : state->token_view_styling.get_book_language()),
         [this]() {
             std::vector<std::string> names = {"Follow the book"};
@@ -964,17 +974,19 @@ void ReaderView::open_book_menu()
             state->view_stack.push(menu);
         }
     });
-    actions->push_back({"Add bookmark", [this]() { add_bookmark(*state); }});
-    actions->push_back({
+    group = "Marks";
+    add({"Add bookmark", [this]() { add_bookmark(*state); }});
+    add({
         "Bookmarks (" + std::to_string(state->bookmarks.size()) + ")",
         [this]() { open_bookmarks_menu(*this, *state); }
     });
     if (!state->bookmarks.empty() || !state->token_view->highlights().empty())
     {
-        actions->push_back({"Next mark", [this]() { go_to_mark(*this, *state, true); }});
-        actions->push_back({"Previous mark", [this]() { go_to_mark(*this, *state, false); }});
+        add({"Next mark", [this]() { go_to_mark(*this, *state, true); }});
+        add({"Previous mark", [this]() { go_to_mark(*this, *state, false); }});
     }
-    actions->push_back({"Book map", [this]() {
+    group = "Go to";
+    add({"Book map", [this]() {
         std::vector<DocAddr> bookmark_addresses;
         for (const Bookmark &bookmark : state->bookmarks)
         {
@@ -994,8 +1006,10 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
-    actions->push_back({"Search in book", [this]() { open_search_menu(*this, *state); }});
-    actions->push_back({"Skim the book", [this]() {
+    group = "Search";
+    add({"Search in book", [this]() { open_search_menu(*this, *state); }});
+    group = "Go to";
+    add({"Skim the book", [this]() {
         state->view_stack.push(std::make_shared<PageBrowserView>(
             state->reader,
             get_current_address(*state),
@@ -1003,7 +1017,7 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
-    actions->push_back({"Go to %", [this]() {
+    add({"Go to %", [this]() {
         const uint32_t now = state->reader->get_global_progress_percent(get_current_address(*state));
         state->view_stack.push(std::make_shared<GotoView>(
             "Go to", "%", 0, 100, now,
@@ -1013,7 +1027,7 @@ void ReaderView::open_book_menu()
     }});
     if (!state->reader->page_list().empty() && !(style_tweaks() & TWEAK_PLAIN_PAGES))
     {
-        actions->push_back({"Go to book page", [this]() {
+        add({"Go to book page", [this]() {
             const auto &printed = state->reader->page_list();
             state->view_stack.push(std::make_shared<TextInputView>(
                 "Go to page (" + printed.front().label + " to " + printed.back().label + ")",
@@ -1044,7 +1058,7 @@ void ReaderView::open_book_menu()
         if (state->token_view_styling.get_reading_mode() == ReadingMode::Page
             && state->token_view->page_numbers(chapter, page, pages))
         {
-            actions->push_back({"Go to page", [this, chapter, page, pages]() {
+            add({"Go to page", [this, chapter, page, pages]() {
                 state->view_stack.push(std::make_shared<GotoView>(
                     "Go to page of " + std::to_string(pages), "", 1, pages, page,
                     [this, chapter](uint32_t chosen) { go_to_page(chapter, chosen); },
@@ -1053,17 +1067,18 @@ void ReaderView::open_book_menu()
             }});
         }
     }
+    group = "Pictures";
     {
         const auto pictures = state->token_view->images_on_screen();
         if (!pictures.empty())
         {
-            actions->push_back({
+            add({
                 pictures.size() == 1 ? std::string("View picture") : "View pictures (" + std::to_string(pictures.size()) + ")",
                 [this, pictures]() { open_pictures(*state, pictures); }
             });
         }
     }
-    actions->push_back({"Pictures in this book", [this]() {
+    add({"Pictures in this book", [this]() {
         SystemStyling &styling = state->sys_styling;
         std::vector<GalleryPicture> found = find_pictures(*state->reader, 400, [&styling](int percent) {
             progress_screen::show(styling, "Finding pictures", "", percent);
@@ -1082,11 +1097,13 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
+    group = "Go to";
     if (can_jump_back())
     {
-        actions->push_back({"Jump back", [this]() { jump_back(); }});
+        add({"Jump back", [this]() { jump_back(); }});
     }
-    actions->push_back({
+    group = "Tools";
+    add({
         std::string("Screen dim: ") + screen_dim::label_for_level(state->token_view_styling.get_screen_dim()),
         [this]() {
             // Darker at each press, and back to normal after the darkest.
@@ -1095,8 +1112,9 @@ void ReaderView::open_book_menu()
             );
         }
     });
-    actions->push_back({"Sync progress", [this]() { open_sync_menu(*this, *state); }});
-    actions->push_back({"Look up a word", [this]() {
+    add({"Sync progress", [this]() { open_sync_menu(*this, *state); }});
+    group = "Words";
+    add({"Look up a word", [this]() {
         const auto type_a_word = [this]() {
             state->view_stack.push(std::make_shared<TextInputView>(
                 "Look up a word",
@@ -1146,21 +1164,22 @@ void ReaderView::open_book_menu()
         });
         state->view_stack.push(menu);
     }});
-    actions->push_back({
+    add({
         "Word list (" + std::to_string(vocabulary::entries().size()) + ")",
         [this]() { open_word_list(*state); }
     });
     if (!vocabulary::entries().empty())
     {
-        actions->push_back({"Export word list", [this]() { export_word_list(*state); }});
+        add({"Export word list", [this]() { export_word_list(*state); }});
     }
-    actions->push_back({"Reading history", [this]() {
+    group = "Tools";
+    add({"Reading history", [this]() {
         state->view_stack.push(std::make_shared<ReadingHistoryView>(
             state->sys_styling,
             [](const std::string &path) { return std::filesystem::path(path).stem().string(); }
         ));
     }});
-    actions->push_back({"Reading stats", [this]() {
+    add({"Reading stats", [this]() {
         state->view_stack.push(std::make_shared<DefinitionView>(
             "Reading stats",
             reading_stats::report(
@@ -1172,38 +1191,34 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
-    actions->push_back({
+    group = "Marks";
+    add({
         "Highlights (" + std::to_string(state->token_view->highlights().size()) + ")",
         [this]() { open_highlights_menu(*this, *state); }
     });
     if (!state->token_view->highlights().empty())
     {
-        actions->push_back({"Export highlights", [this]() { export_highlights(*state); }});
+        add({"Export highlights", [this]() { export_highlights(*state); }});
     }
 
-    std::vector<std::string> names;
+    std::vector<GroupedEntry> entries;
     for (const Action &action : *actions)
     {
-        names.push_back(action.name);
+        entries.push_back({action.name, "", action.group});
     }
-
-    auto menu = std::make_shared<SelectionMenu>(names, state->sys_styling);
-    menu->set_title("Book");
-    menu->set_compact(true);
-    menu->set_close_on_select();
-    menu->set_on_selection([actions](uint32_t index) {
-        if (index < actions->size())
-        {
-            (*actions)[index].run();
-        }
-    });
-    menu->set_default_on_keypress([](SDLKey key, SelectionMenu &m) {
-        if (key == SW_BTN_SELECT)
-        {
-            m.close();
-        }
-    });
-    state->view_stack.push(menu);
+    open_grouped_menu(
+        [this](std::shared_ptr<View> view) { state->view_stack.push(view); },
+        state->sys_styling,
+        "Book",
+        std::move(entries),
+        [actions](uint32_t index) {
+            if (index < actions->size())
+            {
+                (*actions)[index].run();
+            }
+        },
+        {"Go to", "Search", "Marks", "Words", "Pictures", "Tools"}
+    );
 }
 
 ReaderView::ReaderView(

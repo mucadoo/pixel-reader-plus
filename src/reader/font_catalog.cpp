@@ -95,3 +95,28 @@ std::string get_next_font_name(const std::string &font_name)
     return available_fonts[(i + 1) % available_fonts.size()];
 }
 
+const std::vector<std::string> &fallback_font_paths()
+{
+    static std::vector<std::string> paths;
+    static bool found = false;
+    if (found)
+    {
+        return paths;
+    }
+    found = true;
+    for (const auto &entry : directory_listing(FONT_DIR))
+    {
+        const std::string name = to_lower(entry.name);
+        const std::string ext = to_lower(std::filesystem::path(entry.name).extension().string());
+        if (!entry.is_dir && name.rfind("fallback", 0) == 0 && (ext == ".ttf" || ext == ".otf" || ext == ".ttc"))
+        {
+            paths.push_back((std::filesystem::path(FONT_DIR) / entry.name).string());
+        }
+    }
+    const std::string mono = "resources/fonts/DejaVuSansMono.ttf";
+    if (std::filesystem::exists(mono))
+    {
+        paths.push_back(mono);
+    }
+    return paths;
+}

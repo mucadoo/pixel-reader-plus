@@ -30,6 +30,7 @@
 #include "./views/token_view/token_view_styling.h"
 #include "filetypes/open_doc.h"
 #include "reader/book_fonts.h"
+#include "reader/folder_prefs.h"
 #include "reader/next_book.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
@@ -149,6 +150,7 @@ void initialize_views(
 
     next_book::set_info_dir(store_path / "info");
     book_fonts::set_dir(store_path / "fonts");
+    folder_prefs::set_file(store_path / "folders.tsv");
     next_book::set_opener(load_book);
 
     if (requested_book_path)
@@ -180,6 +182,16 @@ void initialize_views(
         });
         fs->set_on_info([&view_stack, &sys_styling](const std::string &title, const std::string &body) {
             view_stack.push(std::make_shared<DefinitionView>(title, body, sys_styling));
+        });
+        fs->set_on_open_at([&state_store, load_book](const std::filesystem::path &book, DocAddr address) {
+            if (const auto *log = library_log().get(book))
+            {
+                if (!log->book_id.empty())
+                {
+                    state_store.set_book_address(log->book_id, address);
+                }
+            }
+            load_book(book);
         });
         fs->set_on_book_deleted([&state_store](const std::string &book_id) {
             state_store.forget_book(book_id);

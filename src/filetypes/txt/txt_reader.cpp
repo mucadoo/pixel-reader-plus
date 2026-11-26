@@ -7,6 +7,8 @@
 #include "extern/hash-library/md5.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -72,6 +74,12 @@ void add_block_token(
     address += get_address_width(*token);
     tokens_out.push_back(std::move(token));
 }
+
+void guess_text_chapters(
+    const std::vector<std::unique_ptr<DocToken>> &tokens,
+    std::vector<TocItem> &toc_out,
+    std::vector<DocAddr> &toc_addresses_out
+);
 
 bool tokenize_text_file(
     const std::filesystem::path &path,
@@ -141,12 +149,111 @@ bool tokenize_text_file(
         cur_address += get_address_width(*tokens_out.back().get());
     }
 
+    guess_text_chapters(tokens_out, toc_out, toc_addresses_out);
     return true;
 }
+// Plain text has no headings. Lines that look like chapter titles become chapters, and a long
+// text without any is cut into parts, so there is something to jump by.
+void guess_text_chapters(
+    const std::vector<std::unique_ptr<DocToken>> &tokens,
+    std::vector<TocItem> &toc_out,
+    std::vector<DocAddr> &toc_addresses_out
+)
+{
+    const auto text_of = [](const DocToken &token) -> std::string {
+        const auto *text = dynamic_cast<const TextDocToken *>(&token);
+        return text ? text->text : std::string();
+    };
+    const auto lower = [](std::string value) {
+        for (char &c : value)
+        {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return value;
+    };
+    const auto is_numeral = [](const std::string &word) {
+        // 12, 12., IV, XIV.
+        std::string core = word;
+        while (!core.empty() && (core.back() == '.' || core.back() == ':')) core.pop_back();
+        if (core.empty() || core.size() > 8) return false;
+        bool digits = true;
+        bool roman = true;
+        for (char c : core)
+        {
+            digits = digits && std::isdigit(static_cast<unsigned char>(c));
+            roman = roman && std::string("IVXLCDM").find(c) != std::string::npos;
+        }
+        return digits || roman;
+    };
+    const char *keywords[] = {"chapter ", "part ", "book ", "section ", "canto ", "act ", "prologue", "epilogue", "preface", "foreword", "introduction", "afterword", "capitulo ", "cap\xC3\xADtulo ", "chapitre ", "partie ", "livre "};
+    const auto blank = [&](size_t index) {
+        return text_of(*tokens[index]).find_first_not_of(' ') == std::string::npos;
+    };
+
+    std::vector<size_t> hits;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        std::string line = text_of(*tokens[i]);
+        const size_t a = line.find_first_not_of(' ');
+        if (a == std::string::npos || line.size() - a > 60)
+        {
+            continue;
+        }
+        line = line.substr(a);
+        if (!(i == 0 || blank(i - 1)) || !(i + 1 >= tokens.size() || blank(i + 1)))
+        {
+            continue;
+        }
+        const std::string low = lower(line);
+        bool match = is_numeral(line);
+        for (const char *keyword : keywords)
+        {
+            match = match || low.rfind(keyword, 0) == 0;
+        }
+        if (match)
+        {
+            hits.push_back(i);
+        }
+    }
+    if (hits.size() >= 2)
+    {
+        for (size_t index : hits)
+        {
+            const std::string line = text_of(*tokens[index]);
+            toc_out.push_back({line.substr(line.find_first_not_of(' ')), 0});
+            toc_addresses_out.push_back(tokens[index]->address);
+        }
+        return;
+    }
+
+    // About 30 000 letters to a part, cut at the next blank line.
+    size_t total = 0;
+    for (const auto &token : tokens)
+    {
+        total += text_of(*token).size();
+    }
+    if (total < 60000)
+    {
+        return;
+    }
+    size_t letters = 0;
+    int part = 1;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (toc_out.empty() || (letters >= 30000 && blank(i) && i + 1 < tokens.size()))
+        {
+            const size_t at = toc_out.empty() ? i : i + 1;
+            toc_out.push_back({"Part " + std::to_string(part++), 0});
+            toc_addresses_out.push_back(tokens[at]->address);
+            letters = 0;
+        }
+        letters += text_of(*tokens[i]).size();
+    }
+}
+
 } // namespace
 
-struct TxtReaderState
-{
+struct TxtReaderState{
     std::filesystem::path path;
     std::vector<TocItem> toc;
     std::vector<DocAddr> toc_addresses; // where each chapter starts, parallel to toc

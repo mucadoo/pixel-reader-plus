@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <map>
 #include <vector>
 
@@ -135,19 +136,160 @@ size_t count_codepoints(const char *s, uint32_t len)
     return count;
 }
 
+// Fonts to draw a letter with when the font of the text has none for it, in order of preference.
+std::map<TTF_Font *, std::vector<TTF_Font *>> g_fallbacks;
+
+uint32_t decode_codepoint(const char *p, const char *end, const char **next)
+{
+    const unsigned char c = static_cast<unsigned char>(*p);
+    uint32_t cp = c;
+    int more = 0;
+    if (c >= 0xF0) { cp = c & 0x07; more = 3; }
+    else if (c >= 0xE0) { cp = c & 0x0F; more = 2; }
+    else if (c >= 0xC0) { cp = c & 0x1F; more = 1; }
+    ++p;
+    while (more-- > 0 && p < end && (static_cast<unsigned char>(*p) & 0xC0) == 0x80)
+    {
+        cp = (cp << 6) | (static_cast<unsigned char>(*p) & 0x3F);
+        ++p;
+    }
+    *next = p;
+    return cp;
+}
+
+// Whether the font draws something of its own for the letter. A font without it gives its
+// "missing letter" shape, which is what a letter that no font has looks like too.
+bool font_has_glyph(TTF_Font *font, uint32_t cp)
+{
+    if (cp < 0x80)
+    {
+        return true;
+    }
+    if (cp > 0xFFFF)
+    {
+        return true; // the font library reads only the first 65 536 letters
+    }
+    static std::map<std::pair<TTF_Font *, uint32_t>, bool> known;
+    const auto key = std::make_pair(font, cp);
+    const auto found = known.find(key);
+    if (found != known.end())
+    {
+        return found->second;
+    }
+    if (known.size() > 20000)
+    {
+        known.clear();
+    }
+    int minx = 0, maxx = 0, miny = 0, maxy = 0, advance = 0;
+    int bminx = 0, bmaxx = 0, bminy = 0, bmaxy = 0, badvance = 0;
+    const bool ok = TTF_GlyphMetrics(font, static_cast<Uint16>(cp), &minx, &maxx, &miny, &maxy, &advance) == 0;
+    const bool bad_ok = TTF_GlyphMetrics(font, 0xFFFE, &bminx, &bmaxx, &bminy, &bmaxy, &badvance) == 0;
+    const bool has = ok && !(bad_ok && minx == bminx && maxx == bmaxx && miny == bminy && maxy == bmaxy && advance == badvance);
+    known[key] = has;
+    return has;
+}
+
+// The font to draw the letter with: the text font, or the first fallback that has it.
+TTF_Font *font_for_codepoint(TTF_Font *font, uint32_t cp)
+{
+    if (cp < 0x80)
+    {
+        return font;
+    }
+    const auto it = g_fallbacks.find(font);
+    if (it == g_fallbacks.end() || font_has_glyph(font, cp))
+    {
+        return font;
+    }
+    for (TTF_Font *other : it->second)
+    {
+        if (font_has_glyph(other, cp))
+        {
+            return other;
+        }
+    }
+    return font;
+}
+
+// True when some letter of the text needs another font.
+bool needs_fallback(TTF_Font *font, const char *text, uint32_t len)
+{
+    if (g_fallbacks.find(font) == g_fallbacks.end())
+    {
+        return false;
+    }
+    const char *end = text + len;
+    for (const char *p = text; p < end;)
+    {
+        const char *next = p;
+        const uint32_t cp = decode_codepoint(p, end, &next);
+        if (cp >= 0x80 && font_for_codepoint(font, cp) != font)
+        {
+            return true;
+        }
+        p = next;
+    }
+    return false;
+}
+
+// The width of the text, each letter in the font that draws it. s need not end at len.
+int size_plain(TTF_Font *font, const char *s, uint32_t len)
+{
+    int w = 0;
+    int h = 0;
+    if (g_fallbacks.find(font) == g_fallbacks.end() || !needs_fallback(font, s, len))
+    {
+        if (s[len] == 0)
+        {
+            TTF_SizeUTF8(font, s, &w, &h);
+            return w;
+        }
+        char *mut = const_cast<char *>(s);
+        const char saved = mut[len];
+        mut[len] = 0;
+        TTF_SizeUTF8(font, mut, &w, &h);
+        mut[len] = saved;
+        return w;
+    }
+    const std::string text(s, len);
+    const char *end = text.data() + len;
+    const char *run_start = text.data();
+    TTF_Font *run_font = nullptr;
+    int total = 0;
+    const auto flush = [&](const char *upto) {
+        if (run_font && upto > run_start)
+        {
+            const std::string piece(run_start, upto);
+            int pw = 0, ph = 0;
+            TTF_SizeUTF8(run_font, piece.c_str(), &pw, &ph);
+            total += pw;
+        }
+    };
+    for (const char *p = text.data(); p < end;)
+    {
+        const char *next = p;
+        const uint32_t cp = decode_codepoint(p, end, &next);
+        TTF_Font *wanted = font_for_codepoint(font, cp);
+        if (wanted != run_font)
+        {
+            flush(p);
+            run_start = p;
+            run_font = wanted;
+        }
+        p = next;
+    }
+    flush(end);
+    return total;
+}
+
 int measure_plain(TTF_Font *font, const char *s, uint32_t len)
 {
     if (!font || len == 0)
     {
         return 0;
     }
-    char *mut = const_cast<char *>(s);
-    char saved = mut[len];
-    mut[len] = 0;
-    int w = 0;
-    int h = 0;
-    TTF_SizeUTF8(font, mut, &w, &h);
-    mut[len] = saved;
+    const int w0 = size_plain(font, s, len);
+    int w = w0;
     if (g_letter_spacing > 0)
     {
         w += static_cast<int>(count_codepoints(s, len)) * g_letter_spacing;
@@ -177,6 +319,27 @@ int spacing_for(const char *s, const char *e)
 void set_word_spacing(int pixels)
 {
     g_word_spacing = pixels;
+}
+
+void set_font_fallbacks(TTF_Font *primary, std::vector<TTF_Font *> fallbacks)
+{
+    if (!primary)
+    {
+        return;
+    }
+    if (fallbacks.empty())
+    {
+        g_fallbacks.erase(primary);
+    }
+    else
+    {
+        g_fallbacks[primary] = std::move(fallbacks);
+    }
+}
+
+int measure_text(TTF_Font *font, const char *text, uint32_t len)
+{
+    return font ? size_plain(font, text, len) : 0;
 }
 
 void set_letter_spacing(int pixels)
@@ -232,7 +395,7 @@ void clear_glyph_cache()
 
 SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, SDL_Color bg)
 {
-    if (g_letter_spacing <= 0 || !font || !text || !*text)
+    if (!font || !text || !*text || (g_letter_spacing <= 0 && !needs_fallback(font, text, static_cast<uint32_t>(std::strlen(text)))))
     {
         return TTF_RenderUTF8_Shaded(font, text ? text : "", fg, bg);
     }
@@ -245,6 +408,7 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, 
     {
         SDL_Surface *glyph;
         int x;
+        int ascent;
     };
     std::vector<Placed> placed;
     int x = 0;
@@ -257,13 +421,13 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, 
             break;
         }
         std::string one(p, next);
+        const char *after = p;
+        TTF_Font *glyph_font = font_for_codepoint(font, decode_codepoint(p, p + (next - p), &after));
         // Where this letter starts is the width of all before it, so kerning agrees with the layout.
         int w = 0;
-        int h = 0;
         if (p != text)
         {
-            const std::string before(text, p);
-            TTF_SizeUTF8(font, before.c_str(), &w, &h);
+            w = size_plain(font, text, static_cast<uint32_t>(p - text));
         }
         x = w + static_cast<int>(placed.size()) * g_letter_spacing;
         SDL_Surface *glyph = nullptr;
@@ -274,11 +438,11 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, 
             {
                 packed = (packed << 8) | byte;
             }
-            const GlyphKey key = {font, packed, pack_color(fg), pack_color(bg)};
+            const GlyphKey key = {glyph_font, packed, pack_color(fg), pack_color(bg)};
             auto found = g_glyphs.find(key);
             if (found == g_glyphs.end())
             {
-                found = g_glyphs.emplace(key, TTF_RenderUTF8_Shaded(font, one.c_str(), fg, bg)).first;
+                found = g_glyphs.emplace(key, TTF_RenderUTF8_Shaded(glyph_font, one.c_str(), fg, bg)).first;
             }
             glyph = found->second;
             if (glyph && !palette_from)
@@ -286,20 +450,25 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, 
                 palette_from = glyph;
             }
         }
-        placed.push_back({glyph, x});
+        placed.push_back({glyph, x, TTF_FontAscent(glyph_font)});
         p = next;
     }
+    int max_ascent = 0;
+    int max_descent = 0;
+    for (const Placed &item : placed)
     {
-        int w = 0;
-        int h = 0;
-        TTF_SizeUTF8(font, text, &w, &h);
-        x = w + static_cast<int>(placed.size()) * g_letter_spacing;
+        if (item.glyph)
+        {
+            max_ascent = std::max(max_ascent, item.ascent);
+            max_descent = std::max(max_descent, item.glyph->h - item.ascent);
+        }
     }
+    x = size_plain(font, text, static_cast<uint32_t>(std::strlen(text))) + static_cast<int>(placed.size()) * g_letter_spacing;
     if (!palette_from)
     {
         return TTF_RenderUTF8_Shaded(font, " ", fg, bg); // nothing to see but spaces
     }
-    SDL_Surface *out = SDL_CreateRGBSurface(SDL_SWSURFACE, std::max(1, x), palette_from->h, 8, 0, 0, 0, 0);
+    SDL_Surface *out = SDL_CreateRGBSurface(SDL_SWSURFACE, std::max(1, x), std::max(palette_from->h, max_ascent + max_descent), 8, 0, 0, 0, 0);
     if (!out)
     {
         return nullptr;
@@ -310,7 +479,7 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, 
     {
         if (item.glyph)
         {
-            SDL_Rect where = {static_cast<Sint16>(item.x), 0, 0, 0};
+            SDL_Rect where = {static_cast<Sint16>(item.x), static_cast<Sint16>(max_ascent - item.ascent), 0, 0};
             SDL_BlitSurface(item.glyph, nullptr, out, &where);
         }
     }

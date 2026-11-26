@@ -19,6 +19,7 @@
 
 #include "reader/dictionary.h"
 #include "reader/next_book.h"
+#include "reader/screen_dim.h"
 #include "filetypes/epub/book_style.h"
 #include "reader/book_info.h"
 #include "reader/text_style.h"
@@ -977,23 +978,66 @@ void ReaderView::open_book_menu()
     {
         actions->push_back({"Jump back", [this]() { jump_back(); }});
     }
+    actions->push_back({
+        std::string("Screen dim: ") + screen_dim::label_for_level(state->token_view_styling.get_screen_dim()),
+        [this]() {
+            // Darker at each press, and back to normal after the darkest.
+            state->token_view_styling.set_screen_dim(
+                (state->token_view_styling.get_screen_dim() + 1) % screen_dim::LEVEL_COUNT
+            );
+        }
+    });
     actions->push_back({"Sync progress", [this]() { open_sync_menu(*this, *state); }});
     actions->push_back({"Look up a word", [this]() {
-        state->view_stack.push(std::make_shared<TextInputView>(
-            "Look up a word",
-            "",
-            [this](const std::string &typed) {
-                std::string word = lookup_lowercase(typed);
-                while (!word.empty() && word.back() == ' ') word.pop_back();
-                while (!word.empty() && word.front() == ' ') word.erase(0, 1);
-                if (!word.empty())
-                {
-                    show_definition(*state, word);
-                }
-            },
-            state->sys_styling,
-            60
-        ));
+        const auto type_a_word = [this]() {
+            state->view_stack.push(std::make_shared<TextInputView>(
+                "Look up a word",
+                "",
+                [this](const std::string &typed) {
+                    std::string word = lookup_lowercase(typed);
+                    while (!word.empty() && word.back() == ' ') word.pop_back();
+                    while (!word.empty() && word.front() == ' ') word.erase(0, 1);
+                    if (!word.empty())
+                    {
+                        show_definition(*state, word);
+                    }
+                },
+                state->sys_styling,
+                60
+            ));
+        };
+        if (vocabulary::entries().empty())
+        {
+            type_a_word();
+            return;
+        }
+        // The words looked up lately, newest first, one press away.
+        std::vector<std::string> rows = {"Type a word..."};
+        std::vector<std::string> recent;
+        for (const auto &entry : vocabulary::entries())
+        {
+            if (recent.size() >= 20)
+            {
+                break;
+            }
+            recent.push_back(entry.word);
+            rows.push_back(entry.word);
+        }
+        auto menu = std::make_shared<SelectionMenu>(rows, state->sys_styling);
+        menu->set_title("Look up");
+        menu->set_compact(true);
+        menu->set_close_on_select();
+        menu->set_on_selection([this, type_a_word, recent](uint32_t index) {
+            if (index == 0)
+            {
+                type_a_word();
+            }
+            else if (index - 1 < recent.size())
+            {
+                show_definition(*state, recent[index - 1]);
+            }
+        });
+        state->view_stack.push(menu);
     }});
     actions->push_back({
         "Word list (" + std::to_string(vocabulary::entries().size()) + ")",
@@ -1801,6 +1845,11 @@ void ReaderView::handle_keypress(SDLKey key)
         if (key == SW_BTN_START)
         {
             state->token_view->toggle_extend_selection();
+            return;
+        }
+        if (key == SW_BTN_X)
+        {
+            state->token_view->grow_selection();
             return;
         }
         state->token_view->on_keypress(key);

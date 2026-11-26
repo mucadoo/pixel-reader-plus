@@ -3,6 +3,9 @@
 #include "./book_grid.h"
 #include "./selection_menu.h"
 #include "filetypes/open_doc.h"
+#include "reader/folder_prefs.h"
+#include "reader/highlights.h"
+#include "reader/text_style.h"
 #include "reader/next_book.h"
 #include "reader/backup.h"
 #include "reader/book_covers.h"
@@ -48,6 +51,7 @@ struct FSState
     std::function<void(const std::string &, const std::string &)> on_info;
     std::function<void(bool)> on_view_mode_change;
     std::function<void(BrowserSort)> on_sort_change;
+    std::function<void(const std::filesystem::path &, DocAddr)> on_open_at;
     BrowserSort sort = BrowserSort::Name;
     std::string series_next_for; // the finished book the next volume below was worked out for
     std::string series_next; // the next volume of its series, empty when there is none
@@ -55,6 +59,11 @@ struct FSState
     size_t pinned_count = 0; // rows after the way up that are not part of the folder: Continue and favorites
     std::map<std::string, std::string> pinned_prefix; // name of a pinned row to the text put in front of it
     bool hide_finished = false;
+    // What folders without a choice of their own use, and the folder the view was last set up for.
+    BrowserSort global_sort = BrowserSort::Name;
+    bool global_grid = false;
+    bool global_hide = false;
+    std::string prefs_for;
     SystemStyling &styling;
     std::function<void(std::shared_ptr<View>)> on_open_view;
     std::function<void(bool)> on_hide_finished_change;
@@ -309,8 +318,73 @@ void apply_sort(FSState *s)
     });
 }
 
+// A folder with its own order, view or finished setting gets them when it is entered.
+void apply_folder_prefs(FSState *s)
+{
+    if (s->prefs_for == s->path.string() || (!s->prefs_for.empty() && s->prefs_for + "/" == s->path.string()))
+    {
+        return;
+    }
+    s->prefs_for = s->path.string();
+    while (s->prefs_for.size() > 1 && s->prefs_for.back() == '/')
+    {
+        s->prefs_for.pop_back();
+    }
+    const auto prefs = folder_prefs::get(s->prefs_for);
+    s->sort = prefs && prefs->sort >= 0 && prefs->sort <= static_cast<int>(BrowserSort::Recent) ? static_cast<BrowserSort>(prefs->sort) : s->global_sort;
+    s->hide_finished = prefs && prefs->hide >= 0 ? prefs->hide != 0 : s->global_hide;
+    const bool grid = prefs && prefs->grid >= 0 ? prefs->grid != 0 : s->global_grid;
+    if (grid != s->grid_mode)
+    {
+        s->grid_mode = grid;
+        const auto hints = hints_for(s, has_way_up(s));
+        s->menu.set_hints(hints);
+        s->grid.set_hints(hints);
+        s->grid.invalidate();
+    }
+}
+
+// The user changed the order, view or finished setting: the top folder sets the
+// default for the others, any other folder keeps the change for itself.
+void note_view_choice(FSState *s, int sort, int grid, int hide)
+{
+    if (s->search_active)
+    {
+        return;
+    }
+    const auto plain = [](std::string text) {
+        while (text.size() > 1 && text.back() == '/')
+        {
+            text.pop_back();
+        }
+        return text;
+    };
+    if (plain(s->path.string()) == plain(s->top_folder.string()) || s->path == s->path.root_path())
+    {
+        if (sort >= 0)
+        {
+            s->global_sort = static_cast<BrowserSort>(sort);
+            if (s->on_sort_change) s->on_sort_change(s->global_sort);
+        }
+        if (grid >= 0)
+        {
+            s->global_grid = grid != 0;
+            if (s->on_view_mode_change) s->on_view_mode_change(s->global_grid);
+        }
+        if (hide >= 0)
+        {
+            s->global_hide = hide != 0;
+            if (s->on_hide_finished_change) s->on_hide_finished_change(s->global_hide);
+        }
+        folder_prefs::forget(s->prefs_for);
+        return;
+    }
+    folder_prefs::update(s->prefs_for, {sort, grid, hide});
+}
+
 void refresh_path_entries(FSState *s)
 {
+    apply_folder_prefs(s);
     s->path_entries.clear();
     s->continue_name.clear();
     if (s->search_active)
@@ -1700,10 +1774,112 @@ void open_online_books(FSState *s)
     s->on_open_view(menu);
 }
 
+// One highlight of one book, for the list of all of them.
+struct HighlightRow
+{
+    std::filesystem::path book;
+    std::string title;
+    std::string text;
+    DocAddr address = 0;
+};
+
+// The list of highlights, narrowed to those holding the words of the search when there are any.
+void show_highlight_rows(FSState *s, const std::vector<HighlightRow> &rows, const std::string &search)
+{
+    const std::string wanted = lookup_lowercase(search);
+    std::vector<HighlightRow> shown;
+    for (const HighlightRow &row : rows)
+    {
+        if (wanted.empty() || lookup_lowercase(row.text).find(wanted) != std::string::npos || lookup_lowercase(row.title).find(wanted) != std::string::npos)
+        {
+            shown.push_back(row);
+        }
+    }
+    std::vector<std::string> names = {search.empty() ? "Search..." : "Search again... (" + search + ")"};
+    std::vector<std::string> details = {""};
+    for (const HighlightRow &row : shown)
+    {
+        std::string one_line = row.text;
+        for (char &c : one_line)
+        {
+            if (c == '\n' || c == '\t') c = ' ';
+        }
+        names.push_back(one_line);
+        details.push_back(row.title);
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title("All highlights (" + std::to_string(shown.size()) + ")");
+    menu->set_compact(true);
+    menu->set_hints({"A  Open the book", "B  Back"});
+    menu->set_on_selection([s, rows, shown, search](uint32_t index) {
+        if (index == 0)
+        {
+            s->on_open_view(std::make_shared<TextInputView>(
+                "Search highlights",
+                search,
+                [s, rows](const std::string &typed) { show_highlight_rows(s, rows, typed); },
+                s->styling,
+                60
+            ));
+            return;
+        }
+        if (index - 1 < shown.size() && s->on_open_at)
+        {
+            s->on_open_at(shown[index - 1].book, shown[index - 1].address);
+        }
+    });
+    s->on_open_view(menu);
+}
+
+// Every highlight of every book that has been opened, newest book first.
+void open_all_highlights(FSState *s)
+{
+    std::vector<std::pair<std::filesystem::path, LibraryLog::Entry>> books = library_log().all();
+    std::stable_sort(books.begin(), books.end(), [](const auto &a, const auto &b) {
+        return a.second.last_opened > b.second.last_opened;
+    });
+    std::vector<HighlightRow> rows;
+    for (const auto &book : books)
+    {
+        if (book.second.book_id.empty() || s->store_dir.empty())
+        {
+            continue;
+        }
+        const auto file = s->store_dir / "books" / (book.second.book_id + ".highlights");
+        std::error_code ec;
+        if (!std::filesystem::exists(file, ec))
+        {
+            continue;
+        }
+        const std::string title = book_title_for(s, book.first);
+        for (const Highlight &highlight : load_highlights(file))
+        {
+            if (!highlight.text.empty())
+            {
+                rows.push_back({book.first, title, highlight.text, highlight.first});
+            }
+            if (rows.size() >= 1000)
+            {
+                break;
+            }
+        }
+    }
+    if (rows.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("All highlights", "There are no highlights yet.\nHighlight words in a book and they are listed here.");
+        }
+        return;
+    }
+    show_highlight_rows(s, rows, "");
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -1808,6 +1984,9 @@ void open_library_tools(FSState *s)
                     return book_title_for(s, std::filesystem::path(path));
                 }));
                 break;
+            case 11:
+                open_all_highlights(s);
+                break;
             default:
                 break;
         }
@@ -1831,7 +2010,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder };
+    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -1843,6 +2022,11 @@ void open_options(FSState *s)
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
+    if (!s->search_active && folder_prefs::get(s->prefs_for))
+    {
+        acts.push_back(Act::ResetView);
+        names.push_back("Use the default view in this folder");
+    }
     acts.push_back(Act::History);
     names.push_back("Recent books");
     acts.push_back(Act::Search);
@@ -2057,12 +2241,14 @@ void open_options(FSState *s)
                 s->on_open_view(confirm);
                 break;
             }
+            case Act::ResetView:
+                folder_prefs::forget(s->prefs_for);
+                s->prefs_for.clear();
+                refresh_keeping_cursor(s);
+                break;
             case Act::HideFinished:
                 s->hide_finished = !s->hide_finished;
-                if (s->on_hide_finished_change)
-                {
-                    s->on_hide_finished_change(s->hide_finished);
-                }
+                note_view_choice(s, -1, -1, s->hide_finished ? 1 : 0);
                 refresh_keeping_cursor(s);
                 break;
         }
@@ -2334,15 +2520,13 @@ void FileSelector::on_keypress(SDLKey key)
     if (key == SW_BTN_SELECT)
     {
         set_grid_view(!state->grid_mode);
+        note_view_choice(state.get(), -1, state->grid_mode ? 1 : 0, -1);
         return;
     }
     if (key == SW_BTN_START)
     {
         set_sort(next_browser_sort(state->sort));
-        if (state->on_sort_change)
-        {
-            state->on_sort_change(state->sort);
-        }
+        note_view_choice(state.get(), static_cast<int>(state->sort), -1, -1);
         return;
     }
     if (state->grid_mode)
@@ -2369,6 +2553,7 @@ void FileSelector::on_keyheld(SDLKey key, uint32_t held_time_ms)
 
 void FileSelector::set_grid_view(bool grid)
 {
+    state->global_grid = grid;
     if (grid == state->grid_mode)
     {
         return;
@@ -2382,14 +2567,11 @@ void FileSelector::set_grid_view(bool grid)
         sync_cursor(state.get(), std::min<uint32_t>(state->cursor, static_cast<uint32_t>(state->path_entries.size()) - 1));
     }
     state->grid.invalidate();
-    if (state->on_view_mode_change)
-    {
-        state->on_view_mode_change(grid);
-    }
 }
 
 void FileSelector::set_sort(BrowserSort sort)
 {
+    state->global_sort = sort;
     state->sort = sort;
     resort_keeping_cursor(state.get());
 }
@@ -2409,6 +2591,11 @@ void FileSelector::set_on_view_mode_change(std::function<void(bool)> callback)
     state->on_view_mode_change = callback;
 }
 
+void FileSelector::set_on_open_at(std::function<void(const std::filesystem::path &, DocAddr)> callback)
+{
+    state->on_open_at = callback;
+}
+
 void FileSelector::set_on_open_view(std::function<void(std::shared_ptr<View>)> callback)
 {
     state->on_open_view = callback;
@@ -2416,6 +2603,7 @@ void FileSelector::set_on_open_view(std::function<void(std::shared_ptr<View>)> c
 
 void FileSelector::set_hide_finished(bool hide)
 {
+    state->global_hide = hide;
     state->hide_finished = hide;
     refresh_path_entries(state.get());
     focus_first_item(state.get());

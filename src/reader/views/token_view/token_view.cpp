@@ -6,7 +6,9 @@
 #include "doc_api/doc_reader.h"
 #include "filetypes/epub/book_style.h"
 #include "reader/book_fonts.h"
+#include "reader/font_catalog.h"
 #include "reader/highlights.h"
+#include <set>
 #include "reader/hyphenation.h"
 #include "reader/layout_options.h"
 #include "reader/page_index.h"
@@ -31,16 +33,7 @@ namespace {
 
 bool line_fits_on_screen(TTF_Font *font, int avail_width, const char *s, uint32_t len)
 {
-    int w = avail_width, h;
-
-    char *mut_s = (char*)s;
-    char replaced = mut_s[len];
-    mut_s[len] = 0;
-
-    TTF_SizeUTF8(font, mut_s, &w, &h);
-    mut_s[len] = replaced;
-
-    return w <= avail_width;
+    return measure_text(font, s, len) <= avail_width;
 }
 
 }  // namespace
@@ -120,6 +113,8 @@ struct TokenViewState
     DocAddr anchor_begin = 0;
     DocAddr anchor_end = 0;
     std::vector<LayoutWord> page_words;
+    int grow_level = 0;     // what X made of the selection: 1 sentence, 2 paragraph
+    DocAddr grow_origin = 0; // the word it started from
 
     struct VisibleText
     {
@@ -145,6 +140,7 @@ struct TokenViewState
         std::string path = pre
             ? "resources/fonts/DejaVuSansMono.ttf"
             : sys_styling.get_font_name();
+        const int requested_style = style;
         if (!pre && book_fonts::active())
         {
             path = book_fonts::pick(style);
@@ -177,16 +173,37 @@ struct TokenViewState
             return cached_load_styled_font(bold_path, size, rest == 0 ? TTF_STYLE_NORMAL : rest);
         };
 
+        // Letters the font lacks are drawn from the fallback fonts.
+        const auto with_fallbacks = [&](TTF_Font *chosen) {
+            static std::set<TTF_Font *> registered;
+            if (chosen && registered.insert(chosen).second)
+            {
+                std::vector<TTF_Font *> others;
+                for (const std::string &fallback : fallback_font_paths())
+                {
+                    if (fallback != path)
+                    {
+                        if (TTF_Font *other = cached_load_styled_font(fallback, size, requested_style))
+                        {
+                            others.push_back(other);
+                        }
+                    }
+                }
+                set_font_fallbacks(chosen, others);
+            }
+            return chosen;
+        };
+
         if (TTF_Font *bold_font = try_bold_file(path))
         {
-            return bold_font;
+            return with_fallbacks(bold_font);
         }
         TTF_Font *font = cached_load_styled_font(path, size, style);
         if (!font && pre)
         {
             font = cached_load_styled_font(sys_styling.get_font_name(), size, style);
         }
-        return font;
+        return with_fallbacks(font);
     }
 
     void remember_highlights() const
@@ -622,6 +639,7 @@ static void layout_visible_words(TokenViewState &state)
                 for (LayoutWord &word : visual.layout.words)
                 {
                     word.hyphen_end = text_line->hyphenated && &word == &visual.layout.words.back();
+                    word.paragraph_end = text_line->paragraph_end && &word == &visual.layout.words.back();
                     word.x += origin;
                     word.line_index = i;
                     state.seen_words.emplace(word.begin, word.text);
@@ -923,7 +941,7 @@ static void draw_selection_hint(
         return surface_unique_ptr { TTF_RenderUTF8_Shaded(font, text, quiet, theme.background) };
     };
     auto left = label("A  Actions");
-    auto middle = label(extending ? "Adding words" : "Start  Extend");
+    auto middle = label(extending ? "Adding words" : "Start  Extend   X  Grow");
     auto right = label("B  Cancel");
     if (!left || !right)
     {
@@ -1321,6 +1339,7 @@ static std::pair<DocAddr, DocAddr> selection_bounds(const TokenViewState &state)
 
 static void assign_focus(TokenViewState &state, const LayoutWord &word)
 {
+    state.grow_level = 0;
     state.selected_begin = word.begin;
     state.focus_end = word.end;
     if (!state.extending)
@@ -2013,6 +2032,120 @@ void TokenView::cancel_word_select()
     state->extending = false;
     state->has_selection = false;
     state->needs_render = true;
+}
+
+// Whether the word ends a sentence: a full stop, question or exclamation mark, possibly followed by quotes or brackets.
+static bool ends_sentence(const std::string &text)
+{
+    size_t end = text.size();
+    while (end > 0)
+    {
+        const char c = text[end - 1];
+        if (c == '"' || c == '\'' || c == ')' || c == ']')
+        {
+            --end;
+            continue;
+        }
+        // The closing quotes of the book are several bytes in UTF-8.
+        if (end >= 3 && (text.compare(end - 3, 3, "\xE2\x80\x9D") == 0 || text.compare(end - 3, 3, "\xE2\x80\x99") == 0))
+        {
+            end -= 3;
+            continue;
+        }
+        if (end >= 2 && text.compare(end - 2, 2, "\xC2\xBB") == 0)
+        {
+            end -= 2;
+            continue;
+        }
+        break;
+    }
+    if (end == 0)
+    {
+        return false;
+    }
+    if (end >= 3 && text.compare(end - 3, 3, "\xE2\x80\xA6") == 0)
+    {
+        return true;
+    }
+    const char last = text[end - 1];
+    return last == '.' || last == '!' || last == '?';
+}
+
+void TokenView::grow_selection()
+{
+    if (!state->selecting || state->page_words.empty())
+    {
+        return;
+    }
+    const auto bounds = selection_bounds(*state);
+    const int count = static_cast<int>(state->page_words.size());
+    int lo = -1;
+    int hi = -1;
+    for (int i = 0; i < count; ++i)
+    {
+        const LayoutWord &word = state->page_words[i];
+        if (word.end > bounds.first && word.begin < bounds.second)
+        {
+            if (lo < 0) lo = i;
+            hi = i;
+        }
+    }
+    if (lo < 0)
+    {
+        return;
+    }
+    if (state->grow_level == 0)
+    {
+        state->grow_origin = state->page_words[lo].begin;
+    }
+    const auto select_range = [&](int from, int to) {
+        const LayoutWord &first = state->page_words[from];
+        const LayoutWord &last = state->page_words[to];
+        state->anchor_begin = first.begin;
+        state->anchor_end = first.end;
+        state->selected_begin = last.begin;
+        state->focus_end = last.end;
+        state->has_selection = true;
+        state->needs_render = true;
+    };
+    const int level = state->grow_level + 1;
+    if (level == 1)
+    {
+        while (lo > 0 && !ends_sentence(state->page_words[lo - 1].text))
+        {
+            --lo;
+        }
+        while (hi + 1 < count && !ends_sentence(state->page_words[hi].text))
+        {
+            ++hi;
+        }
+        select_range(lo, hi);
+        state->grow_level = 1;
+    }
+    else if (level == 2)
+    {
+        while (lo > 0 && !state->page_words[lo - 1].paragraph_end)
+        {
+            --lo;
+        }
+        while (hi + 1 < count && !state->page_words[hi].paragraph_end)
+        {
+            ++hi;
+        }
+        select_range(lo, hi);
+        state->grow_level = 2;
+    }
+    else
+    {
+        // Back to the single word it started from.
+        const int back = word_index(*state, state->grow_origin);
+        if (back >= 0)
+        {
+            const LayoutWord word = state->page_words[back];
+            assign_focus(*state, word);
+        }
+        state->grow_level = 0;
+    }
 }
 
 void TokenView::toggle_extend_selection()

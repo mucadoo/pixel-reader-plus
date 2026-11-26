@@ -1,6 +1,7 @@
 #ifndef FILE_SELECTOR_H_
 #define FILE_SELECTOR_H_
 
+#include "doc_api/doc_addr.h"
 #include "reader/browser_sort.h"
 #include "reader/view.h"
 
@@ -37,6 +38,8 @@ public:
     void set_on_view_focus(std::function<void()> on_view_focus);
     // Called with a title and a text when the user asks for the properties of an entry.
     // Where menus the browser opens itself, such as the book options, are shown.
+    // Opens a book at a place, for the list of all highlights.
+    void set_on_open_at(std::function<void(const std::filesystem::path &, DocAddr)> callback);
     void set_on_open_view(std::function<void(std::shared_ptr<View>)> on_open_view);
     // Leave finished books out of the list.
     void set_hide_finished(bool hide);

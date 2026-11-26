@@ -295,10 +295,56 @@ EpubTocIndex::EpubTocIndex(const PackageContents &package, const std::vector<Nav
 
     flatten_navmap_to_toc(package, navmap, toc);
 
+    bool from_spine = false;
     if (toc.empty())
     {
         std::cerr << "Falling back to spine for TOC" << std::endl;
         fallback_convert_spine_to_toc(package, toc);
+        from_spine = true;
+    }
+
+    // A book of one or a few big files and no table of contents: the headings are the chapters.
+    if ((from_spine || toc.size() <= 1) && doc_index.spine_size() <= 4)
+    {
+        struct Found
+        {
+            std::string name;
+            int level;
+            uint32_t spine;
+            DocAddr address;
+        };
+        std::vector<Found> found;
+        int min_level = 7;
+        for (uint32_t spine = 0; spine < doc_index.spine_size(); ++spine)
+        {
+            for (const auto &token : doc_index.tokens(spine))
+            {
+                const auto *header = token->type == TokenType::Header ? dynamic_cast<const HeaderDocToken *>(token.get()) : nullptr;
+                if (!header || header->text.empty() || header->header_level > 3)
+                {
+                    continue;
+                }
+                std::string name = header->text;
+                for (char &c : name)
+                {
+                    if (c == '\n') c = ' ';
+                }
+                const int level = std::max(1, header->header_level);
+                min_level = std::min(min_level, level);
+                found.push_back({name, level, spine, token->address});
+            }
+        }
+        if (found.size() >= 2)
+        {
+            toc.clear();
+            for (const Found &item : found)
+            {
+                TocItemCache entry{item.name, static_cast<uint32_t>(item.level - min_level), item.spine, ""};
+                entry.start_address_is_valid = true;
+                entry.start_address = item.address;
+                toc.push_back(std::move(entry));
+            }
+        }
     }
 
     // Compile global progress lookup

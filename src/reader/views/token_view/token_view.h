@@ -85,6 +85,8 @@ public:
     void toggle_selected_highlight(HighlightStyle style = HighlightStyle::Marker);
     // The words between the first and last selected word, as they were on the pages.
     std::string selected_text() const;
+    // X in word selection: the selection grows to the sentence, then the paragraph, then back to the word.
+    void grow_selection();
 
     // Paths of the pictures that show on the screen now, top to bottom.
     std::vector<std::filesystem::path> images_on_screen() const;

@@ -19,6 +19,13 @@ std::string lookup_lowercase(const std::string &word);
 // Extra pixels added to every space between words (negative to tighten). Applies to later layouts.
 void set_word_spacing(int pixels);
 
+// Other fonts to draw letters with when the font has none for them (symbols, Greek, Cyrillic, CJK).
+// The first of them that has the letter is used. Applies to later layouts and drawing.
+void set_font_fallbacks(TTF_Font *primary, std::vector<TTF_Font *> fallbacks);
+
+// The width of the text in pixels, with fallback fonts for the letters the font lacks. Letter spacing is not added.
+int measure_text(TTF_Font *font, const char *text, uint32_t len);
+
 // Extra pixels added after every letter (0 for none). Applies to later layouts and drawing.
 void set_letter_spacing(int pixels);
 
@@ -76,6 +83,8 @@ struct LayoutWord
     int line_index = 0;
     // The last word of a line that was split with a hyphen.
     bool hyphen_end = false;
+    // The last word of the last line of a paragraph.
+    bool paragraph_end = false;
     // Where the word links to, when it is part of a link.
     std::shared_ptr<const std::string> link;
 };

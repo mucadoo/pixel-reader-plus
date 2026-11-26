@@ -2264,7 +2264,8 @@ ReaderView::ReaderView(
 
         if (state->on_change_address)
         {
-            state->on_change_address(address);
+            // Lining up with a page can move the view again, so save where it ended up.
+            state->on_change_address(state->token_view->get_address());
         }
     });
 }

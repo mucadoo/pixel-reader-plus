@@ -35,6 +35,28 @@ uint32_t get_line_for_address(const IndexedDequeue<std::unique_ptr<DisplayLine>>
             best_line = i;
             if (line->address == address)
             {
+                // A blank line between paragraphs has the address of the text after it. A place saved
+                // at the top of a page means the text, not the blank above it: starting on the blank
+                // puts it on the previous page.
+                for (int j = i; j < lines.end_index(); ++j)
+                {
+                    const auto &next = lines[j];
+                    if (!next || next->address != address)
+                    {
+                        break;
+                    }
+                    if (next->continuation)
+                    {
+                        continue;
+                    }
+                    const bool blank = next->type == DisplayLine::Type::Text
+                        && static_cast<const TextLine *>(next.get())->text.empty();
+                    if (!blank)
+                    {
+                        best_line = j;
+                        break;
+                    }
+                }
                 break;
             }
         }
@@ -406,6 +428,7 @@ void TokenLineScroller::initialize_buffer_at(DocAddr address)
     forward_it = backward_it->clone();
 
     materialize_line(0);
+    materialize_line(8); // far enough to see the text behind blank lines that share the address
     current_line = get_line_for_address(lines_buf, address);
 }
 

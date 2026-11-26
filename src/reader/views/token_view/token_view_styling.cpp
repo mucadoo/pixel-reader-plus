@@ -11,8 +11,8 @@ struct TokenViewStylingState
     ProgressReporting progress_reporting;
     ReadingMode reading_mode;
     BarItem bar_left = BarItem::ChapterTitle;
-    BarItem bar_middle = BarItem::Empty;
-    BarItem bar_right = BarItem::Progress;
+    BarItem bar_middle = BarItem::Page;
+    BarItem bar_right = BarItem::BookPercent;
     ClockFormat clock_format = ClockFormat::H24;
     int margin_level = DEFAULT_MARGIN_LEVEL;
     int spacing_level = DEFAULT_SPACING_LEVEL;

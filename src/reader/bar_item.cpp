@@ -15,12 +15,9 @@ const ItemInfo ITEMS[] = {
     {BarItem::Empty, "empty", "Nothing"},
     {BarItem::ChapterTitle, "chapter_title", "Chapter title"},
     {BarItem::BookTitle, "book_title", "Book title"},
-    {BarItem::Progress, "progress", "Page and %"},
     {BarItem::Page, "page", "Page"},
     {BarItem::ChapterPercent, "chapter_percent", "Chapter %"},
     {BarItem::BookPercent, "book_percent", "Book %"},
-    {BarItem::BothPercents, "both_percents", "Chapter % and book %"},
-    {BarItem::PageBothPercents, "page_both_percents", "Page, chapter %, book %"},
     {BarItem::Time, "time", "Time"},
     {BarItem::Date, "date", "Date"},
     {BarItem::ChapterNumber, "chapter_number", "Chapter x of y"},
@@ -64,6 +61,15 @@ std::optional<BarItem> decode_bar_item(const std::string &item)
         {
             return info.item;
         }
+    }
+    // The items that showed several things at once are gone: the bar has three places for that.
+    if (item == "progress" || item == "page_both_percents")
+    {
+        return BarItem::Page;
+    }
+    if (item == "both_percents")
+    {
+        return BarItem::BookPercent;
     }
     // The time-left items are gone; a bar saved with one shows nothing in that place.
     if (item == "chapter_time_left" || item == "book_time_left")

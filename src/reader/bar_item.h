@@ -9,12 +9,9 @@ enum class BarItem {
     Empty,
     ChapterTitle,
     BookTitle,
-    Progress,       // page x / y and the percent the Progress setting asks for
     Page,           // page x / y
     ChapterPercent,
     BookPercent,
-    BothPercents,     // chapter % and book %, side by side
-    PageBothPercents, // page x / y, chapter % and book %
     Time,
     Date,
     ChapterNumber,    // chapter x of y

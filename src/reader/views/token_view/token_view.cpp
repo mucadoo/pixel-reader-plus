@@ -491,25 +491,10 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             return state.search_note.empty() ? state.title : state.search_note + "  " + state.title;
         case BarItem::BookTitle:
             return state.book_title;
-        case BarItem::Progress:
-            if (!state.title_label.empty())
-            {
-                snprintf(text, sizeof(text), "p. %s  %d%%", state.title_label.c_str(), state.title_progress_percent);
-            }
-            else if (state.title_pages > 0)
-            {
-                snprintf(text, sizeof(text), "%u / %u  %d%%", state.title_page, state.title_pages, state.title_progress_percent);
-            }
-            else
-            {
-                snprintf(text, sizeof(text), "%d%%", state.title_progress_percent);
-            }
-            return text;
         case BarItem::Page:
             if (!state.title_label.empty())
             {
-                snprintf(text, sizeof(text), "p. %s", state.title_label.c_str());
-                return text;
+                return state.title_label; // the page as printed in the book
             }
             if (state.title_pages == 0)
             {
@@ -518,34 +503,17 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             snprintf(text, sizeof(text), "%u / %u", state.title_page, state.title_pages);
             return text;
         case BarItem::ChapterPercent:
-            snprintf(text, sizeof(text), "Ch %d%%", state.title_chapter_percent);
+            snprintf(text, sizeof(text), "%d%%", state.title_chapter_percent);
             return text;
         case BarItem::BookPercent:
-            snprintf(text, sizeof(text), "Book %d%%", state.title_book_percent);
-            return text;
-        case BarItem::BothPercents:
-            snprintf(text, sizeof(text), "Ch %d%%  Book %d%%", state.title_chapter_percent, state.title_book_percent);
-            return text;
-        case BarItem::PageBothPercents:
-            if (!state.title_label.empty())
-            {
-                snprintf(text, sizeof(text), "p. %s  Ch %d%%  Book %d%%", state.title_label.c_str(), state.title_chapter_percent, state.title_book_percent);
-            }
-            else if (state.title_pages > 0)
-            {
-                snprintf(text, sizeof(text), "%u / %u  Ch %d%%  Book %d%%", state.title_page, state.title_pages, state.title_chapter_percent, state.title_book_percent);
-            }
-            else
-            {
-                snprintf(text, sizeof(text), "Ch %d%%  Book %d%%", state.title_chapter_percent, state.title_book_percent);
-            }
+            snprintf(text, sizeof(text), "%d%%", state.title_book_percent);
             return text;
         case BarItem::ChapterNumber:
             if (state.title_chapter_index <= 0 || state.title_chapter_count <= 0)
             {
                 return "";
             }
-            snprintf(text, sizeof(text), "Ch %d / %d", state.title_chapter_index, state.title_chapter_count);
+            snprintf(text, sizeof(text), "%d / %d", state.title_chapter_index, state.title_chapter_count);
             return text;
         case BarItem::ChapterPagesLeft:
         case BarItem::BookPagesLeft:
@@ -555,7 +523,7 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             {
                 return "";
             }
-            snprintf(text, sizeof(text), "%s %d pg left", item == BarItem::ChapterPagesLeft ? "Ch" : "Book", left);
+            snprintf(text, sizeof(text), "%d", left);
             return text;
         }
         case BarItem::BookPageOf:
@@ -578,7 +546,7 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             {
                 return "";
             }
-            snprintf(text, sizeof(text), "Bat %d%%", level);
+            snprintf(text, sizeof(text), "%d%%", level);
             return text;
         }
         case BarItem::Time:

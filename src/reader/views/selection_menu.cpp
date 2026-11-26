@@ -21,9 +21,16 @@ uint32_t SelectionMenu::num_display_lines() const
         {
             count = 1;
         }
-        if (count > 6)
+        int cap = 6;
+        if (wide)
         {
-            count = 6;
+            // As many rows as the screen holds: the margin, the title, a gap and the hints take the rest.
+            const int chrome = 18 * 2 + (line_height + 8) + 8 + line_height;
+            cap = std::max(1, (static_cast<int>(SCREEN_HEIGHT) - 36 - chrome) / std::max(1, line_height));
+        }
+        if (count > cap)
+        {
+            count = cap;
         }
         return static_cast<uint32_t>(count);
     }
@@ -242,6 +249,10 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
         }
         content_w = std::max(content_w, text_width(loaded_font, "A  Choose") + text_width(loaded_font, "B  Back") + 24);
         int panel_w = std::min(static_cast<int>(SCREEN_WIDTH) - 36, std::max(220, content_w + pad * 2 + 16));
+        if (wide)
+        {
+            panel_w = static_cast<int>(SCREEN_WIDTH) - 36;
+        }
         int panel_x = (static_cast<int>(SCREEN_WIDTH) - panel_w) / 2;
         int panel_y = (static_cast<int>(SCREEN_HEIGHT) - panel_h) / 2;
         if (panel_y < 8)
@@ -267,6 +278,16 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
         {
             auto heading = shade(loaded_font, title, fg_color, bg_color);
             blit_crop(heading.get(), dest_surface, panel_x + pad, y + std::max(0, (line_height - (heading ? heading->h : 0)) / 2), panel_w - pad * 2);
+            if (wide)
+            {
+                SDL_Rect title_rule = {
+                    static_cast<Sint16>(panel_x + pad),
+                    static_cast<Sint16>(y + title_h - 2),
+                    static_cast<Uint16>(panel_w - pad * 2),
+                    1
+                };
+                SDL_FillRect(dest_surface, &title_rule, rect_quiet_color);
+            }
             y += title_h;
         }
 
@@ -295,13 +316,38 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
                 is_highlighted ? hl_bg_color : bg_color
             );
             int text_y = y + line_padding / 2;
-            blit_crop(message.get(), dest_surface, panel_x + pad, text_y, panel_w - pad * 2);
+            int detail_w = 0;
+            if (wide && global_i < details.size() && !details[global_i].empty())
+            {
+                auto detail = shade(
+                    loaded_font,
+                    details[global_i],
+                    is_highlighted ? hl_text_color : quiet,
+                    is_highlighted ? hl_bg_color : bg_color
+                );
+                if (detail)
+                {
+                    detail_w = detail->w + 14;
+                    blit_crop(detail.get(), dest_surface, panel_x + panel_w - pad - detail->w, text_y, detail->w);
+                }
+            }
+            blit_crop(message.get(), dest_surface, panel_x + pad, text_y, panel_w - pad * 2 - detail_w);
             y += line_height;
         }
 
         int footer_y = panel_y + panel_h - pad - footer_h;
-        auto choose = shade(loaded_font, "A  Choose", quiet, bg_color);
-        auto back = shade(loaded_font, "B  Back", quiet, bg_color);
+        if (wide)
+        {
+            SDL_Rect footer_rule = {
+                static_cast<Sint16>(panel_x + pad),
+                static_cast<Sint16>(footer_y),
+                static_cast<Uint16>(panel_w - pad * 2),
+                1
+            };
+            SDL_FillRect(dest_surface, &footer_rule, rect_quiet_color);
+        }
+        auto choose = shade(loaded_font, wide && hints.size() >= 2 ? hints.front() : "A  Choose", quiet, bg_color);
+        auto back = shade(loaded_font, wide && hints.size() >= 2 ? hints.back() : "B  Back", quiet, bg_color);
         int hint_y = footer_y + std::max(0, (footer_h - (choose ? choose->h : 0)) / 2);
         blit_crop(choose.get(), dest_surface, panel_x + pad, hint_y, panel_w / 2);
         if (back)

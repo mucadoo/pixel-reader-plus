@@ -86,6 +86,13 @@ public:
     bool get_thin_bar() const;
     void set_thin_bar(bool on);
 
+    // Where the bar with the titles, page and percents goes: 0 under the text, 1 above it
+    int get_bar_position() const;
+    void set_bar_position(int position);
+    // A thin line between the bar and the text
+    bool get_bar_rule() const;
+    void set_bar_rule(bool on);
+
     // Lines of the old screen kept when a scroll or page jump moves on (0 to 3)
     int get_scroll_overlap() const;
     void set_scroll_overlap(int lines);

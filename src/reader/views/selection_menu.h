@@ -28,6 +28,7 @@ class SelectionMenu: public View
     menu_draw::Marquee marquee;
     bool close_on_select = false;
     bool compact = false;
+    bool wide = false;
     bool x_is_used = false;
     bool show_status = false;
     std::string status_shown;
@@ -75,6 +76,9 @@ public:
     void set_title(std::string title);
     // A short menu drawn over the screen behind it.
     void set_compact(bool compact);
+    // A compact menu drawn like the settings: the full width, with rules under the title and above
+    // the hints, which are the first and last of the hints, and the details at the right of the rows.
+    void set_wide(bool on) { wide = on; needs_render = true; }
     // Row that stays marked after the cursor moves, such as the chapter being read.
     void set_marker(uint32_t index);
     // Quiet text at the right end of each row, parallel to the entries. Empty means none.

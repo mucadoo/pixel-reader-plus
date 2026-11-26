@@ -241,7 +241,19 @@ struct TokenViewState
     // Where the first line starts: the top margin and half of what is left over.
     int top_pad() const
     {
-        return top_margin + excess_pxl_y() / 2;
+        // A bar above the text takes the first line.
+        const bool bar_above = token_view_styling.get_show_title_bar() && token_view_styling.get_bar_position() == 1;
+        return top_margin + excess_pxl_y() / 2 + (bar_above ? line_height : 0);
+    }
+
+    // Where the line of the bar starts, when the bar is shown.
+    int bar_line_y() const
+    {
+        if (token_view_styling.get_bar_position() == 1)
+        {
+            return top_margin + excess_pxl_y() / 2;
+        }
+        return top_pad() + num_text_display_lines() * line_height;
     }
 
     int line_pxl_limit_y() const
@@ -505,6 +517,23 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             return text;
         case BarItem::BookPercent:
             snprintf(text, sizeof(text), "Book %d%%", state.title_book_percent);
+            return text;
+        case BarItem::BothPercents:
+            snprintf(text, sizeof(text), "Ch %d%%  Book %d%%", state.title_chapter_percent, state.title_book_percent);
+            return text;
+        case BarItem::PageBothPercents:
+            if (!state.title_label.empty())
+            {
+                snprintf(text, sizeof(text), "p. %s  Ch %d%%  Book %d%%", state.title_label.c_str(), state.title_chapter_percent, state.title_book_percent);
+            }
+            else if (state.title_pages > 0)
+            {
+                snprintf(text, sizeof(text), "%u / %u  Ch %d%%  Book %d%%", state.title_page, state.title_pages, state.title_chapter_percent, state.title_book_percent);
+            }
+            else
+            {
+                snprintf(text, sizeof(text), "Ch %d%%  Book %d%%", state.title_chapter_percent, state.title_book_percent);
+            }
             return text;
         case BarItem::ChapterNumber:
             if (state.title_chapter_index <= 0 || state.title_chapter_count <= 0)
@@ -1104,8 +1133,10 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
                     int screen_start_y = line_y + img_excess_y / 2 - line_height * line_offset;
 
                     // Crop off-screen part of image. Allow to extend to edge of screen.
-                    Sint16 src_y = std::max(-screen_start_y, 0);
-                    Sint16 dst_y = std::max(screen_start_y, 0);
+                    // A bar above the text keeps the picture off its line.
+                    const int top_limit = state->token_view_styling.get_show_title_bar() && state->token_view_styling.get_bar_position() == 1 ? padding_y : 0;
+                    Sint16 src_y = std::max(top_limit - screen_start_y, 0);
+                    Sint16 dst_y = std::max(screen_start_y, top_limit);
 
                     if (surface && src_y < (Sint16)image_line->height)
                     {
@@ -1196,14 +1227,14 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
     if (state->selecting)
     {
         int band_y = state->token_view_styling.get_show_title_bar()
-            ? padding_y + state->num_text_display_lines() * line_height
+            ? state->bar_line_y()
             : static_cast<int>(SCREEN_HEIGHT) - line_height;
         draw_selection_hint(dest_surface, font, theme, state->extending, band_y, line_height);
     }
     else if (state->token_view_styling.get_show_title_bar())
     {
         // Recompute for short book case
-        line_y = padding_y + state->num_text_display_lines() * line_height;
+        line_y = state->bar_line_y();
         SDL_Rect title_crop_rect = {0, 0, 0, (Uint16)line_height};
 
         // The three slots of the bar. The right and middle slots take the room
@@ -1261,6 +1292,16 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         }
     }
 
+    if (state->token_view_styling.get_show_title_bar() && state->token_view_styling.get_bar_rule() && !state->selecting)
+    {
+        // A line between the bar and the text.
+        const int rule_y = state->token_view_styling.get_bar_position() == 1
+            ? state->bar_line_y() + line_height - 1
+            : state->bar_line_y();
+        SDL_Rect rule = {static_cast<Sint16>(line_padding), static_cast<Sint16>(rule_y), static_cast<Uint16>(static_cast<int>(SCREEN_WIDTH) - line_padding * 2), 1};
+        SDL_FillRect(dest_surface, &rule, SDL_MapRGB(dest_surface->format, theme.secondary_text.r, theme.secondary_text.g, theme.secondary_text.b));
+    }
+
     if (state->token_view_styling.get_thin_bar())
     {
         if (!state->chapter_ticks_ready)
@@ -1279,7 +1320,7 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         const auto here = state->doc_reader->get_progress_extent(get_address(), false);
         const double fraction = here.second > 0 ? std::min(1.0, static_cast<double>(here.first) / here.second) : 0.0;
         const int bar_w = static_cast<int>(SCREEN_WIDTH);
-        const int bar_top = static_cast<int>(SCREEN_HEIGHT) - 3;
+        const int bar_top = state->token_view_styling.get_bar_position() == 1 ? 0 : static_cast<int>(SCREEN_HEIGHT) - 3;
         auto paint = [&](int x, int y, int w, int h, SDL_Color color) {
             SDL_Rect rect = {static_cast<Sint16>(x), static_cast<Sint16>(y), static_cast<Uint16>(std::max(0, w)), static_cast<Uint16>(h)};
             SDL_FillRect(dest_surface, &rect, SDL_MapRGB(dest_surface->format, color.r, color.g, color.b));
@@ -2449,6 +2490,20 @@ void TokenView::move_word_selection(SDLKey key)
         }
     };
 
+    // Past the edge of what is shown: Page mode turns a page, because a page never moves by a line
+    // (it would be put straight back), and Scroll mode moves the text by a line.
+    const bool page_mode = state->token_view_styling.get_reading_mode() == ReadingMode::Page;
+    const auto move_view = [this, page_mode](int direction) {
+        if (page_mode)
+        {
+            turn_page(direction);
+        }
+        else
+        {
+            scroll(direction);
+        }
+    };
+
     if (key == SW_BTN_RIGHT)
     {
         if (index + 1 < static_cast<int>(state->page_words.size()))
@@ -2457,7 +2512,7 @@ void TokenView::move_word_selection(SDLKey key)
             return;
         }
         DocAddr previous = current.begin;
-        scroll(1);
+        move_view(1);
         layout_visible_words(*state);
         int next = -1;
         for (int i = 0; i < static_cast<int>(state->page_words.size()); ++i)
@@ -2480,7 +2535,7 @@ void TokenView::move_word_selection(SDLKey key)
             return;
         }
         DocAddr previous = current.begin;
-        scroll(-1);
+        move_view(-1);
         layout_visible_words(*state);
         int next = -1;
         for (int i = 0; i < static_cast<int>(state->page_words.size()); ++i)
@@ -2494,24 +2549,43 @@ void TokenView::move_word_selection(SDLKey key)
         return;
     }
 
-    int direction = key == SW_BTN_UP ? -1 : 1;
-    int target_line = current.line_index + direction;
-    int x = current.x + current.w / 2;
-    int next = closest_on_line(state->page_words, target_line, x);
-    if (next >= 0)
+    const int direction = key == SW_BTN_UP ? -1 : 1;
+    const int x = current.x + current.w / 2;
+    const DocAddr previous = current.begin;
+    // The nearest line in that direction that has words: blank lines between paragraphs are passed over.
+    const int shown_lines = visible_text_lines(*state);
+    for (int target_line = current.line_index + direction; target_line >= 0 && target_line < shown_lines; target_line += direction)
     {
-        select_index(next);
-        return;
+        const int next = closest_on_line(state->page_words, target_line, x);
+        if (next >= 0)
+        {
+            select_index(next);
+            return;
+        }
     }
 
-    scroll(direction);
+    move_view(direction);
     layout_visible_words(*state);
     if (state->page_words.empty())
     {
         return;
     }
+    if (page_mode)
+    {
+        // On a new page the cursor goes to its first line when moving down, or its last when moving up.
+        // When the page did not change (the end of the book) it stays where it was.
+        if (word_index(*state, previous) >= 0)
+        {
+            select_index(word_index(*state, previous));
+            return;
+        }
+    }
     int edge = state->page_words.front().line_index;
-    if (direction > 0)
+    if (direction > 0 && !page_mode)
+    {
+        edge = state->page_words.back().line_index;
+    }
+    else if (direction < 0 && page_mode)
     {
         edge = state->page_words.back().line_index;
     }

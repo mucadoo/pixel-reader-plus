@@ -57,7 +57,7 @@ const std::vector<Category> &categories()
         {"Page layout", {10, 11, 12, 13, 14, 15, 16, 17, 18, 38}, false},
         {"Text", {19, 20, 23, 24, 40, 29, 37}, false},
         {"Reading", {5, 4, 25, 26, 21, 27, 47}, false},
-        {"Bar and clock", {6, 7, 8, 9, 22}, false},
+        {"Bar and clock", {6, 7, 8, 9, 48, 49, 22}, false},
         {"Library and power", {36, 41, 44, 34, 35, 42}, false},
         {"Controls", {43}, true},
     };
@@ -238,6 +238,8 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Button actions", "Open", false, sys_font},
         {"Text contrast", text_contrast_label(sys_styling.get_text_contrast()), true, sys_font},
         {"Dictionary order", "Open", false, sys_font},
+        {"Bar position", token_view_styling.get_bar_position() == 1 ? "Top" : "Bottom", true, sys_font},
+        {"Bar line", token_view_styling.get_bar_rule() ? "On" : "Off", true, sys_font},
     };
 
     // What is on screen: the groups, or the rows of the group that was opened.
@@ -269,10 +271,11 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
     {
         font_h = std::max(font_h, TTF_FontHeight(user_font));
     }
-    const int row_h = font_h + 12;
-    const int title_h = font_h + 10;
-    const int footer_h = font_h + 8;
-    const int pad = 16;
+    // The same measures as the compact menus (the book menu and the others), so they look alike.
+    const int row_h = std::max(detect_line_height(sys_font) + 4, font_h + 4);
+    const int title_h = row_h;
+    const int footer_h = row_h;
+    const int pad = 18;
     const int margin = 18;
     const int panel_w = static_cast<int>(SCREEN_WIDTH) - margin * 2;
     const int max_panel_h = static_cast<int>(SCREEN_HEIGHT) - margin * 2;
@@ -327,7 +330,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
     );
     SDL_Rect title_rule = {
         static_cast<Sint16>(panel_x + pad),
-        static_cast<Sint16>(panel_y + pad + title_h),
+        static_cast<Sint16>(panel_y + pad + title_h + 6),
         static_cast<Uint16>(panel_w - pad * 2),
         1
     };
@@ -589,6 +592,14 @@ void SettingsView::on_keypress(SDLKey key)
                         (token_view_styling.get_margin_bottom() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
                 }
+                else if (line_selected == ROW_BAR_POSITION)
+                {
+                    token_view_styling.set_bar_position(token_view_styling.get_bar_position() == 1 ? 0 : 1);
+                }
+                else if (line_selected == ROW_BAR_RULE)
+                {
+                    token_view_styling.set_bar_rule(!token_view_styling.get_bar_rule());
+                }
                 else if (line_selected == ROW_RULER)
                 {
                     token_view_styling.set_ruler((token_view_styling.get_ruler() + RULER_MODE_COUNT + dir) % RULER_MODE_COUNT);
@@ -774,6 +785,9 @@ void SettingsView::on_keypress(SDLKey key)
             {
                 action->second();
             }
+            break;
+        case SW_BTN_X:
+            _is_done = true; // the key that opens the settings also closes them
             break;
         case SW_BTN_B:
             if (category >= 0)

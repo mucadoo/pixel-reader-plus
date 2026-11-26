@@ -2,6 +2,7 @@
 #define GROUPED_MENU_H_
 
 #include "reader/view.h"
+#include "sys/keymap.h"
 
 #include <cstdint>
 #include <functional>
@@ -31,7 +32,9 @@ void open_grouped_menu(
     const std::string &title,
     std::vector<GroupedEntry> entries,
     std::function<void(uint32_t)> on_choose,
-    std::vector<std::string> group_order = {}
+    std::vector<std::string> group_order = {},
+    // The key that opened the menu: pressing it again closes the menu, from any screen of it.
+    SDLKey close_key = SW_BTN_SELECT
 );
 
 #endif

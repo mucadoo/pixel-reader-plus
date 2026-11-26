@@ -54,7 +54,9 @@ class SettingsView: public View
     static constexpr uint32_t ROW_BUTTONS = 45;
     static constexpr uint32_t ROW_TEXT_CONTRAST = 46;
     static constexpr uint32_t ROW_DICTIONARY_ORDER = 47;
-    static constexpr int ROW_COUNT = 48;
+    static constexpr uint32_t ROW_BAR_POSITION = 48;
+    static constexpr uint32_t ROW_BAR_RULE = 49;
+    static constexpr int ROW_COUNT = 50;
 
     bool _is_done = false;
     bool needs_render = true;

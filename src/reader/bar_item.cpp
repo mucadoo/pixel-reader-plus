@@ -19,6 +19,8 @@ const ItemInfo ITEMS[] = {
     {BarItem::Page, "page", "Page"},
     {BarItem::ChapterPercent, "chapter_percent", "Chapter %"},
     {BarItem::BookPercent, "book_percent", "Book %"},
+    {BarItem::BothPercents, "both_percents", "Chapter % and book %"},
+    {BarItem::PageBothPercents, "page_both_percents", "Page, chapter %, book %"},
     {BarItem::Time, "time", "Time"},
     {BarItem::Date, "date", "Date"},
     {BarItem::ChapterNumber, "chapter_number", "Chapter x of y"},

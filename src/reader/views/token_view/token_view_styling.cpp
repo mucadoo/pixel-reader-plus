@@ -25,6 +25,8 @@ struct TokenViewStylingState
     std::string search_history;
     int search_options = 1;
     bool thin_bar = false;
+    int bar_position = 0; // 0 under the text, 1 above it
+    bool bar_rule = false; // a thin line between the bar and the text
     int scroll_overlap = 0;
     int margin_right = 0;
     int margin_top = 0;
@@ -497,6 +499,35 @@ void TokenViewStyling::set_thin_bar(bool on)
     if (state->thin_bar != on)
     {
         state->thin_bar = on;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_bar_position() const
+{
+    return state->bar_position;
+}
+
+void TokenViewStyling::set_bar_position(int position)
+{
+    position = std::clamp(position, 0, 1);
+    if (state->bar_position != position)
+    {
+        state->bar_position = position;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_bar_rule() const
+{
+    return state->bar_rule;
+}
+
+void TokenViewStyling::set_bar_rule(bool on)
+{
+    if (state->bar_rule != on)
+    {
+        state->bar_rule = on;
         notify_subscribers();
     }
 }

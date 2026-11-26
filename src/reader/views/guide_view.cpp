@@ -45,7 +45,7 @@ const std::vector<Section> &sections()
             {"", "Turning forward on the last page shows the end of the book: the next book, a star rating and your time."},
         }},
         {"Select a word", {
-            {"D-pad", "Move the cursor. Hold to repeat. At the edge of the page it turns the page."},
+            {"D-pad", "Move the cursor. Hold to repeat. At the edge of the page it turns the page, in Page mode up and down too."},
             {"Start", "Keep this word and add the words you move through."},
             {"X", "Grow the selection to the sentence, then the paragraph, then back to the word."},
             {"A", "Look up, Search book, Highlight, Underline or Strike out. On a link: Show note and Go to link."},
@@ -70,7 +70,7 @@ const std::vector<Section> &sections()
             {"A", "Open the book or folder."},
             {"B", "Go up one folder."},
             {"X", "Open the settings."},
-            {"Y", "Options for the entry: mark books, new folder, paste, properties, favorite, status, search, collections, library tools, rename and delete."},
+            {"Y", "Options for the entry: mark books, new folder, paste, properties, favorite, status, search, collections, library tools, rename and delete. Y again closes them."},
             {"Select", "Switch between the list and the cover grid."},
             {"Start", "Change the order: name, title, author, series, recent, size, newest, most read."},
             {"Menu", "Quit the reader."},
@@ -78,6 +78,7 @@ const std::vector<Section> &sections()
         }},
         {"Settings", {
             {"A / B", "A opens a group, B goes back or closes the settings."},
+            {"X", "Close the settings from any screen."},
             {"Up / Down", "Change the row."},
             {"Left / Right", "Change the choice on the row."},
             {"", "The groups are Theme and colors, Page layout, Text, Reading, Bar and clock, Library and power and Controls."},

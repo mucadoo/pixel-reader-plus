@@ -73,7 +73,8 @@ void open_grouped_menu(
     const std::string &title,
     std::vector<GroupedEntry> entries,
     std::function<void(uint32_t)> on_choose,
-    std::vector<std::string> group_order
+    std::vector<std::string> group_order,
+    SDLKey close_key
 )
 {
     auto nav = std::make_shared<Nav>();
@@ -123,6 +124,7 @@ void open_grouped_menu(
 
     auto menu = std::make_shared<SelectionMenu>(std::vector<std::string> {}, styling);
     menu->set_compact(true);
+    menu->set_wide(true);
     std::weak_ptr<SelectionMenu> weak = menu;
     menu->set_on_selection([nav, weak](uint32_t index) {
         auto menu = weak.lock();
@@ -154,10 +156,10 @@ void open_grouped_menu(
             menu->close();
         }
     });
-    menu->set_default_on_keypress([](SDLKey key, SelectionMenu &m) {
-        if (key == SW_BTN_SELECT)
+    menu->set_default_on_keypress([close_key](SDLKey key, SelectionMenu &m) {
+        if (key == close_key)
         {
-            m.close(); // the key that opens the book menu also closes it
+            m.close(); // the key that opens the menu also closes it
         }
     });
     menu->set_on_back([nav, weak]() {

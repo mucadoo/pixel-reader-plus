@@ -3434,7 +3434,8 @@ void open_options(FSState *s)
         s->on_open_view, s->styling,
         entry.is_dir ? folder_title(book) : entry_title(s, entry),
         std::move(grouped), choose,
-        {"View", "Collections", "Files"}
+        {"View", "Collections", "Files"},
+        SW_BTN_Y
     );
 }
 

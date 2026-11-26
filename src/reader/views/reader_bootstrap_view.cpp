@@ -1,4 +1,5 @@
 #include "./reader_bootstrap_view.h"
+#include "reader/book_fonts.h"
 
 #include "./popup_view.h"
 #include "./reader_view.h"
@@ -75,6 +76,14 @@ void ReaderBootstrapView::load_reader()
     }
 
     state_store.set_current_book_path(book_path);
+
+    book_fonts::open(*reader, reader->get_id(), !(token_view_styling.get_tweaks() & TWEAK_PLAIN_FONTS));
+    if (!(token_view_styling.get_tweaks() & TWEAK_PLAIN_PAGES))
+    {
+        // Finds where the printed pages of the book start, which reads parts of it.
+        progress_screen::show(sys_styling, "Opening book", shown_name, 100);
+        reader->page_list();
+    }
 
     auto book_id = reader->get_id();
     const DocAddr resume_address = state_store.get_book_address(book_id).value_or(0);

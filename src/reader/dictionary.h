@@ -40,6 +40,9 @@ public:
     void load(const std::function<void(int)> &progress);
 };
 
+// The dictionary choice that stands for every dictionary at once.
+constexpr const char *ALL_DICTIONARIES = "*all";
+
 // The names of the dictionaries on the card: every .txt file in resources/dictionary except the
 // license notes, and every StarDict dictionary (a folder with a .ifo file in it, or a .ifo file with its
 // .idx and .dict or .dict.dz beside it). Drop a file of "word<TAB>meaning" lines in that folder to add your own; words are

@@ -58,7 +58,7 @@ inline const char *letter_spacing_label(int level)
 inline std::string style_tweaks_label(int mask)
 {
     int count = 0;
-    for (int bit = 0; bit < 4; ++bit)
+    for (int bit = 0; bit < 6; ++bit)
     {
         count += (mask >> bit) & 1;
     }

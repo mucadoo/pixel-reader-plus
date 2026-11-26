@@ -187,7 +187,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Letter spacing", letter_spacing_label(token_view_styling.get_letter_spacing()), true, sys_font},
         {"Scroll overlap", std::to_string(token_view_styling.get_scroll_overlap()) + (token_view_styling.get_scroll_overlap() == 1 ? " line" : " lines"), true, sys_font},
         {"Reading ruler", ruler_label(token_view_styling.get_ruler()), true, sys_font},
-        {"Dictionary", token_view_styling.get_dictionary().empty() ? std::string("Auto") : token_view_styling.get_dictionary(), true, sys_font},
+        {"Dictionary", token_view_styling.get_dictionary().empty() ? std::string("Auto") : (token_view_styling.get_dictionary() == ALL_DICTIONARIES ? std::string("All at once") : token_view_styling.get_dictionary()), true, sys_font},
         {"Screen dim", screen_dim::label_for_level(token_view_styling.get_screen_dim()), true, sys_font},
         {"Book styles", token_view_styling.get_book_styles() ? "On" : "Off", true, sys_font},
         {"Highlight color", highlight_color_name(token_view_styling.get_highlight_color()), true, sys_font},
@@ -594,6 +594,10 @@ void SettingsView::on_keypress(SDLKey key)
                 else if (line_selected == ROW_DICTIONARY)
                 {
                     std::vector<std::string> choices = {""};
+                    if (dictionary_names().size() > 1)
+                    {
+                        choices.push_back(ALL_DICTIONARIES);
+                    }
                     for (const std::string &name : dictionary_names())
                     {
                         choices.push_back(name);

@@ -37,6 +37,13 @@ public:
     void on_keypress(SDLKey key) override;
     void on_keyheld(SDLKey key, uint32_t held_time_ms) override;
 
+    // The printed page number to show in the bar in place of the counted one. Empty for none.
+    void set_page_label(const std::string &label);
+    // Where the bookmarks are, for the corner mark on a page that holds one.
+    void set_marks(std::vector<DocAddr> marks);
+    // The last line of the book is on screen.
+    bool at_end() const;
+
     DocAddr get_address() const;
     void seek_to_address(DocAddr address);
 

@@ -5,6 +5,7 @@
 
 #include "doc_api/doc_reader.h"
 #include "filetypes/epub/book_style.h"
+#include "reader/book_fonts.h"
 #include "reader/highlights.h"
 #include "reader/hyphenation.h"
 #include "reader/layout_options.h"
@@ -92,6 +93,8 @@ struct TokenViewState
     int title_book_minutes = -1;
     uint32_t title_page = 0;
     uint32_t title_pages = 0;
+    std::string title_label; // the printed page number the book gives, empty when it gives none
+    std::vector<DocAddr> marks; // where the bookmarks are
     long long shown_minute = -1; // the minute the clock in the bar was drawn for
 
     std::function<void(DocAddr)> on_scroll;
@@ -142,6 +145,10 @@ struct TokenViewState
         std::string path = pre
             ? "resources/fonts/DejaVuSansMono.ttf"
             : sys_styling.get_font_name();
+        if (!pre && book_fonts::active())
+        {
+            path = book_fonts::pick(style);
+        }
 
         auto try_bold_file = [&](const std::string &candidate) -> TTF_Font * {
             if (!(style & TTF_STYLE_BOLD))
@@ -432,7 +439,11 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
         case BarItem::BookTitle:
             return state.book_title;
         case BarItem::Progress:
-            if (state.title_pages > 0)
+            if (!state.title_label.empty())
+            {
+                snprintf(text, sizeof(text), "p. %s  %d%%", state.title_label.c_str(), state.title_progress_percent);
+            }
+            else if (state.title_pages > 0)
             {
                 snprintf(text, sizeof(text), "%u / %u  %d%%", state.title_page, state.title_pages, state.title_progress_percent);
             }
@@ -442,6 +453,11 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
             }
             return text;
         case BarItem::Page:
+            if (!state.title_label.empty())
+            {
+                snprintf(text, sizeof(text), "p. %s", state.title_label.c_str());
+                return text;
+            }
             if (state.title_pages == 0)
             {
                 return "";
@@ -1103,6 +1119,36 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         }
     }
 
+    if (!state->marks.empty())
+    {
+        // A small corner on a page that holds a bookmark.
+        const DisplayLine *first = state->line_scroller.get_line_relative(0);
+        const DisplayLine *after = state->line_scroller.get_line_relative(num_text_display_lines);
+        if (first)
+        {
+            const DocAddr from = first->address;
+            bool marked = false;
+            for (DocAddr mark : state->marks)
+            {
+                if (mark >= from && (!after || mark < after->address))
+                {
+                    marked = true;
+                    break;
+                }
+            }
+            if (marked)
+            {
+                const int size = std::max(10, line_height * 3 / 5);
+                const Uint32 color = SDL_MapRGB(dest_surface->format, theme.main_text.r, theme.main_text.g, theme.main_text.b);
+                for (int y = 0; y < size; ++y)
+                {
+                    SDL_Rect strip = {static_cast<Sint16>(static_cast<int>(SCREEN_WIDTH) - (size - y)), static_cast<Sint16>(y), static_cast<Uint16>(size - y), 1};
+                    SDL_FillRect(dest_surface, &strip, color);
+                }
+            }
+        }
+    }
+
     if (state->selecting)
     {
         int band_y = state->token_view_styling.get_show_title_bar()
@@ -1238,6 +1284,14 @@ static int get_bounded_scroll_amount(TokenLineScroller &line_scroller, int num_d
     }
 
     return new_line - cur_line;
+}
+
+bool TokenView::at_end() const
+{
+    const int size = std::max(1, state->num_text_display_lines());
+    state->line_scroller.get_line_relative(size);
+    const auto end_line = state->line_scroller.end_line_number();
+    return end_line && state->line_scroller.get_line_number() + size >= *end_line;
 }
 
 void TokenView::scroll(int num_lines)
@@ -1536,6 +1590,24 @@ void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, i
     }
 }
 
+void TokenView::set_page_label(const std::string &label)
+{
+    if (label != state->title_label)
+    {
+        state->title_label = label;
+        state->needs_render = true;
+    }
+}
+
+void TokenView::set_marks(std::vector<DocAddr> marks)
+{
+    if (marks != state->marks)
+    {
+        state->marks = std::move(marks);
+        state->needs_render = true;
+    }
+}
+
 bool TokenView::tick(uint32_t)
 {
     const auto &styling = state->token_view_styling;
@@ -1564,6 +1636,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key += std::to_string(state.sys_styling.get_font_size());
     key.push_back('\n');
     key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
+    key += book_fonts::key();
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
     key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + (state.line_scroller.is_comic() ? ",cf" + std::to_string(state.comic_fit) + (state.comic_split ? "s" : "") : std::string()) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');

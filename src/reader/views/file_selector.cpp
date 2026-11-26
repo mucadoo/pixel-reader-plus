@@ -3,6 +3,7 @@
 #include "./book_grid.h"
 #include "./selection_menu.h"
 #include "filetypes/open_doc.h"
+#include "reader/next_book.h"
 #include "reader/backup.h"
 #include "reader/book_covers.h"
 #include "reader/book_info.h"
@@ -33,6 +34,7 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <set>
 #include <vector>
 
 struct FSState
@@ -47,6 +49,8 @@ struct FSState
     std::function<void(bool)> on_view_mode_change;
     std::function<void(BrowserSort)> on_sort_change;
     BrowserSort sort = BrowserSort::Name;
+    std::string series_next_for; // the finished book the next volume below was worked out for
+    std::string series_next; // the next volume of its series, empty when there is none
     std::string continue_name; // name of the Continue reading row, empty when there is none
     size_t pinned_count = 0; // rows after the way up that are not part of the folder: Continue and favorites
     std::map<std::string, std::string> pinned_prefix; // name of a pinned row to the text put in front of it
@@ -64,6 +68,9 @@ struct FSState
     std::string collection;     // the collection being browsed, empty for a search
     std::string search_query;
     std::vector<std::filesystem::path> search_hits;
+    std::set<std::string> marked;                 // books marked for copy, move or delete (whole paths)
+    std::vector<std::filesystem::path> clipboard; // books copied or cut, waiting for Paste here
+    bool clipboard_move = false;
 
     SelectionMenu menu;
     std::unique_ptr<BookCovers> covers;
@@ -357,6 +364,27 @@ void refresh_path_entries(FSState *s)
             }
         }
     }
+    if (const auto recent = library_log().most_recent())
+    {
+        const LibraryLog::Entry *log = library_log().get(*recent);
+        if (log && log->finished() && s->info && std::filesystem::exists(*recent))
+        {
+            // The next volume of the series the finished book belongs to.
+            if (s->series_next_for != recent->string())
+            {
+                s->series_next_for = recent->string();
+                s->series_next.clear();
+                if (auto next = next_book::find_next(*recent, next_book::shared_cache(), true))
+                {
+                    s->series_next = next->path.string();
+                }
+            }
+            if (!s->series_next.empty() && !(s->hide_finished && library_log().get(s->series_next) && library_log().get(s->series_next)->finished()))
+            {
+                pin(s->series_next, "Next in series: ");
+            }
+        }
+    }
     for (const auto &favorite : library_log().favorites())
     {
         pin(favorite, "* ");
@@ -427,6 +455,10 @@ void rebuild_views(FSState *s)
             if (prefix.empty() && log && log->favorite)
             {
                 prefix = "* ";
+            }
+            if (s->marked.count((s->path / entry.name).string()))
+            {
+                prefix = "[x] " + prefix;
             }
             const std::string title = entry_title(s, entry);
             const BookInfo *info = s->info ? s->info->get(s->path / entry.name) : nullptr;
@@ -776,7 +808,160 @@ void delete_book(FSState *s, const std::filesystem::path &book)
         s->on_book_deleted(book_id);
     }
     s->search_hits.erase(std::remove(s->search_hits.begin(), s->search_hits.end(), book), s->search_hits.end());
+    s->marked.erase(book.string());
     refresh_keeping_cursor(s);
+}
+
+// A name that is free in the folder: the file's own, else with (2), (3)... before the extension.
+std::filesystem::path free_name(const std::filesystem::path &folder, const std::filesystem::path &file)
+{
+    std::filesystem::path target = folder / file.filename();
+    std::error_code ec;
+    for (int copy = 2; std::filesystem::exists(target, ec) && copy < 1000; ++copy)
+    {
+        target = folder / (file.stem().string() + " (" + std::to_string(copy) + ")" + file.extension().string());
+    }
+    return target;
+}
+
+// The books to act on: the marked ones that are still there, else the one under the cursor.
+std::vector<std::filesystem::path> acting_books(const FSState *s, const std::filesystem::path &current)
+{
+    std::vector<std::filesystem::path> books;
+    std::error_code ec;
+    for (const std::string &name : s->marked)
+    {
+        if (std::filesystem::exists(name, ec))
+        {
+            books.emplace_back(name);
+        }
+    }
+    if (books.empty())
+    {
+        books.push_back(current);
+    }
+    return books;
+}
+
+// Puts the copied or cut books in the folder shown. A cut book keeps its place, status and collections.
+void paste_clipboard(FSState *s)
+{
+    if (s->clipboard.empty() || s->search_active)
+    {
+        return;
+    }
+    const bool move = s->clipboard_move;
+    int done = 0;
+    int failed = 0;
+    for (size_t i = 0; i < s->clipboard.size(); ++i)
+    {
+        const std::filesystem::path from = s->clipboard[i];
+        progress_screen::show(s->styling, move ? "Moving" : "Copying", from.filename().string(), static_cast<int>(i * 100 / s->clipboard.size()));
+        std::error_code ec;
+        if (!std::filesystem::exists(from, ec))
+        {
+            ++failed;
+            continue;
+        }
+        if (move && from.parent_path() == s->path)
+        {
+            ++done; // already here
+            continue;
+        }
+        const std::filesystem::path to = free_name(s->path, from);
+        if (move)
+        {
+            std::filesystem::rename(from, to, ec);
+            if (ec)
+            {
+                // another card or drive: copy, then remove
+                ec.clear();
+                std::filesystem::copy_file(from, to, ec);
+                if (!ec)
+                {
+                    std::filesystem::remove(from, ec);
+                    ec.clear();
+                }
+            }
+            if (!ec)
+            {
+                library_log().rename(from, to);
+                collections::rename_book(from, to);
+            }
+        }
+        else
+        {
+            std::filesystem::copy_file(from, to, ec);
+        }
+        if (ec)
+        {
+            ++failed;
+        }
+        else
+        {
+            ++done;
+        }
+    }
+    library_log().flush();
+    collections::flush();
+    s->clipboard.clear();
+    s->marked.clear();
+    refresh_path_entries(s);
+    focus_first_item(s);
+    if (s->on_info)
+    {
+        std::string text = std::to_string(done) + (move ? " moved" : " copied");
+        if (failed > 0)
+        {
+            text += ", " + std::to_string(failed) + " failed";
+        }
+        s->on_info(move ? "Move" : "Copy", text);
+    }
+}
+
+// Makes a folder in the folder shown.
+void make_folder(FSState *s, const std::string &typed)
+{
+    std::string name = typed;
+    while (!name.empty() && name.back() == ' ')
+    {
+        name.pop_back();
+    }
+    if (name.empty())
+    {
+        return;
+    }
+    if (name.find_first_of("/\\:*?\"<>|") != std::string::npos || name[0] == '.')
+    {
+        if (s->on_info)
+        {
+            s->on_info("New folder", "A folder name cannot start with a dot or contain / \\ : * ? \" < > |");
+        }
+        return;
+    }
+    std::error_code ec;
+    const std::filesystem::path folder = s->path / name;
+    if (std::filesystem::exists(folder, ec))
+    {
+        if (s->on_info)
+        {
+            s->on_info("New folder", "That name is already used here.");
+        }
+        return;
+    }
+    if (!std::filesystem::create_directory(folder, ec) || ec)
+    {
+        if (s->on_info)
+        {
+            s->on_info("New folder", "The folder could not be made.");
+        }
+        return;
+    }
+    refresh_path_entries(s);
+    if (!focus_entry(s, name))
+    {
+        focus_first_item(s);
+    }
 }
 
 // Shows the books of a collection in place of the folder.
@@ -1646,7 +1831,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection };
+    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -1692,6 +1877,38 @@ void open_options(FSState *s)
         names.push_back("Rename file");
         acts.push_back(Act::Delete);
         names.push_back("Delete book");
+        const bool is_marked = s->marked.count(book.string()) > 0;
+        acts.push_back(Act::Mark);
+        names.push_back(is_marked ? "Unmark" : "Mark for copy, move or delete");
+    }
+    {
+        // The books to copy, move or delete: the marked ones, else the one under the cursor
+        const size_t marks = s->marked.size();
+        if (marks > 0 || !entry.is_dir)
+        {
+            const std::string what = marks > 0 ? " marked (" + std::to_string(marks) + ")" : " this book";
+            acts.push_back(Act::CopyBooks);
+            names.push_back("Copy" + what);
+            acts.push_back(Act::MoveBooks);
+            names.push_back("Move" + what);
+            if (marks > 0)
+            {
+                acts.push_back(Act::DeleteBooks);
+                names.push_back("Delete" + what);
+                acts.push_back(Act::ClearMarks);
+                names.push_back("Clear marks");
+            }
+        }
+        if (!s->search_active)
+        {
+            if (!s->clipboard.empty())
+            {
+                acts.push_back(Act::Paste);
+                names.push_back("Paste here (" + std::to_string(s->clipboard.size()) + (s->clipboard_move ? " to move)" : " to copy)"));
+            }
+            acts.push_back(Act::NewFolder);
+            names.push_back("New folder");
+        }
     }
 
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
@@ -1778,6 +1995,63 @@ void open_options(FSState *s)
                     if (choice == 1)
                     {
                         delete_book(s, book);
+                    }
+                });
+                s->on_open_view(confirm);
+                break;
+            }
+            case Act::Mark:
+                if (!s->marked.erase(book.string()))
+                {
+                    s->marked.insert(book.string());
+                }
+                refresh_keeping_cursor(s);
+                break;
+            case Act::ClearMarks:
+                s->marked.clear();
+                refresh_keeping_cursor(s);
+                break;
+            case Act::CopyBooks:
+            case Act::MoveBooks:
+                s->clipboard = acting_books(s, book);
+                s->clipboard_move = acts[index] == Act::MoveBooks;
+                if (s->on_info)
+                {
+                    s->on_info(
+                        s->clipboard_move ? "Move" : "Copy",
+                        std::to_string(s->clipboard.size()) + (s->clipboard.size() == 1 ? " book is" : " books are")
+                            + " ready.\nOpen the folder to put them in, then choose Paste here from the options."
+                    );
+                }
+                break;
+            case Act::Paste:
+                paste_clipboard(s);
+                break;
+            case Act::NewFolder:
+                s->on_open_view(std::make_shared<TextInputView>(
+                    "New folder",
+                    "",
+                    [s](const std::string &name) { make_folder(s, name); },
+                    s->styling,
+                    60
+                ));
+                break;
+            case Act::DeleteBooks:
+            {
+                const std::vector<std::filesystem::path> doomed = acting_books(s, book);
+                auto confirm = std::make_shared<SelectionMenu>(std::vector<std::string> {"Keep them", "Delete them for good"}, s->styling);
+                confirm->set_title("Delete " + std::to_string(doomed.size()) + (doomed.size() == 1 ? " book?" : " books?"));
+                confirm->set_compact(true);
+                confirm->set_close_on_select();
+                confirm->set_on_selection([s, doomed](uint32_t choice) {
+                    if (choice == 1)
+                    {
+                        for (const auto &one : doomed)
+                        {
+                            delete_book(s, one);
+                        }
+                        s->marked.clear();
+                        refresh_keeping_cursor(s);
                     }
                 });
                 s->on_open_view(confirm);

@@ -1,6 +1,7 @@
 #include "./epub_reader.h"
 
 #include "./epub_doc_index.h"
+#include "./epub_fonts.h"
 #include "./epub_metadata.h"
 #include "./epub_toc_index.h"
 #include "./epub_token_iter.h"
@@ -51,6 +52,10 @@ struct EpubReaderState
     std::unique_ptr<EpubDocIndex> doc_index;
     std::unique_ptr<EpubTocIndex> toc_index;
     std::vector<TocItem> user_toc;
+    std::vector<EmbeddedFont> fonts;
+    std::vector<NavPoint> raw_pages;
+    std::vector<PageMark> pages;
+    bool pages_resolved = false;
 
     EpubReaderState(std::string path) : path(std::move(path)) {}
 };
@@ -160,6 +165,103 @@ bool EPubReader::open(DocReaderCache &cache)
             auto nav_xml = read_zip_file_str(state->zip, nav_path);
 
             epub_parse_nav(nav_path, nav_xml.data(), navmap);
+        }
+    }
+
+    // Fonts the book carries, and the printed pages it lists.
+    {
+        std::vector<FontFace> faces;
+        std::string body_family;
+        for (const auto &entry : package.id_to_manifest_item)
+        {
+            if (entry.second.media_type != "text/css")
+            {
+                continue;
+            }
+            const auto css = read_zip_file_str(state->zip, entry.second.href_absolute);
+            if (css.empty())
+            {
+                continue;
+            }
+            const std::string text(css.data(), css.size());
+            const std::string dir = std::filesystem::path(entry.second.href_absolute).parent_path().generic_string();
+            for (auto &face : parse_font_faces(text, dir))
+            {
+                faces.push_back(face);
+            }
+            const std::string family = parse_body_family(text);
+            if (!family.empty())
+            {
+                body_family = family;
+            }
+        }
+        std::string chosen = body_family;
+        bool known = false;
+        for (const auto &face : faces)
+        {
+            known = known || face.family == chosen;
+        }
+        if (!known)
+        {
+            // Without a family named for the text, only a book with a single family is clear.
+            chosen = faces.empty() ? std::string() : faces.front().family;
+            for (const auto &face : faces)
+            {
+                if (face.family != chosen)
+                {
+                    chosen.clear();
+                    break;
+                }
+            }
+        }
+        bool has_regular = false;
+        for (const auto &face : faces)
+        {
+            if (face.family == chosen)
+            {
+                has_regular = has_regular || (!face.bold && !face.italic);
+            }
+        }
+        if (has_regular)
+        {
+            for (const auto &face : faces)
+            {
+                if (face.family == chosen)
+                {
+                    state->fonts.push_back({face.src, face.bold, face.italic});
+                }
+            }
+        }
+
+        if (!package.toc_id.empty())
+        {
+            auto item = package.id_to_manifest_item.find(package.toc_id);
+            if (item != package.id_to_manifest_item.end())
+            {
+                const auto ncx_xml = read_zip_file_str(state->zip, item->second.href_absolute);
+                if (!ncx_xml.empty())
+                {
+                    epub_parse_ncx_page_list(item->second.href_absolute, ncx_xml.data(), state->raw_pages);
+                }
+            }
+        }
+        if (state->raw_pages.empty())
+        {
+            auto nav_item = std::find_if(
+                package.id_to_manifest_item.begin(),
+                package.id_to_manifest_item.end(),
+                [](const auto &item) {
+                    return item.second.media_type == APPLICATION_XHTML_XML && item.second.properties == "nav";
+                }
+            );
+            if (nav_item != package.id_to_manifest_item.end())
+            {
+                const auto nav_xml = read_zip_file_str(state->zip, nav_item->second.href_absolute);
+                if (!nav_xml.empty())
+                {
+                    epub_parse_nav_page_list(nav_item->second.href_absolute, nav_xml.data(), state->raw_pages);
+                }
+            }
         }
     }
 
@@ -307,4 +409,45 @@ std::shared_ptr<TokenIter> EPubReader::get_iter(DocAddr address) const
 std::vector<char> EPubReader::load_resource(const std::filesystem::path &path) const
 {
     return read_zip_file_str(state->zip, normalize_zip_path(path.generic_string()));
+}
+
+std::vector<EmbeddedFont> EPubReader::embedded_fonts() const
+{
+    return state->fonts;
+}
+
+const std::vector<PageMark> &EPubReader::page_list() const
+{
+    if (!state->pages_resolved)
+    {
+        state->pages_resolved = true;
+        for (const NavPoint &point : state->raw_pages)
+        {
+            const std::string &src = point.src_absolute;
+            const size_t hash = src.find('#');
+            const std::string path = hash == std::string::npos ? src : src.substr(0, hash);
+            const std::string fragment = hash == std::string::npos ? std::string() : src.substr(hash + 1);
+            const auto spine = state->doc_index->spine_index_of(path);
+            if (!spine)
+            {
+                continue;
+            }
+            DocAddr address = make_address(*spine);
+            if (!fragment.empty())
+            {
+                const auto &ids = state->doc_index->elem_id_to_address(*spine);
+                const auto it = ids.find(fragment);
+                if (it == ids.end())
+                {
+                    continue;
+                }
+                address = it->second;
+            }
+            state->pages.push_back({point.label, address});
+        }
+        std::stable_sort(state->pages.begin(), state->pages.end(), [](const PageMark &a, const PageMark &b) {
+            return a.address < b.address;
+        });
+    }
+    return state->pages;
 }

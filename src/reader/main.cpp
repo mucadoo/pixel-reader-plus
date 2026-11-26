@@ -29,6 +29,8 @@
 #include "reader/controls_guide.h"
 #include "./views/token_view/token_view_styling.h"
 #include "filetypes/open_doc.h"
+#include "reader/book_fonts.h"
+#include "reader/next_book.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
 #include <unistd.h>
@@ -144,6 +146,10 @@ void initialize_views(
             )
         );
     };
+
+    next_book::set_info_dir(store_path / "info");
+    book_fonts::set_dir(store_path / "fonts");
+    next_book::set_opener(load_book);
 
     if (requested_book_path)
     {
@@ -706,6 +712,11 @@ int main(int argc, char **argv)
         if (ran_user_code)
         {
             bool force_render = view_stack.pop_completed_views();
+            if (view_stack.top_view() == nullptr || force_render)
+            {
+                // A reader that closed to hand over to the next book of a series.
+                next_book::open_requested();
+            }
 
             if (view_stack.is_done())
             {

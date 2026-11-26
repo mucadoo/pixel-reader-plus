@@ -56,6 +56,9 @@ struct PackageContents
 std::string epub_parse_rootfile_path(const char *container_xml);
 bool epub_parse_package_contents(const std::string &rootfile_path, const char *package_xml, PackageContents &out_package);
 bool epub_parse_ncx(const std::string &ncx_file_path, const char *ncx_xml, std::vector<NavPoint> &out_navmap);
+// The printed page numbers a book keeps: one entry per page, label being the number as printed.
+bool epub_parse_ncx_page_list(const std::string &ncx_file_path, const char *ncx_xml, std::vector<NavPoint> &out);
+bool epub_parse_nav_page_list(const std::string &nav_file_path, const char *nav_xml, std::vector<NavPoint> &out);
 bool epub_parse_nav(const std::string &nav_file_path, const char *nav_xml, std::vector<NavPoint> &out_navmap);
 
 #endif

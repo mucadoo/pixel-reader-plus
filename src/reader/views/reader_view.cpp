@@ -18,6 +18,9 @@
 #include "./token_view/token_view_styling.h"
 
 #include "reader/dictionary.h"
+#include "reader/next_book.h"
+#include "filetypes/epub/book_style.h"
+#include "reader/book_info.h"
 #include "reader/text_style.h"
 #include "reader/library_log.h"
 #include "reader/reading_speed.h"
@@ -462,6 +465,16 @@ static void open_sync_menu(ReaderView &reader_view, ReaderViewState &state)
     state.view_stack.push(menu);
 }
 
+void refresh_marks(ReaderViewState &state)
+{
+    std::vector<DocAddr> marks;
+    for (const Bookmark &bookmark : state.bookmarks)
+    {
+        marks.push_back(bookmark.address);
+    }
+    state.token_view->set_marks(marks);
+}
+
 void add_bookmark(ReaderViewState &state)
 {
     const DocAddr address = get_current_address(state);
@@ -482,6 +495,7 @@ void add_bookmark(ReaderViewState &state)
         return a.address < b.address;
     });
     save_bookmarks(state.bookmarks_path, state.bookmarks);
+    refresh_marks(state);
     show_message(state, "Bookmark added");
 }
 
@@ -645,6 +659,7 @@ void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
         }
         state.bookmarks.erase(state.bookmarks.begin() + index);
         save_bookmarks(state.bookmarks_path, state.bookmarks);
+        refresh_marks(state);
         fill(m);
         m.set_cursor_pos(std::min<uint32_t>(index, state.bookmarks.empty() ? 0 : static_cast<uint32_t>(state.bookmarks.size()) - 1));
     });
@@ -906,6 +921,32 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
+    if (!state->reader->page_list().empty() && !(style_tweaks() & TWEAK_PLAIN_PAGES))
+    {
+        actions->push_back({"Go to book page", [this]() {
+            const auto &printed = state->reader->page_list();
+            state->view_stack.push(std::make_shared<TextInputView>(
+                "Go to page (" + printed.front().label + " to " + printed.back().label + ")",
+                "",
+                [this](const std::string &typed) {
+                    std::string wanted = lookup_lowercase(typed);
+                    while (!wanted.empty() && wanted.back() == ' ') wanted.pop_back();
+                    while (!wanted.empty() && wanted.front() == ' ') wanted.erase(0, 1);
+                    for (const PageMark &mark : state->reader->page_list())
+                    {
+                        if (lookup_lowercase(mark.label) == wanted)
+                        {
+                            jump_to(mark.address);
+                            return;
+                        }
+                    }
+                    show_message(*state, "That page is not in the list");
+                },
+                state->sys_styling,
+                12
+            ));
+        }});
+    }
     {
         const bool chapter = state->token_view_styling.get_progress_reporting() == ProgressReporting::CHAPTER_PERCENT;
         uint32_t page = 0;
@@ -1134,6 +1175,22 @@ void ReaderView::update_token_view_title(DocAddr address)
 
     state->token_view->set_title_progress(
         progress_percent, page, pages, chapter_percent, book_percent, chapter_minutes, book_minutes);
+
+    // The printed page number, when the book lists its pages.
+    std::string label;
+    if (!(style_tweaks() & TWEAK_PLAIN_PAGES))
+    {
+        const auto &printed = state->reader->page_list();
+        if (!printed.empty())
+        {
+            const auto after = std::upper_bound(printed.begin(), printed.end(), address, [](DocAddr value, const PageMark &mark) {
+                return value < mark.address;
+            });
+            label = after == printed.begin() ? printed.front().label : (after - 1)->label;
+        }
+    }
+    state->token_view->set_page_label(label);
+    refresh_marks(*state);
 }
 
 bool ReaderView::counting_pages() const
@@ -1436,6 +1493,41 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
             });
         }
     };
+    if (dictionary_name == ALL_DICTIONARIES && !lookup.empty())
+    {
+        // Every dictionary that knows the word, one section each.
+        const long long when = static_cast<long long>(std::time(nullptr));
+        std::string all_body;
+        int sections = 0;
+        for (const std::string &name : dictionary_names())
+        {
+            Dictionary &each = dictionaries.try_emplace(name, name).first->second;
+            load_with_bar(each, name);
+            if (!each.available())
+            {
+                continue;
+            }
+            if (auto gloss = each.lookup(lookup))
+            {
+                all_body += (all_body.empty() ? "" : "\n\n") + std::string("[") + name + "]\n" + *gloss;
+                if (sections == 0)
+                {
+                    vocabulary::add(lookup, *gloss, state.book_title, when);
+                }
+                ++sections;
+            }
+        }
+        if (sections == 0)
+        {
+            // None has it: the dictionary of the book may still offer near words.
+            show_definition(state, lookup, state.dictionary_name);
+            return;
+        }
+        auto entry = std::make_shared<DefinitionView>(lookup, all_body, state.sys_styling);
+        entry->set_lookup([&state, chosen](const std::string &word) { show_definition(state, word, chosen); });
+        state.view_stack.push(entry);
+        return;
+    }
     Dictionary *dictionary = &dictionaries.try_emplace(dictionary_name, dictionary_name).first->second;
     load_with_bar(*dictionary, dictionary_name);
     if (!dictionary->available() && dictionary_name != "english")
@@ -1522,11 +1614,17 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
             body = "No entry for \"" + lookup + "\"";
         }
     }
-    state.view_stack.push(std::make_shared<DefinitionView>(
+    auto entry = std::make_shared<DefinitionView>(
         lookup.empty() ? std::string("Look up") : lookup,
         body,
         state.sys_styling
-    ));
+    );
+    if (!lookup.empty() && dictionary->available())
+    {
+        // A word of the entry can be looked up in turn, in the same dictionary.
+        entry->set_lookup([&state, chosen](const std::string &word) { show_definition(state, word, chosen); });
+    }
+    state.view_stack.push(entry);
 }
 
 static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
@@ -1603,8 +1701,11 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
                 break;
             case Act::LookUpIn:
             {
-                const std::vector<std::string> names = dictionary_names();
-                auto pick = std::make_shared<SelectionMenu>(names, state.sys_styling);
+                std::vector<std::string> names = dictionary_names();
+                names.insert(names.begin(), ALL_DICTIONARIES);
+                std::vector<std::string> shown = names;
+                shown[0] = "All dictionaries";
+                auto pick = std::make_shared<SelectionMenu>(shown, state.sys_styling);
                 pick->set_title("Look up in");
                 pick->set_compact(true);
                 pick->set_close_on_select();
@@ -1633,6 +1734,39 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
     });
     state.view_stack.push(menu);
 }
+// Pressing forward on the last page: offer the book that comes next.
+static void offer_next_book(ReaderViewState &state)
+{
+    const auto next = next_book::find_next(state.book_path, next_book::shared_cache(), false);
+    std::vector<std::string> entries;
+    if (next)
+    {
+        next_book::shared_cache().load(next->path);
+        const BookInfo *info = next_book::shared_cache().get(next->path);
+        const std::string title = info && !info->title.empty() ? info->title : next->path.stem().string();
+        entries.push_back(std::string(next->by_series ? "Next in series: " : "Next in folder: ") + title);
+    }
+    entries.push_back("Back to the list");
+    entries.push_back("Stay here");
+    auto menu = std::make_shared<SelectionMenu>(entries, state.sys_styling);
+    menu->set_title("End of the book");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    const bool has_next = next.has_value();
+    menu->set_on_selection([&state, has_next, next](uint32_t index) {
+        if (has_next && index == 0)
+        {
+            next_book::request(next->path);
+            state.is_done = true;
+        }
+        else if (index == (has_next ? 1u : 0u))
+        {
+            state.is_done = true;
+        }
+    });
+    state.view_stack.push(menu);
+}
+
 void ReaderView::on_keypress(SDLKey key)
 {
     reading_stats::note_activity(state->book_path, static_cast<long long>(std::time(nullptr)));
@@ -1689,6 +1823,17 @@ void ReaderView::handle_keypress(SDLKey key)
     {
         state->is_done = true;
         return;
+    }
+
+    if (!state->token_view->is_word_selecting() && state->token_view_styling.get_ruler() == 0 && state->token_view->at_end())
+    {
+        const auto shoulders = get_shoulder_keymap_lr(state->sys_styling.get_shoulder_keymap());
+        const bool manga = state->token_view_styling.get_comic_manga();
+        if (key == SW_BTN_DOWN || key == (manga ? SW_BTN_LEFT : SW_BTN_RIGHT) || key == shoulders.second)
+        {
+            offer_next_book(*state);
+            return;
+        }
     }
 
     switch (key) {

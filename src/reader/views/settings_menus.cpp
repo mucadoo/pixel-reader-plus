@@ -26,6 +26,8 @@ const Tweak TWEAKS[] = {
     {TWEAK_PLAIN_SIZES, "Ignore font sizes"},
     {TWEAK_PLAIN_CENTER, "Ignore centered text"},
     {TWEAK_SMART_QUOTES, "Curly quotes"},
+    {TWEAK_PLAIN_FONTS, "Ignore the book's font"},
+    {TWEAK_PLAIN_PAGES, "Ignore the book's page numbers"},
 };
 
 std::vector<std::string> tweak_rows(int mask)

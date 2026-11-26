@@ -33,6 +33,21 @@ struct LinkTarget
     bool has_fragment = false;
 };
 
+// A font file kept inside the book, for one face of the font the book reads in.
+struct EmbeddedFont
+{
+    std::string path; // inside the book, for load_resource
+    bool bold = false;
+    bool italic = false;
+};
+
+// A printed page of the book and where it starts.
+struct PageMark
+{
+    std::string label; // as printed: "12", "xiv"
+    DocAddr address = 0;
+};
+
 // Allow readers to cache arbitrary data
 class DocReaderCache
 {
@@ -69,6 +84,16 @@ public:
     virtual std::shared_ptr<TokenIter> get_iter(DocAddr address = 0) const = 0;
 
     virtual std::vector<char> load_resource(const std::filesystem::path &path) const = 0;
+
+    // The faces of the font the book is set in, when it carries its own. Empty for most books.
+    virtual std::vector<EmbeddedFont> embedded_fonts() const { return {}; }
+
+    // The printed pages of the book in order, when it lists them. Empty for most books.
+    virtual const std::vector<PageMark> &page_list() const
+    {
+        static const std::vector<PageMark> none;
+        return none;
+    }
 
     // True for a comic book, whose pages are pictures that should be shown whole.
     virtual bool pages_are_pictures() const { return false; }

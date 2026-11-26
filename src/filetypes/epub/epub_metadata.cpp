@@ -502,8 +502,7 @@ void parse_ol(xmlNodePtr ol_node, const std::filesystem::path &base_path, std::v
 
 }  // namespace parse_nav
 
-// https://www.w3.org/TR/epub/#sec-nav
-bool epub_parse_nav(const std::string &nav_file_path, const char *nav_xml, std::vector<NavPoint> &out_navmap)
+static bool parse_nav_kind(const std::string &nav_file_path, const char *nav_xml, const char *kind, std::vector<NavPoint> &out_navmap)
 {
     xmlDocPtr nav_doc = xmlReadMemory(nav_xml, strlen(nav_xml), nullptr, nullptr, 0);
     if (nav_doc == nullptr)
@@ -523,7 +522,7 @@ bool epub_parse_nav(const std::string &nav_file_path, const char *nav_xml, std::
     while (node)
     {
         const xmlChar *type_prop = xmlGetProp(node, BAD_CAST "type");
-        if (type_prop && xmlStrEqual(type_prop, BAD_CAST "toc"))
+        if (type_prop && xmlStrEqual(type_prop, BAD_CAST kind))
         {
             node = elem_first_by_name(elem_first_child(node), BAD_CAST "ol");
             if (node)
@@ -541,4 +540,40 @@ bool epub_parse_nav(const std::string &nav_file_path, const char *nav_xml, std::
     xmlFreeDoc(nav_doc);
 
     return found_nav;
+}
+
+// https://www.w3.org/TR/epub/#sec-nav
+bool epub_parse_nav(const std::string &nav_file_path, const char *nav_xml, std::vector<NavPoint> &out_navmap)
+{
+    return parse_nav_kind(nav_file_path, nav_xml, "toc", out_navmap);
+}
+
+bool epub_parse_nav_page_list(const std::string &nav_file_path, const char *nav_xml, std::vector<NavPoint> &out)
+{
+    return parse_nav_kind(nav_file_path, nav_xml, "page-list", out);
+}
+
+bool epub_parse_ncx_page_list(const std::string &ncx_file_path, const char *ncx_xml, std::vector<NavPoint> &out)
+{
+    xmlDocPtr ncx_doc = xmlReadMemory(ncx_xml, strlen(ncx_xml), nullptr, nullptr, 0);
+    if (ncx_doc == nullptr)
+    {
+        return false;
+    }
+    std::filesystem::path base_path = std::filesystem::path(ncx_file_path).parent_path();
+    xmlNodePtr node = xmlDocGetRootElement(ncx_doc);
+    node = elem_first_child(elem_first_by_name(node, BAD_CAST "ncx"));
+    node = elem_first_by_name(node, BAD_CAST "pageList");
+    const bool found = node != nullptr;
+    if (found)
+    {
+        xmlNodePtr target = elem_first_by_name(elem_first_child(node), BAD_CAST "pageTarget");
+        while (target)
+        {
+            parse_ncx::parse_nav_point(base_path, target, out);
+            target = elem_next_by_name(target, BAD_CAST "pageTarget");
+        }
+    }
+    xmlFreeDoc(ncx_doc);
+    return found;
 }

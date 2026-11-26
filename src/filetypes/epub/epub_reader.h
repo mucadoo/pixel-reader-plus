@@ -35,6 +35,9 @@ public:
     std::shared_ptr<TokenIter> get_iter(DocAddr address = make_address()) const override;
 
     std::vector<char> load_resource(const std::filesystem::path &path) const override;
+
+    std::vector<EmbeddedFont> embedded_fonts() const override;
+    const std::vector<PageMark> &page_list() const override;
 };
 
 #endif

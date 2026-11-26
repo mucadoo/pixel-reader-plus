@@ -18,6 +18,9 @@
 #include "./state_store.h"
 #include "./system_styling.h"
 #include "./collections.h"
+#include "./open_guard.h"
+#include "./storage_usage.h"
+#include "./views/selection_menu.h"
 #include "./smart_collections.h"
 #include "./color_theme_def.h"
 #include <ctime>
@@ -161,6 +164,9 @@ void initialize_views(
     book_fonts::set_dir(store_path / "fonts");
     folder_prefs::set_file(store_path / "folders.tsv");
     next_book::set_opener(load_book);
+    open_guard::set_file(store_path / "opening.txt");
+    // The last run stopped while opening a book, or just after: do not walk into it again.
+    const auto crash = requested_book_path ? std::nullopt : open_guard::take_crash(static_cast<long long>(std::time(nullptr)));
 
     if (requested_book_path)
     {
@@ -181,6 +187,7 @@ void initialize_views(
         });
         fs->set_on_view_focus([&state_store]() {
             state_store.remove_current_book_path();
+            open_guard::end();
         });
         fs->set_on_open_view([&view_stack](std::shared_ptr<View> view) {
             view_stack.push(view);
@@ -224,7 +231,40 @@ void initialize_views(
 
         view_stack.push(fs);
 
-        if (state_store.get_current_book_path())
+        std::error_code crash_ec;
+        if (crash && std::filesystem::exists(crash->book, crash_ec))
+        {
+            state_store.remove_current_book_path();
+            const std::filesystem::path book = crash->book;
+            auto menu = std::make_shared<SelectionMenu>(
+                std::vector<std::string> {
+                    "Go to the book list",
+                    "Open it again",
+                    "Clear saved page layouts, then open it",
+                    "Open it plainly (no book styles, fonts or page numbers)"
+                },
+                sys_styling
+            );
+            menu->set_title(std::string(crash->while_opening ? "The reader stopped while opening " : "The reader stopped just after opening ") + book.stem().string());
+            menu->set_compact(true);
+            menu->set_close_on_select();
+            menu->set_on_selection([book, load_book, &state_store](uint32_t choice) {
+                if (choice >= 2)
+                {
+                    storage_usage::clear_files(state_store.book_data_dir(), ".cache", true);
+                }
+                if (choice == 3)
+                {
+                    open_guard::plain_next(book);
+                }
+                if (choice >= 1)
+                {
+                    load_book(book);
+                }
+            });
+            view_stack.push(menu);
+        }
+        else if (state_store.get_current_book_path())
         {
             load_book(state_store.get_current_book_path().value());
         }
@@ -936,6 +976,7 @@ int main(int argc, char **argv)
     }
 
     view_stack.shutdown();
+    open_guard::end();
     state_store.flush();
     reading_speed::flush();
     library_log().flush();

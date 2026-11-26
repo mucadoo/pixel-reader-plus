@@ -35,6 +35,7 @@
 #include "reader/book_search.h"
 #include "reader/reading_stats.h"
 #include "reader/vocabulary.h"
+#include "reader/word_forms.h"
 #include "reader/reading_mode.h"
 #include "reader/shoulder_keymap.h"
 #include "reader/system_styling.h"
@@ -74,9 +75,25 @@ constexpr Uint32 PAGINATION_SETTLE_MS = 150;
 
 } // namespace
 
+// What a deletion took away, so Undo can bring it back.
+struct UndoEntry
+{
+    std::string what;
+    std::vector<Highlight> highlights; // deleted, or with the note they had before it was changed
+    std::vector<Bookmark> bookmarks;
+    struct Word
+    {
+        vocabulary::Entry entry;
+        std::string sentence;
+    };
+    std::vector<Word> words;
+};
+
 struct ReaderViewState
 {
     bool is_done = false;
+    std::vector<UndoEntry> undo; // the last deletions, newest last; gone when the book is closed
+    bool highlights_by_date = false; // the highlight list shows the newest first
 
     std::function<void(DocAddr)> on_change_address;
 
@@ -251,9 +268,10 @@ void open_toc_menu(
         const DocAddr start = state.reader->get_toc_item_address(i);
         const uint32_t length = state.reader->get_progress_extent(start, true).second;
         std::string detail;
+        const long long whole_seconds = reading_speed::seconds_for(length);
         if (i < current_toc_index)
         {
-            detail = "Read";
+            detail = "Read" + (whole_seconds >= 0 ? "  " + reading_stats::format_duration(whole_seconds) : std::string());
         }
         else
         {
@@ -267,6 +285,10 @@ void open_toc_menu(
             }
             const long long seconds = reading_speed::seconds_for(left);
             detail = percent + (seconds >= 0 ? reading_stats::format_duration(seconds) : std::string());
+            if (i == current_toc_index && seconds >= 0 && whole_seconds > seconds)
+            {
+                detail += " left of " + reading_stats::format_duration(whole_seconds);
+            }
         }
         menu_details.push_back(detail);
     }
@@ -613,6 +635,112 @@ void refresh_marks(ReaderViewState &state)
     state.token_view->set_marks(marks);
 }
 
+void push_undo(ReaderViewState &state, UndoEntry entry)
+{
+    if (entry.highlights.empty() && entry.bookmarks.empty() && entry.words.empty())
+    {
+        return;
+    }
+    std::string what;
+    const auto part = [&what](size_t count, const char *one, const char *many) {
+        if (count == 0)
+        {
+            return;
+        }
+        what += (what.empty() ? "" : ", ") + std::to_string(count) + " " + (count == 1 ? one : many);
+    };
+    part(entry.highlights.size(), "highlight", "highlights");
+    part(entry.bookmarks.size(), "bookmark", "bookmarks");
+    part(entry.words.size(), "word", "words");
+    entry.what = what;
+    state.undo.push_back(std::move(entry));
+    if (state.undo.size() > 20)
+    {
+        state.undo.erase(state.undo.begin());
+    }
+}
+
+// Remembers the highlights that are gone or have lost their note since the snapshot was taken.
+void remember_highlight_changes(ReaderViewState &state, const std::vector<Highlight> &before)
+{
+    const auto &now = state.token_view->highlights();
+    UndoEntry entry;
+    for (const Highlight &old : before)
+    {
+        const auto found = std::find_if(now.begin(), now.end(), [&old](const Highlight &h) {
+            return h.first == old.first && h.second == old.second;
+        });
+        if (found == now.end() || (found->note != old.note && !old.note.empty()))
+        {
+            entry.highlights.push_back(old);
+        }
+    }
+    push_undo(state, std::move(entry));
+}
+
+// Highlight, underline or strike out the selection, or take it off, keeping what goes for Undo.
+void toggle_highlight_with_undo(ReaderViewState &state, HighlightStyle style)
+{
+    const std::vector<Highlight> before = state.token_view->highlights();
+    state.token_view->toggle_selected_highlight(style);
+    remember_highlight_changes(state, before);
+}
+
+void undo_last(ReaderViewState &state)
+{
+    if (state.undo.empty())
+    {
+        show_message(state, "Nothing to undo");
+        return;
+    }
+    UndoEntry entry = std::move(state.undo.back());
+    state.undo.pop_back();
+    for (const Highlight &old : entry.highlights)
+    {
+        const auto &now = state.token_view->highlights();
+        size_t at = now.size();
+        for (size_t i = 0; i < now.size(); ++i)
+        {
+            if (now[i].first == old.first && now[i].second == old.second)
+            {
+                at = i;
+                break;
+            }
+        }
+        if (at < now.size())
+        {
+            state.token_view->set_highlight_note(at, old.note);
+        }
+        else
+        {
+            state.token_view->merge_highlights({old});
+        }
+    }
+    if (!entry.bookmarks.empty())
+    {
+        for (const Bookmark &back : entry.bookmarks)
+        {
+            const bool there = std::any_of(state.bookmarks.begin(), state.bookmarks.end(), [&back](const Bookmark &b) {
+                return b.address == back.address;
+            });
+            if (!there)
+            {
+                state.bookmarks.push_back(back);
+            }
+        }
+        std::stable_sort(state.bookmarks.begin(), state.bookmarks.end(), [](const Bookmark &a, const Bookmark &b) {
+            return a.address < b.address;
+        });
+        save_bookmarks(state.bookmarks_path, state.bookmarks);
+        refresh_marks(state);
+    }
+    for (const UndoEntry::Word &word : entry.words)
+    {
+        vocabulary::add(word.entry.word, word.entry.gloss, word.entry.book, word.entry.when, word.sentence);
+    }
+    show_message(state, "Brought back " + entry.what);
+}
+
 void add_bookmark(ReaderViewState &state)
 {
     const DocAddr address = get_current_address(state);
@@ -652,6 +780,17 @@ void toggle_bookmark(ReaderViewState &state)
     DocAddr until = 0;
     if (state.token_view->visible_range(from, until) && bookmark_in_range(state.bookmarks, from, until))
     {
+        {
+            UndoEntry gone;
+            for (const Bookmark &b : state.bookmarks)
+            {
+                if (b.address >= from && b.address < until)
+                {
+                    gone.bookmarks.push_back(b);
+                }
+            }
+            push_undo(state, std::move(gone));
+        }
         state.bookmarks.erase(
             std::remove_if(state.bookmarks.begin(), state.bookmarks.end(), [from, until](const Bookmark &b) {
                 return b.address >= from && b.address < until;
@@ -863,6 +1002,11 @@ void open_bookmarks_menu(ReaderView &reader_view, ReaderViewState &state)
         {
             return;
         }
+        {
+            UndoEntry gone;
+            gone.bookmarks.push_back(state.bookmarks[index]);
+            push_undo(state, std::move(gone));
+        }
         state.bookmarks.erase(state.bookmarks.begin() + index);
         save_bookmarks(state.bookmarks_path, state.bookmarks);
         refresh_marks(state);
@@ -921,6 +1065,13 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
     auto fill = [&state, order, filter](SelectionMenu &m) {
         const auto &highlights = state.token_view->highlights();
         std::vector<size_t> all = highlight_order(highlights);
+        if (state.highlights_by_date)
+        {
+            // The newest first; the ones with no date, made before dates were kept, last in book order.
+            std::stable_sort(all.begin(), all.end(), [&highlights](size_t a, size_t b) {
+                return highlights[a].made > highlights[b].made;
+            });
+        }
         order->clear();
         for (const size_t index : all)
         {
@@ -937,7 +1088,17 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
         {
             const Highlight &highlight = highlights[index];
             names.push_back(std::string(highlight.note.empty() ? "" : "* ") + (highlight.text.empty() ? std::string("(text not saved)") : highlight.text));
-            details.push_back(percent_label(state, highlight.first));
+            std::string detail = percent_label(state, highlight.first);
+            if (highlight.made > 0)
+            {
+                char day[16];
+                const time_t made = static_cast<time_t>(highlight.made);
+                if (std::strftime(day, sizeof(day), "%Y-%m-%d", std::localtime(&made)) > 0)
+                {
+                    detail += std::string("  ") + day;
+                }
+            }
+            details.push_back(detail);
         }
         m.set_entries(names);
         m.set_details(details);
@@ -990,7 +1151,9 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
                     std::string note = typed;
                     while (!note.empty() && note.back() == ' ') note.pop_back();
                     while (!note.empty() && note.front() == ' ') note.erase(0, 1);
+                    const std::vector<Highlight> before = state.token_view->highlights();
                     state.token_view->set_highlight_note(which, note);
+                    remember_highlight_changes(state, before);
                     if (auto open = weak_menu.lock())
                     {
                         fill(*open);
@@ -1011,7 +1174,11 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
         {
             return;
         }
-        state.token_view->remove_highlight((*order)[index]);
+        {
+            const std::vector<Highlight> before = state.token_view->highlights();
+            state.token_view->remove_highlight((*order)[index]);
+            remember_highlight_changes(state, before);
+        }
         fill(m);
         m.set_cursor_pos(std::min<uint32_t>(index, order->empty() ? 0 : static_cast<uint32_t>(order->size()) - 1));
     });
@@ -1129,49 +1296,88 @@ void open_places_menu(ReaderView &reader_view, ReaderViewState &state)
     state.view_stack.push(menu);
 }
 
-void open_word_list(ReaderViewState &state)
+// The words looked up, newest first; with this_book_only just the ones looked up in this book, each with the
+// sentence it was found in.
+void open_word_list(ReaderViewState &state, bool this_book_only = false)
 {
     auto menu = std::make_shared<SelectionMenu>(state.sys_styling);
-    auto fill = [](SelectionMenu &m) {
+    auto order = std::make_shared<std::vector<size_t>>(); // the entry behind each row
+    const std::string book_title = state.book_title;
+    // The first 70 letters of a sentence on one line.
+    const auto shorten = [](const std::string &text) {
+        std::string line;
+        size_t letters = 0;
+        for (size_t i = 0; i < text.size(); ++i)
+        {
+            const unsigned char c = static_cast<unsigned char>(text[i]);
+            if ((c & 0xC0) != 0x80)
+            {
+                if (letters >= 70)
+                {
+                    return line + "...";
+                }
+                ++letters;
+            }
+            line.push_back(c == '\n' || c == '\t' ? ' ' : static_cast<char>(c));
+        }
+        return line;
+    };
+    auto fill = [order, this_book_only, book_title, shorten](SelectionMenu &m) {
         std::vector<std::string> names;
         std::vector<std::string> details;
-        for (const vocabulary::Entry &entry : vocabulary::entries())
+        order->clear();
+        const auto &list = vocabulary::entries();
+        for (size_t i = 0; i < list.size(); ++i)
         {
-            names.push_back(entry.word);
-            details.push_back(entry.book);
+            if (this_book_only && list[i].book != book_title)
+            {
+                continue;
+            }
+            order->push_back(i);
+            names.push_back(list[i].word);
+            details.push_back(this_book_only ? shorten(vocabulary::context_of(list[i].word)) : list[i].book);
         }
         m.set_entries(names);
         m.set_details(details);
     };
     fill(*menu);
-    menu->set_title("Word list");
-    menu->set_empty_message("No words yet\nLook a word up and it is kept here");
+    menu->set_title(this_book_only ? "Words of this book" : "Word list");
+    menu->set_empty_message(this_book_only ? "No words from this book yet\nLook a word up and it is kept here" : "No words yet\nLook a word up and it is kept here");
     menu->set_hints({"A  Meaning", "X  Delete", "B  Close"});
     menu->set_uses_x(true);
-    menu->set_on_selection([&state](uint32_t index) {
+    menu->set_on_selection([&state, order](uint32_t index) {
         const auto &list = vocabulary::entries();
-        if (index < list.size())
+        if (index < order->size() && (*order)[index] < list.size())
         {
+            const vocabulary::Entry &entry = list[(*order)[index]];
+            const std::string sentence = vocabulary::context_of(entry.word);
             state.view_stack.push(std::make_shared<DefinitionView>(
-                list[index].word,
-                list[index].gloss + (list[index].book.empty() ? std::string() : "\n\nFrom: " + list[index].book),
+                entry.word,
+                entry.gloss + (sentence.empty() ? std::string() : "\n\nIn the book: " + sentence)
+                    + (entry.book.empty() ? std::string() : "\n\nFrom: " + entry.book),
                 state.sys_styling
             ));
         }
     });
-    menu->set_default_on_keypress([fill](SDLKey key, SelectionMenu &m) {
+    menu->set_default_on_keypress([&state, fill, order](SDLKey key, SelectionMenu &m) {
         if (key != SW_BTN_X)
         {
             return;
         }
         const uint32_t index = m.get_cursor_pos();
-        if (index >= vocabulary::entries().size())
+        if (index >= order->size() || (*order)[index] >= vocabulary::entries().size())
         {
             return;
         }
-        vocabulary::remove(index);
+        {
+            const vocabulary::Entry &entry = vocabulary::entries()[(*order)[index]];
+            UndoEntry gone;
+            gone.words.push_back({entry, vocabulary::context_of(entry.word)});
+            push_undo(state, std::move(gone));
+        }
+        vocabulary::remove((*order)[index]);
         fill(m);
-        const size_t left = vocabulary::entries().size();
+        const size_t left = order->size();
         m.set_cursor_pos(std::min<uint32_t>(index, left == 0 ? 0 : static_cast<uint32_t>(left) - 1));
     });
     state.view_stack.push(menu);
@@ -1435,8 +1641,18 @@ void export_highlights(ReaderViewState &state, bool this_chapter = false)
         {
             out << "**Note:** " << highlight.note << "\n\n";
         }
+        std::string made_day;
+        if (highlight.made > 0)
+        {
+            char day[16];
+            const time_t made = static_cast<time_t>(highlight.made);
+            if (std::strftime(day, sizeof(day), "%Y-%m-%d", std::localtime(&made)) > 0)
+            {
+                made_day = std::string(", ") + day;
+            }
+        }
         out << "*" << percent_label(state, highlight.first)
-            << (color > 0 ? std::string(", ") + highlight_color_name(color) : std::string()) << "*\n";
+            << (color > 0 ? std::string(", ") + highlight_color_name(color) : std::string()) << made_day << "*\n";
         out << "<!-- px " << highlight.first << " " << highlight.second << " " << highlight_style_letter(highlight.style) << " -->\n\n";
     }
     out.close();
@@ -1469,6 +1685,11 @@ void open_highlight_tools(ReaderViewState &state)
     }
     std::vector<std::string> names;
     std::vector<std::function<void()>> runs;
+    names.push_back(state.highlights_by_date ? "List highlights in book order" : "List highlights newest first");
+    runs.push_back([&state]() {
+        state.highlights_by_date = !state.highlights_by_date;
+        show_message(state, state.highlights_by_date ? "The highlight list shows the newest first" : "The highlight list is in book order");
+    });
     if (in_chapter > 0)
     {
         names.push_back("Export this chapter's highlights (" + std::to_string(in_chapter) + ")");
@@ -1485,6 +1706,7 @@ void open_highlight_tools(ReaderViewState &state)
                     return;
                 }
                 size_t removed = 0;
+                const std::vector<Highlight> before = state.token_view->highlights();
                 for (size_t index = state.token_view->highlights().size(); index-- > 0;)
                 {
                     const DocAddr first = state.token_view->highlights()[index].first;
@@ -1494,6 +1716,7 @@ void open_highlight_tools(ReaderViewState &state)
                         ++removed;
                     }
                 }
+                remember_highlight_changes(state, before);
                 show_message(state, "Deleted " + std::to_string(removed) + (removed == 1 ? " highlight" : " highlights"));
             });
             state.view_stack.push(confirm);
@@ -1557,6 +1780,7 @@ void open_highlight_tools(ReaderViewState &state)
                             return;
                         }
                         size_t removed = 0;
+                        const std::vector<Highlight> before = state.token_view->highlights();
                         for (size_t index = state.token_view->highlights().size(); index-- > 0;)
                         {
                             if (highlight_in_filter(state.token_view->highlights()[index], kind))
@@ -1565,6 +1789,7 @@ void open_highlight_tools(ReaderViewState &state)
                                 ++removed;
                             }
                         }
+                        remember_highlight_changes(state, before);
                         show_message(state, "Deleted " + std::to_string(removed) + (removed == 1 ? " highlight" : " highlights"));
                     });
                     state.view_stack.push(confirm);
@@ -1911,6 +2136,17 @@ void ReaderView::open_book_menu()
         "Word list (" + std::to_string(vocabulary::entries().size()) + ")",
         [this]() { open_word_list(*state); }
     });
+    {
+        size_t from_this_book = 0;
+        for (const vocabulary::Entry &entry : vocabulary::entries())
+        {
+            from_this_book += entry.book == state->book_title ? 1 : 0;
+        }
+        if (from_this_book > 0)
+        {
+            add({"Words of this book (" + std::to_string(from_this_book) + ")", [this]() { open_word_list(*state, true); }});
+        }
+    }
     if (!vocabulary::entries().empty())
     {
         const size_t due = vocabulary::due_words(static_cast<long long>(std::time(nullptr))).size();
@@ -1953,6 +2189,10 @@ void ReaderView::open_book_menu()
         ));
     }});
     group = "Marks";
+    if (!state->undo.empty())
+    {
+        add({"Undo delete (" + state->undo.back().what + ")", [this]() { undo_last(*state); }});
+    }
     add({
         "Highlights (" + std::to_string(state->token_view->highlights().size()) + ")",
         [this]() { open_highlights_menu(*this, *state); }
@@ -2498,6 +2738,24 @@ void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
     });
     state.view_stack.push(menu);
 }
+// The entry for the base form of an inflected word, when the dictionary has one: the word it is and the
+// text. For a lookup of "running" that has no entry, "run" may.
+std::optional<std::pair<std::string, std::string>> base_form_entry(Dictionary &dictionary, const std::string &word, const std::string &dictionary_name)
+{
+    if (word.empty())
+    {
+        return std::nullopt;
+    }
+    for (const std::string &candidate : word_forms::base_forms(word, word_forms::language_for(dictionary_name)))
+    {
+        if (auto gloss = dictionary.lookup(candidate))
+        {
+            return std::make_pair(candidate, *gloss);
+        }
+    }
+    return std::nullopt;
+}
+
 // "In this book: 14 times" for a single word, with "(rare)" when it turns up only once to three times,
 // so the words worth keeping stand out. Empty for a phrase, or when the style tweak turns it off.
 std::string word_count_note(ReaderViewState &state, const std::string &lookup)
@@ -2624,6 +2882,17 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
     {
         body = *gloss;
         vocabulary::add(lookup, *gloss, state.book_title, now, sentence);
+        const std::string note = word_count_note(state, lookup);
+        if (!note.empty())
+        {
+            body = note + "\n\n" + body;
+        }
+    }
+    else if (const auto base = lookup.find(' ') == std::string::npos ? base_form_entry(*dictionary, lookup, dictionary_name) : std::nullopt)
+    {
+        // "running" has no entry but "run" has: show that, and say so.
+        body = "(" + base->first + ")\n\n" + base->second;
+        vocabulary::add(base->first, base->second, state.book_title, now, sentence);
         const std::string note = word_count_note(state, lookup);
         if (!note.empty())
         {
@@ -2862,16 +3131,16 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
                 break;
             }
             case Act::Highlight:
-                state.token_view->toggle_selected_highlight(marker_style(state.token_view_styling.get_highlight_color()));
+                toggle_highlight_with_undo(state, marker_style(state.token_view_styling.get_highlight_color()));
                 break;
             case Act::Search:
                 run_search(reader_view, state, lookup);
                 break;
             case Act::Underline:
-                state.token_view->toggle_selected_highlight(HighlightStyle::Underline);
+                toggle_highlight_with_undo(state, HighlightStyle::Underline);
                 break;
             case Act::Strikeout:
-                state.token_view->toggle_selected_highlight(HighlightStyle::Strikeout);
+                toggle_highlight_with_undo(state, HighlightStyle::Strikeout);
                 break;
         }
     });

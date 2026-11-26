@@ -59,6 +59,7 @@ struct Highlight
     std::string text;
     HighlightStyle style = HighlightStyle::Marker;
     std::string note; // what the reader wrote about it, empty when nothing
+    long long made = 0; // when it was made, seconds since 1970; 0 for highlights made before dates were kept
 
     Highlight(DocAddr first, DocAddr second, std::string text = {}, HighlightStyle style = HighlightStyle::Marker)
         : first(first), second(second), text(std::move(text)), style(style)

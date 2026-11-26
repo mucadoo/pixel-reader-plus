@@ -3,6 +3,8 @@
 #include "doc_api/doc_addr.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 
@@ -49,8 +51,24 @@ std::vector<Highlight> load_highlights(const std::filesystem::path &path)
                 : text[1] == 'b' ? HighlightStyle::MarkerBlue : HighlightStyle::MarkerPink;
             text.erase(0, text.size() == 3 ? 3 : 4);
         }
+        // An optional @ and the digits of the time made, after the style.
+        long long made = 0;
+        if (text.size() >= 10 && text[0] == '@')
+        {
+            size_t digits = 1;
+            while (digits < text.size() && text[digits] >= '0' && text[digits] <= '9')
+            {
+                ++digits;
+            }
+            if (digits >= 10 && (digits == text.size() || text[digits] == ' '))
+            {
+                made = std::atoll(text.substr(1, digits - 1).c_str());
+                text.erase(0, digits == text.size() ? digits : digits + 1);
+            }
+        }
         highlights.emplace_back(begin, end, text, style);
         highlights.back().note = note;
+        highlights.back().made = made;
     }
     return highlights;
 }
@@ -80,6 +98,10 @@ void save_highlights(const std::filesystem::path &path, const std::vector<Highli
         else if (highlight.style == HighlightStyle::MarkerPink)
         {
             out << " {p}";
+        }
+        if (highlight.made > 0)
+        {
+            out << " @" << highlight.made;
         }
         if (!highlight.text.empty())
         {
@@ -175,6 +197,7 @@ void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr
         return;
     }
     highlights.emplace_back(begin, end, text, style);
+    highlights.back().made = static_cast<long long>(std::time(nullptr));
 }
 
 char highlight_style_letter(HighlightStyle style)

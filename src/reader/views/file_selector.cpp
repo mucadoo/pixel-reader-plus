@@ -18,6 +18,8 @@
 #include "reader/book_info.h"
 #include "reader/browser_sort.h"
 #include "reader/collections.h"
+#include "reader/highlights.h"
+#include "reader/bookmarks.h"
 #include "reader/smart_collections.h"
 #include "reader/storage_usage.h"
 #include "reader/library_log.h"
@@ -533,6 +535,59 @@ void save_hidden_folders(const FSState *s)
     }
 }
 
+// How many highlights, notes and bookmarks a book has, read from the files kept for it. Counted again
+// only when one of the files has changed.
+struct MarkCounts
+{
+    int highlights = 0;
+    int notes = 0;
+    int bookmarks = 0;
+};
+
+MarkCounts mark_counts(const FSState *s, const LibraryLog::Entry *log)
+{
+    MarkCounts counts;
+    if (!log || log->book_id.empty() || s->store_dir.empty())
+    {
+        return counts;
+    }
+    struct Known
+    {
+        long long highlights_time = -1;
+        long long bookmarks_time = -1;
+        MarkCounts counts;
+    };
+    static std::map<std::string, Known> cache;
+    const std::filesystem::path highlights_file = s->store_dir / "books" / (log->book_id + ".highlights");
+    const std::filesystem::path bookmarks_file = s->store_dir / "books" / (log->book_id + ".bookmarks");
+    const auto time_of = [](const std::filesystem::path &file) -> long long {
+        struct stat st;
+        return ::stat(file.c_str(), &st) == 0 ? static_cast<long long>(st.st_mtime) * 1000 + static_cast<long long>(st.st_size % 1000) : -1;
+    };
+    Known &known = cache[log->book_id];
+    const long long h = time_of(highlights_file);
+    const long long b = time_of(bookmarks_file);
+    if (known.highlights_time != h || known.bookmarks_time != b)
+    {
+        known = Known();
+        known.highlights_time = h;
+        known.bookmarks_time = b;
+        if (h >= 0)
+        {
+            for (const Highlight &highlight : load_highlights(highlights_file))
+            {
+                ++known.counts.highlights;
+                known.counts.notes += highlight.note.empty() ? 0 : 1;
+            }
+        }
+        if (b >= 0)
+        {
+            known.counts.bookmarks = static_cast<int>(load_bookmarks(bookmarks_file).size());
+        }
+    }
+    return known.counts;
+}
+
 void refresh_path_entries(FSState *s)
 {
     apply_folder_prefs(s);
@@ -792,6 +847,13 @@ void rebuild_views(FSState *s)
             if (!time_left.empty())
             {
                 detail = time_left + ", " + detail;
+            }
+            {
+                const MarkCounts marks = mark_counts(s, log);
+                if (marks.highlights + marks.bookmarks > 0)
+                {
+                    detail = std::to_string(marks.highlights + marks.bookmarks) + " marks, " + detail;
+                }
             }
             if (log)
             {
@@ -3479,6 +3541,23 @@ void show_info(FSState *s)
             facts.push_back({"Rating", std::to_string(log->rating) + " / 5"});
         }
         facts.push_back({"Reading time", reading_time_text(entry, log)});
+        {
+            const MarkCounts marks = mark_counts(s, log);
+            if (marks.highlights + marks.bookmarks > 0)
+            {
+                std::string text;
+                const auto part = [&text](int count, const char *one, const char *many) {
+                    if (count > 0)
+                    {
+                        text += (text.empty() ? "" : ", ") + std::to_string(count) + " " + (count == 1 ? one : many);
+                    }
+                };
+                part(marks.highlights, "highlight", "highlights");
+                part(marks.notes, "note", "notes");
+                part(marks.bookmarks, "bookmark", "bookmarks");
+                facts.push_back({"Marks", text});
+            }
+        }
         if (log && log->units > 0 && !log->finished() && log->percent > 0)
         {
             const long long left = reading_speed::seconds_for(static_cast<uint32_t>(static_cast<unsigned long long>(log->units) * (100 - log->percent) / 100));

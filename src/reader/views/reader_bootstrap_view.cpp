@@ -1,6 +1,7 @@
 #include "./reader_bootstrap_view.h"
 #include "reader/pending_progress.h"
 #include "reader/book_fonts.h"
+#include "reader/open_guard.h"
 
 #include "./popup_view.h"
 #include "./reader_view.h"
@@ -58,8 +59,16 @@ void ReaderBootstrapView::load_reader()
     auto &view_stack = state->view_stack;
     auto &state_store = state->state_store;
 
-    set_book_styles_enabled(token_view_styling.get_book_styles());
-    set_style_tweaks(token_view_styling.get_tweaks());
+    // After a stop while opening this book the user may have asked for it plain: no book styles, fonts or page numbers.
+    const bool plain = open_guard::take_plain(book_path);
+    int tweaks = token_view_styling.get_tweaks();
+    if (plain)
+    {
+        tweaks |= TWEAK_PLAIN_BREAKS | TWEAK_PLAIN_SIZES | TWEAK_PLAIN_CENTER | TWEAK_PLAIN_FONTS | TWEAK_PLAIN_PAGES;
+    }
+    open_guard::begin(book_path, static_cast<long long>(std::time(nullptr)));
+    set_book_styles_enabled(plain ? false : token_view_styling.get_book_styles());
+    set_style_tweaks(tweaks);
     std::shared_ptr<DocReader> reader = create_doc_reader(book_path);
     SSDocReaderCache cache(state_store);
     // The first time a book is opened every part of it is measured. Show how far that is.
@@ -72,14 +81,15 @@ void ReaderBootstrapView::load_reader()
     if (!opened)
     {
         std::cerr << "Failed to open " << book_path << std::endl;
+        open_guard::end();
         view_stack.push(std::make_shared<PopupView>("Error opening", SYSTEM_FONT, sys_styling));
         return;
     }
 
     state_store.set_current_book_path(book_path);
 
-    book_fonts::open(*reader, reader->get_id(), !(token_view_styling.get_tweaks() & TWEAK_PLAIN_FONTS));
-    if (!(token_view_styling.get_tweaks() & TWEAK_PLAIN_PAGES))
+    book_fonts::open(*reader, reader->get_id(), !(tweaks & TWEAK_PLAIN_FONTS));
+    if (!(tweaks & TWEAK_PLAIN_PAGES))
     {
         // Finds where the printed pages of the book start, which reads parts of it.
         progress_screen::show(sys_styling, "Opening book", shown_name, 100);
@@ -115,6 +125,7 @@ void ReaderBootstrapView::load_reader()
     });
 
     view_stack.push(reader_view);
+    open_guard::opened(static_cast<long long>(std::time(nullptr)));
 }
 
 ReaderBootstrapView::ReaderBootstrapView(

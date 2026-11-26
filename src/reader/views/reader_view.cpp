@@ -3,6 +3,7 @@
 #include "./definition_view.h"
 #include "./goto_view.h"
 #include "./book_map_view.h"
+#include "./gallery_view.h"
 #include "./image_view.h"
 #include "./page_browser_view.h"
 #include "./text_input_view.h"
@@ -1062,6 +1063,25 @@ void ReaderView::open_book_menu()
             });
         }
     }
+    actions->push_back({"Pictures in this book", [this]() {
+        SystemStyling &styling = state->sys_styling;
+        std::vector<GalleryPicture> found = find_pictures(*state->reader, 400, [&styling](int percent) {
+            progress_screen::show(styling, "Finding pictures", "", percent);
+        });
+        if (found.empty())
+        {
+            show_message(*state, "This book has no pictures");
+            return;
+        }
+        ReaderViewState *view_state = state.get();
+        state->view_stack.push(std::make_shared<GalleryView>(
+            state->reader,
+            std::move(found),
+            [view_state](const std::filesystem::path &path) { open_picture(*view_state, path); },
+            [this](DocAddr address) { jump_to(address); },
+            state->sys_styling
+        ));
+    }});
     if (can_jump_back())
     {
         actions->push_back({"Jump back", [this]() { jump_back(); }});
@@ -1538,6 +1558,26 @@ static void run_search(ReaderView &reader_view, ReaderViewState &state, const st
     SearchOptions options;
     options.whole_word = (state.token_view_styling.get_search_options() & 1) != 0;
     options.match_case = (state.token_view_styling.get_search_options() & 2) != 0;
+    options.match_accents = (state.token_view_styling.get_search_options() & 4) != 0;
+    if ((state.token_view_styling.get_search_options() & 8) != 0)
+    {
+        // This chapter only: from the start of the chapter to the start of the next one.
+        const auto &toc = state.reader->get_table_of_contents();
+        if (!toc.empty())
+        {
+            const uint32_t index = state.reader->get_toc_position(get_current_address(state)).toc_index;
+            options.from_address = state.reader->get_toc_item_address(index);
+            for (uint32_t next = index + 1; next < toc.size(); ++next)
+            {
+                const DocAddr address = state.reader->get_toc_item_address(next);
+                if (address > options.from_address)
+                {
+                    options.until_address = address;
+                    break;
+                }
+            }
+        }
+    }
     remember_search(state, word);
     const auto hits = std::make_shared<std::vector<SearchHit>>(search_book(
         *state.reader,
@@ -1623,9 +1663,11 @@ void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
     std::vector<std::string> names = {
         "Type a search...",
         std::string("Whole words: ") + ((bits & 1) ? "On" : "Off"),
-        std::string("Match case: ") + ((bits & 2) ? "On" : "Off")
+        std::string("Match case: ") + ((bits & 2) ? "On" : "Off"),
+        std::string("Match accents: ") + ((bits & 4) ? "On" : "Off"),
+        std::string("This chapter only: ") + ((bits & 8) ? "On" : "Off")
     };
-    std::vector<std::string> details = {"", "", ""};
+    std::vector<std::string> details = {"", "", "", "", ""};
     for (const std::string &item : history)
     {
         names.push_back(item);
@@ -1655,14 +1697,15 @@ void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
                 60
             ));
         }
-        else if (index == 1 || index == 2)
+        else if (index >= 1 && index <= 4)
         {
-            state.token_view_styling.set_search_options(bits ^ (index == 1 ? 1 : 2));
+            static const int FLAGS[] = {0, 1, 2, 4, 8};
+            state.token_view_styling.set_search_options(bits ^ FLAGS[index]);
             open_search_menu(reader_view, state);
         }
-        else if (index - 3 < history.size())
+        else if (index - 5 < history.size())
         {
-            run_search(reader_view, state, history[index - 3]);
+            run_search(reader_view, state, history[index - 5]);
         }
     });
     state.view_stack.push(menu);

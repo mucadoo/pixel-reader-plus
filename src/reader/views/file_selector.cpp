@@ -4,6 +4,8 @@
 #include "./selection_menu.h"
 #include "doc_api/doc_reader.h"
 #include "filetypes/open_doc.h"
+#include "reader/accent_fold.h"
+#include "reader/shoulder_keymap.h"
 #include "reader/book_search.h"
 #include "reader/folder_prefs.h"
 #include "reader/highlights.h"
@@ -781,7 +783,7 @@ void run_search(FSState *s, const std::string &query)
     std::vector<std::string> words;
     {
         std::string word;
-        for (char c : lowercase(query) + " ")
+        for (char c : lowercase(fold_accents(query)) + " ")
         {
             if (c == ' ')
             {
@@ -838,7 +840,7 @@ void run_search(FSState *s, const std::string &query)
                 }
             }
         }
-        text = lowercase(text);
+        text = lowercase(fold_accents(text));
         bool all = true;
         for (const auto &word : words)
         {
@@ -1549,7 +1551,7 @@ std::string language_display(const std::string &code)
     return base.empty() ? std::string() : code;
 }
 
-enum class GroupBy { Series, Author, Language };
+enum class GroupBy { Series, Author, Language, Tag };
 
 // The library as groups of books by series, author or language. Pick a group to list its books:
 // a series in the order of its numbers, the others by title. Books with no value go in one last group.
@@ -1559,7 +1561,7 @@ void browse_by_group(FSState *s, GroupBy by)
     {
         return;
     }
-    const char *heading = by == GroupBy::Series ? "Series" : (by == GroupBy::Author ? "Authors" : "Languages");
+    const char *heading = by == GroupBy::Series ? "Series" : (by == GroupBy::Author ? "Authors" : (by == GroupBy::Tag ? "Tags" : "Languages"));
     const auto files = library_files(s);
     struct Member
     {
@@ -1575,26 +1577,59 @@ void browse_by_group(FSState *s, GroupBy by)
         progress_screen::show(s->styling, std::string("Reading ") + heading, "", static_cast<int>(i * 100 / files.size()));
         s->info->load(files[i]);
         const BookInfo *info = s->info->get(files[i]);
-        std::string value;
-        if (info)
+        std::vector<std::string> values;
+        if (info && by == GroupBy::Tag)
         {
-            value = by == GroupBy::Series ? info->series : (by == GroupBy::Author ? info->author : language_display(info->language));
+            // A book can carry several tags and is listed under each of them.
+            std::string piece;
+            for (char c : info->subjects + ";")
+            {
+                if (c == ';')
+                {
+                    while (!piece.empty() && piece.front() == ' ') piece.erase(0, 1);
+                    while (!piece.empty() && piece.back() == ' ') piece.pop_back();
+                    if (!piece.empty() && values.size() < 8)
+                    {
+                        values.push_back(piece);
+                    }
+                    piece.clear();
+                }
+                else
+                {
+                    piece.push_back(c);
+                }
+            }
+        }
+        else if (info)
+        {
+            const std::string value = by == GroupBy::Series ? info->series : (by == GroupBy::Author ? info->author : language_display(info->language));
+            if (!value.empty())
+            {
+                values.push_back(value);
+            }
         }
         Member member = {files[i], info && !info->title.empty() ? info->title : files[i].stem().string(), info ? info->series_number() : 0.0};
-        if (value.empty())
+        if (values.empty())
         {
             without.push_back(member);
             continue;
         }
-        const std::string key = lowercase(value);
-        shown_names.emplace(key, value);
-        groups[key].push_back(member);
+        for (const std::string &value : values)
+        {
+            const std::string key = lowercase(value);
+            shown_names.emplace(key, value);
+            auto &members = groups[key];
+            if (members.empty() || members.back().book != member.book)
+            {
+                members.push_back(member);
+            }
+        }
     }
     if (groups.empty())
     {
         if (s->on_info)
         {
-            s->on_info(heading, std::string("None of the books name a ") + (by == GroupBy::Series ? "series." : (by == GroupBy::Author ? "author." : "language.")));
+            s->on_info(heading, std::string("None of the books name a ") + (by == GroupBy::Series ? "series." : (by == GroupBy::Author ? "author." : (by == GroupBy::Tag ? "tag or genre." : "language."))));
         }
         return;
     }
@@ -2032,10 +2067,172 @@ void search_all_books(FSState *s, const std::string &query)
     s->on_open_view(menu);
 }
 
+// A name that can be a folder on any card: no path marks, no dots or spaces at the ends.
+std::string folder_safe_name(const std::string &raw)
+{
+    std::string name;
+    for (char c : raw)
+    {
+        const bool bad = c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|'
+            || static_cast<unsigned char>(c) < 32;
+        name.push_back(bad ? '_' : c);
+    }
+    while (!name.empty() && (name.back() == ' ' || name.back() == '.')) name.pop_back();
+    while (!name.empty() && (name.front() == ' ' || name.front() == '.')) name.erase(0, 1);
+    if (name.size() > 60)
+    {
+        name.resize(60);
+    }
+    return name;
+}
+
+// Sorts the books lying loose in this folder into folders named after their author, and optionally
+// the series. Books that name no author stay where they are.
+void tidy_folder(FSState *s)
+{
+    if (s->search_active || !s->info || !s->on_open_view)
+    {
+        if (s->on_info)
+        {
+            s->on_info("Tidy this folder", "Open a folder of books first.");
+        }
+        return;
+    }
+    auto modes = std::make_shared<SelectionMenu>(
+        std::vector<std::string> {"A folder for each author", "A folder for each author, then each series", "Cancel"},
+        s->styling
+    );
+    modes->set_title("Tidy this folder");
+    modes->set_compact(true);
+    modes->set_close_on_select();
+    modes->set_on_selection([s](uint32_t mode) {
+        if (mode > 1)
+        {
+            return;
+        }
+        struct Move
+        {
+            std::filesystem::path from;
+            std::filesystem::path folder;
+        };
+        std::vector<Move> plan;
+        std::map<std::string, int> per_folder;
+        std::error_code ec;
+        for (std::filesystem::directory_iterator it(s->path, ec), end; !ec && it != end; it.increment(ec))
+        {
+            std::error_code ec_file;
+            if (!it->is_regular_file(ec_file) || !file_type_is_supported(it->path().filename().string()))
+            {
+                continue;
+            }
+            s->info->load(it->path());
+            const BookInfo *info = s->info->get(it->path());
+            if (!info)
+            {
+                continue;
+            }
+            const std::string author = folder_safe_name(info->author);
+            if (author.empty())
+            {
+                continue;
+            }
+            std::filesystem::path folder = s->path / author;
+            std::string label = author;
+            if (mode == 1)
+            {
+                const std::string series = folder_safe_name(info->series);
+                if (!series.empty())
+                {
+                    folder /= series;
+                    label += "/" + series;
+                }
+            }
+            plan.push_back({it->path(), folder});
+            ++per_folder[label];
+        }
+        if (plan.empty())
+        {
+            if (s->on_info)
+            {
+                s->on_info("Tidy this folder", "No loose books with an author were found here.");
+            }
+            return;
+        }
+        std::vector<std::string> names = {
+            "Move " + std::to_string(plan.size()) + (plan.size() == 1 ? " book" : " books") + " into "
+                + std::to_string(per_folder.size()) + (per_folder.size() == 1 ? " folder" : " folders"),
+            "Cancel"
+        };
+        std::vector<std::string> details = {"", ""};
+        for (const auto &[label, count] : per_folder)
+        {
+            if (names.size() >= 14)
+            {
+                names.push_back("...");
+                details.push_back("");
+                break;
+            }
+            names.push_back(label);
+            details.push_back(std::to_string(count));
+        }
+        auto confirm = std::make_shared<SelectionMenu>(names, s->styling);
+        confirm->set_details(details);
+        confirm->set_title("Tidy this folder?");
+        confirm->set_compact(true);
+        SelectionMenu *menu_ptr = confirm.get();
+        confirm->set_on_selection([s, plan, menu_ptr](uint32_t choice) {
+            if (choice > 1)
+            {
+                return; // the list of folders is only a preview
+            }
+            menu_ptr->close();
+            if (choice != 0)
+            {
+                return;
+            }
+            int done = 0;
+            int failed = 0;
+            for (size_t i = 0; i < plan.size(); ++i)
+            {
+                progress_screen::show(s->styling, "Tidying", plan[i].from.filename().string(), static_cast<int>(i * 100 / plan.size()));
+                std::error_code ec_move;
+                std::filesystem::create_directories(plan[i].folder, ec_move);
+                const std::filesystem::path to = free_name(plan[i].folder, plan[i].from);
+                if (!ec_move)
+                {
+                    std::filesystem::rename(plan[i].from, to, ec_move);
+                }
+                if (ec_move)
+                {
+                    ++failed;
+                    continue;
+                }
+                library_log().rename(plan[i].from, to);
+                collections::rename_book(plan[i].from, to);
+                ++done;
+            }
+            library_log().flush();
+            collections::flush();
+            refresh_keeping_cursor(s);
+            if (s->on_info)
+            {
+                std::string text = std::to_string(done) + " moved";
+                if (failed > 0)
+                {
+                    text += ", " + std::to_string(failed) + " failed";
+                }
+                s->on_info("Tidy this folder", text);
+            }
+        });
+        s->on_open_view(confirm);
+    });
+    s->on_open_view(modes);
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -2142,6 +2339,12 @@ void open_library_tools(FSState *s)
                 break;
             case 11:
                 open_all_highlights(s);
+                break;
+            case 13:
+                browse_by_group(s, GroupBy::Tag);
+                break;
+            case 14:
+                tidy_folder(s);
                 break;
             case 12:
                 s->on_open_view(std::make_shared<TextInputView>(
@@ -2471,6 +2674,7 @@ void show_info(FSState *s)
             facts.push_back({"Series", info->series + (info->series_index.empty() ? std::string() : " #" + info->series_index)});
         }
         facts.push_back({"Language", info->language});
+        facts.push_back({"Tags", info->subjects});
         facts.push_back({"Publisher", info->publisher});
         facts.push_back({"Published", info->date});
         description = info->description;
@@ -2684,8 +2888,99 @@ bool FileSelector::is_done()
     return state->menu.is_done();
 }
 
+namespace {
+
+// The letter a title is filed under: its first letter or digit, accents dropped. '#' for the rest.
+char title_initial(const std::string &title)
+{
+    const std::string plain = fold_accents(title);
+    for (char c : plain)
+    {
+        if (c >= 'a' && c <= 'z')
+        {
+            return static_cast<char>(c - 'a' + 'A');
+        }
+        if (c >= 'A' && c <= 'Z')
+        {
+            return c;
+        }
+        if (c >= '0' && c <= '9')
+        {
+            return '#';
+        }
+    }
+    return '#';
+}
+
+// Moves the cursor to the first title of the next letter, or back to the start of this letter
+// (and from there to the previous one).
+void jump_by_letter(FSState *s, bool forward)
+{
+    const size_t first = std::min(s->path_entries.size(), s->pinned_count + (has_way_up(s) ? 1 : 0));
+    const size_t count = s->path_entries.size();
+    if (first >= count || s->cursor >= count)
+    {
+        return;
+    }
+    const auto initial_at = [s](size_t i) { return title_initial(entry_title(s, s->path_entries[i])); };
+    size_t at = std::max<size_t>(s->cursor, first);
+    const char here = initial_at(at);
+    size_t target = at;
+    if (forward)
+    {
+        target = count - 1;
+        for (size_t i = at + 1; i < count; ++i)
+        {
+            if (initial_at(i) != here)
+            {
+                target = i;
+                break;
+            }
+        }
+    }
+    else
+    {
+        size_t start = at;
+        while (start > first && initial_at(start - 1) == here)
+        {
+            --start;
+        }
+        if (start < at)
+        {
+            target = start;
+        }
+        else if (start > first)
+        {
+            const char before = initial_at(start - 1);
+            target = start - 1;
+            while (target > first && initial_at(target - 1) == before)
+            {
+                --target;
+            }
+        }
+        else
+        {
+            target = first;
+        }
+    }
+    sync_cursor(s, static_cast<uint32_t>(target));
+}
+
+} // namespace
+
 void FileSelector::on_keypress(SDLKey key)
 {
+    if (key == SW_BTN_L1 || key == SW_BTN_R1 || key == SW_BTN_L2 || key == SW_BTN_R2)
+    {
+        // The shoulder pair that pages the list is left to it. The other pair goes letter by letter.
+        const auto [l_key, r_key] = get_shoulder_keymap_lr(state->styling.get_shoulder_keymap());
+        if (key != l_key && key != r_key)
+        {
+            const bool forward = (key == SW_BTN_R1 || key == SW_BTN_R2);
+            jump_by_letter(state.get(), forward);
+            return;
+        }
+    }
     if (key == SW_BTN_B)
     {
         // B walks back up the folder tree. Quitting is the Menu button's job.

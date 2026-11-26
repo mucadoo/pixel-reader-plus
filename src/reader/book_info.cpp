@@ -17,7 +17,7 @@
 namespace
 {
 
-constexpr const char *CACHE_MAGIC = "PXI3";
+constexpr const char *CACHE_MAGIC = "PXI4";
 
 bool is_epub(const std::filesystem::path &book)
 {
@@ -174,6 +174,7 @@ std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
             info.series_index = tidy(package.series_index);
             info.description = strip_tags(tidy(package.description));
             info.publisher = tidy(package.publisher);
+            info.subjects = tidy(package.subjects);
             info.date = tidy(package.date);
             if (info.date.size() > 10)
             {
@@ -287,6 +288,7 @@ void BookInfoCache::load(const std::filesystem::path &book)
             std::getline(in, info.description);
             std::getline(in, info.publisher);
             std::getline(in, info.date);
+            std::getline(in, info.subjects);
             known[path] = info.empty() ? std::nullopt : std::optional<BookInfo>(info);
             return;
         }
@@ -304,7 +306,7 @@ void BookInfoCache::load(const std::filesystem::path &book)
             return;
         }
         BookInfo shown = info.value_or(BookInfo {});
-        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n' << shown.series << '\n' << shown.series_index << '\n' << shown.description << '\n' << shown.publisher << '\n' << shown.date << '\n';
+        out << CACHE_MAGIC << '\n' << shown.title << '\n' << shown.author << '\n' << shown.language << '\n' << shown.series << '\n' << shown.series_index << '\n' << shown.description << '\n' << shown.publisher << '\n' << shown.date << '\n' << shown.subjects << '\n';
         if (!out)
         {
             return;

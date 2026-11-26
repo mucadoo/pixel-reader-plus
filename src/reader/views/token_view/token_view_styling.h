@@ -121,6 +121,14 @@ public:
     int get_cover_sleep() const;
     void set_cover_sleep(int step);
 
+    // What opens when the reader starts: 0 the library, 1 the book read last
+    int get_startup() const;
+    void set_startup(int mode);
+
+    // Whether a warning shows when the battery runs low
+    bool get_low_battery_warning() const;
+    void set_low_battery_warning(bool on);
+
     // Automatic night theme: the theme to use between two hours of the day. Empty name for off.
     const std::string &get_night_theme() const;
     void set_night_theme(const std::string &name);

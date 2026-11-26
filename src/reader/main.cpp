@@ -1,5 +1,7 @@
 #include "./config.h"
+#include "./battery.h"
 #include "./book_layout.h"
+#include "./views/popup_view.h"
 #include "./reading_stats.h"
 #include "./vocabulary.h"
 #include "./work_pump.h"
@@ -219,6 +221,19 @@ void initialize_views(
         {
             load_book(state_store.get_current_book_path().value());
         }
+        else if (token_view_styling.get_startup() == 1)
+        {
+            // Start where the last session left off: the book read last, unless it is finished.
+            if (const auto recent = library_log().most_recent())
+            {
+                const LibraryLog::Entry *log = library_log().get(*recent);
+                std::error_code ec;
+                if (!(log && log->finished()) && std::filesystem::exists(*recent, ec))
+                {
+                    load_book(*recent);
+                }
+            }
+        }
     }
 }
 
@@ -434,6 +449,8 @@ int main(int argc, char **argv)
         token_view_styling.set_tweaks(std::atoi(saved_tweaks->c_str()));
     }
     token_view_styling.set_grid_size(settings_get_small_int(state_store, "grid_size").value_or(0));
+    token_view_styling.set_startup(settings_get_small_int(state_store, "startup").value_or(0));
+    token_view_styling.set_low_battery_warning(settings_get_small_int(state_store, "low_battery").value_or(1) != 0);
     BookGrid::set_density(token_view_styling.get_grid_size());
     token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
     token_view_styling.set_cover_sleep(settings_get_small_int(state_store, "cover_sleep").value_or(0));
@@ -481,6 +498,8 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "ruler", token_view_styling.get_ruler());
             settings_set_small_int(state_store, "letter_spacing", token_view_styling.get_letter_spacing());
             settings_set_small_int(state_store, "grid_size", token_view_styling.get_grid_size());
+            settings_set_small_int(state_store, "startup", token_view_styling.get_startup());
+            settings_set_small_int(state_store, "low_battery", token_view_styling.get_low_battery_warning() ? 1 : 0);
             BookGrid::set_density(token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
             settings_set_small_int(state_store, "cover_sleep", token_view_styling.get_cover_sleep());
@@ -588,6 +607,8 @@ int main(int argc, char **argv)
     bool cover_shown = false; // the cover screen is up until a key is pressed
     Timer quiet_timer; // time since the last key press, for Auto exit
     Timer night_timer;
+    Timer battery_timer;
+    int battery_warned = 100; // the lowest level a warning was shown for since the last charge
     bool night_active = false;
     std::string day_theme;
     std::string night_theme_applied;
@@ -790,6 +811,50 @@ int main(int argc, char **argv)
         {
             update_night_theme();
             night_timer.reset();
+        }
+
+        if (battery_timer.elapsed_sec() >= 30)
+        {
+            battery_timer.reset();
+            const int level = battery_percent();
+            if (level < 0 || battery_charging() || level > 20)
+            {
+                battery_warned = 100;
+            }
+            else if (token_view_styling.get_low_battery_warning())
+            {
+                int threshold = 0;
+                if (level <= 5 && battery_warned > 5)
+                {
+                    threshold = 5;
+                }
+                else if (level <= 15 && battery_warned > 15)
+                {
+                    threshold = 15;
+                }
+                if (threshold > 0)
+                {
+                    battery_warned = threshold;
+                    if (threshold == 5)
+                    {
+                        // Make sure nothing is lost if the device switches off.
+                        state_store.flush();
+                        library_log().flush();
+                        reading_speed::flush();
+                        reading_stats::flush();
+                    }
+                    view_stack.push(std::make_shared<PopupView>(
+                        std::string("Battery low: ") + std::to_string(level) + "%"
+                            + (threshold == 5 ? "\nYour place is saved. Charge soon." : "\nCharge soon."),
+                        sys_styling.get_font_name(),
+                        sys_styling
+                    ));
+                    view_stack.render(screen, true);
+                    present_screen(screen, video);
+                    screen_dim::apply(video);
+                    SDL_Flip(video);
+                }
+            }
         }
 
         const int cover_minutes = cover_sleep_minutes(token_view_styling.get_cover_sleep());

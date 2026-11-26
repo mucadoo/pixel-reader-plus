@@ -202,6 +202,8 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Layout profiles", "Open", false, sys_font},
         {"Custom colors", "Open", false, sys_font},
         {"Typography", std::string(token_view_styling.get_ligatures() ? "Ligatures" : "Plain") + (token_view_styling.get_widow_control() ? ", widows" : ""), false, sys_font},
+        {"On start", token_view_styling.get_startup() == 1 ? "Last book" : "Library", true, sys_font},
+        {"Low battery", token_view_styling.get_low_battery_warning() ? "Warn" : "Off", true, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -582,6 +584,14 @@ void SettingsView::on_keypress(SDLKey key)
                     token_view_styling.set_scroll_overlap(
                         (token_view_styling.get_scroll_overlap() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
+                }
+                else if (line_selected == ROW_STARTUP)
+                {
+                    token_view_styling.set_startup(1 - token_view_styling.get_startup());
+                }
+                else if (line_selected == ROW_LOW_BATTERY)
+                {
+                    token_view_styling.set_low_battery_warning(!token_view_styling.get_low_battery_warning());
                 }
                 else if (line_selected == ROW_GRID)
                 {

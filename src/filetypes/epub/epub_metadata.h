@@ -51,6 +51,8 @@ struct PackageContents
     std::string description;
     std::string publisher;
     std::string date;
+    // Every dc:subject (genre, tag), joined with "; ". Empty when absent.
+    std::string subjects;
 };
 
 std::string epub_parse_rootfile_path(const char *container_xml);

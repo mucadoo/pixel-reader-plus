@@ -36,6 +36,8 @@ struct TokenViewStylingState
     int grid_size = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
+    int startup = 0;
+    bool low_battery_warning = true;
     int highlight_color = 0;
     int screen_dim = 0;
     bool book_styles = true;
@@ -420,6 +422,35 @@ void TokenViewStyling::set_cover_sleep(int step)
     if (state->cover_sleep != step)
     {
         state->cover_sleep = step;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_startup() const
+{
+    return state->startup;
+}
+
+void TokenViewStyling::set_startup(int mode)
+{
+    mode = std::clamp(mode, 0, 1);
+    if (state->startup != mode)
+    {
+        state->startup = mode;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_low_battery_warning() const
+{
+    return state->low_battery_warning;
+}
+
+void TokenViewStyling::set_low_battery_warning(bool on)
+{
+    if (state->low_battery_warning != on)
+    {
+        state->low_battery_warning = on;
         notify_subscribers();
     }
 }

@@ -72,7 +72,7 @@ inline const char *controls_guide_text()
         "Each book shows its title and author, read from the book, then its type and size. Folders are marked Folder.\n"
         "Up and down move one row. Left and right move half a screen.\n"
         "A opens the book or folder. X opens settings.\n"
-        "Each folder remembers its own order, list or grid and hide-finished. Library tools also has All highlights and Search inside all books. Y, Show lists only books not opened, in progress, favorites or finished. Start cycles name, title, author, series, recent, size, newest and most read.\n"
+        "Each folder remembers its own order, list or grid and hide-finished. Library tools also has All highlights, Search inside all books, Browse by tag and Tidy this folder. In the list the shoulder pair that does not page jumps to the next or previous first letter. Y, Show lists only books not opened, in progress, favorites or finished. Start cycles name, title, author, series, recent, size, newest and most read.\n"
         "Y opens options for the selected entry: mark books to copy, move or delete, new folder, paste here, properties, favorite, status, hide finished books, recent books, search the library, collections, library tools (books by status, copies, unopened books, backup and restore, books over wifi), rename and delete.\n"
         "Select switches between the list and the cover grid.\n"
         "Start changes the order: name, title, author, series, or recently read.\n"

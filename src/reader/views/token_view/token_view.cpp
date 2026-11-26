@@ -5,6 +5,8 @@
 
 #include "doc_api/doc_reader.h"
 #include "filetypes/epub/book_style.h"
+#include "reader/accent_fold.h"
+#include "reader/battery.h"
 #include "reader/book_fonts.h"
 #include "reader/font_catalog.h"
 #include "reader/highlights.h"
@@ -430,27 +432,9 @@ struct TokenViewState
     }
 };
 
-// The charge of the battery in percent, or -1 when the system does not say.
 static int read_battery_percent()
 {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    for (const auto &entry : fs::directory_iterator("/sys/class/power_supply", ec))
-    {
-        std::ifstream type(entry.path() / "type");
-        std::string kind;
-        if (!(type >> kind) || kind != "Battery")
-        {
-            continue;
-        }
-        std::ifstream capacity(entry.path() / "capacity");
-        int level = -1;
-        if (capacity >> level && level >= 0 && level <= 100)
-        {
-            return level;
-        }
-    }
-    return -1;
+    return battery_percent();
 }
 
 // The text of one slot of the bar under the text. Empty when there is nothing to show.
@@ -460,9 +444,10 @@ static bool matches_search(const TokenViewState &state, const LayoutWord &word)
     {
         return false;
     }
+    const std::string plain = fold_accents(word.lookup);
     for (const std::string &term : state.match_terms)
     {
-        if (word.lookup.find(term) != std::string::npos)
+        if (plain.find(term) != std::string::npos)
         {
             return true;
         }
@@ -1672,7 +1657,7 @@ void TokenView::set_search_marks(const std::string &query, const std::string &no
 {
     std::vector<std::string> terms;
     std::string word;
-    for (char c : lookup_lowercase(query) + " ")
+    for (char c : fold_accents(lookup_lowercase(query)) + " ")
     {
         if (c == ' ')
         {

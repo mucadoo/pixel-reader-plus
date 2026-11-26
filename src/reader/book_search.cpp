@@ -1,11 +1,13 @@
 #include "./book_search.h"
 
+#include "./accent_fold.h"
 #include "./text_style.h"
 #include "doc_api/doc_reader.h"
 #include "doc_api/doc_token.h"
 #include "doc_api/token_iter.h"
 
 #include <algorithm>
+#include <cctype>
 
 namespace
 {
@@ -68,13 +70,32 @@ std::vector<SearchHit> search_book(
 )
 {
     std::vector<SearchHit> hits;
-    const std::string needle = options.match_case ? word : lookup_lowercase(word);
+    // What both the text and the words typed are turned into before they are compared.
+    const auto prepare = [&options](const std::string &raw, std::vector<uint32_t> *map) {
+        std::string text = options.match_accents ? raw : fold_accents(raw, map);
+        if (!options.match_case)
+        {
+            if (options.match_accents)
+            {
+                text = lookup_lowercase(text);
+            }
+            else
+            {
+                for (char &c : text)
+                {
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+            }
+        }
+        return text;
+    };
+    const std::string needle = prepare(word, nullptr);
     if (needle.empty())
     {
         return hits;
     }
 
-    auto iter = reader.get_iter(0);
+    auto iter = reader.get_iter(options.from_address);
     if (!iter)
     {
         return hits;
@@ -92,12 +113,21 @@ std::vector<SearchHit> search_book(
                 progress(percent);
             }
         }
+        if (options.until_address && token->address >= *options.until_address)
+        {
+            break;
+        }
         const std::string *text = token_text(*token);
-        if (!text || text->size() < needle.size())
+        if (!text || text->size() < needle.size() / 2)
         {
             continue;
         }
-        const std::string lower = options.match_case ? *text : lookup_lowercase(*text);
+        std::vector<uint32_t> map;
+        const std::string lower = prepare(*text, &map);
+        if (lower.size() < needle.size())
+        {
+            continue;
+        }
         size_t from = 0;
         while ((from = lower.find(needle, from)) != std::string::npos)
         {
@@ -106,7 +136,8 @@ std::vector<SearchHit> search_book(
             const bool after = after_at < lower.size() && is_word_byte(static_cast<unsigned char>(lower[after_at]));
             if (!options.whole_word || (!before && !after))
             {
-                hits.push_back({token->address, snippet_around(*text, from, needle.size())});
+                const size_t shown_from = options.match_accents || from >= map.size() ? from : map[from];
+                hits.push_back({token->address, snippet_around(*text, shown_from, needle.size())});
                 if (hits.size() >= max_hits)
                 {
                     return hits;

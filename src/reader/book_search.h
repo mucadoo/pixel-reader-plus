@@ -4,6 +4,7 @@
 #include "doc_api/doc_addr.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,10 @@ struct SearchOptions
 {
     bool whole_word = true;  // a match may not touch letters or digits at either end
     bool match_case = false; // capitals must match too
+    bool match_accents = false; // a plain e does not match an accented one
+    // Look only from this address up to (not including) the other one. The whole book by default.
+    DocAddr from_address = 0;
+    std::optional<DocAddr> until_address;
 };
 
 // Every place the word or phrase turns up in the book, in order. Stops after max_hits. progress is told how far

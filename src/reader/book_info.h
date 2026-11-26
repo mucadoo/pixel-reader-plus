@@ -19,6 +19,8 @@ struct BookInfo
     std::string description;
     std::string publisher;
     std::string date;
+    // The subjects (genres, tags) the book lists, separated by "; ".
+    std::string subjects;
 
     bool empty() const { return title.empty() && author.empty() && language.empty() && series.empty(); }
 

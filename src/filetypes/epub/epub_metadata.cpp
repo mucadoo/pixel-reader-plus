@@ -251,6 +251,20 @@ bool epub_parse_package_contents(const std::string &rootfile_path, const char *p
                 if (content_attr) xmlFree(content_attr);
                 continue;
             }
+            if (xmlStrEqual(child->name, BAD_CAST "subject"))
+            {
+                xmlChar *subject = xmlNodeGetContent(child);
+                if (subject)
+                {
+                    if (!out_package.subjects.empty())
+                    {
+                        out_package.subjects += "; ";
+                    }
+                    out_package.subjects += (const char *)subject;
+                    xmlFree(subject);
+                }
+                continue;
+            }
             std::string *target = nullptr;
             if (xmlStrEqual(child->name, BAD_CAST "title"))
             {

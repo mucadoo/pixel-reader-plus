@@ -350,6 +350,15 @@ namespace
 std::string lookup_key(const std::string &word)
 {
     std::string lower = lookup_lowercase(word);
+    // A curly apostrophe is looked up as a straight one.
+    for (size_t at = lower.find("\xE2\x80\x99"); at != std::string::npos; at = lower.find("\xE2\x80\x99", at + 1))
+    {
+        lower.replace(at, 3, "'");
+    }
+    for (size_t at = lower.find("\xE2\x80\x98"); at != std::string::npos; at = lower.find("\xE2\x80\x98", at + 1))
+    {
+        lower.replace(at, 3, "'");
+    }
     // Bytes of letters outside ASCII belong to the word.
     auto ok = [](unsigned char c) {
         return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'' || c == '-' || c >= 0x80;

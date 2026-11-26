@@ -31,6 +31,11 @@ struct TokenViewStylingState
     int margin_bottom = 0;
     int ruler = 0;
     int letter_spacing = 0;
+    int rotation = 0;
+    int tweaks = 0;
+    int comic_fit = 0;
+    bool comic_split = false;
+    bool comic_manga = false;
     int grid_size = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
@@ -252,6 +257,79 @@ void TokenViewStyling::set_letter_spacing(int level)
     if (state->letter_spacing != level)
     {
         state->letter_spacing = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_rotation() const
+{
+    return state->rotation;
+}
+
+void TokenViewStyling::set_rotation(int rotation)
+{
+    rotation = std::clamp(rotation, 0, 2);
+    if (state->rotation != rotation)
+    {
+        state->rotation = rotation;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_tweaks() const
+{
+    return state->tweaks;
+}
+
+void TokenViewStyling::set_tweaks(int mask)
+{
+    mask &= 0xFF;
+    if (state->tweaks != mask)
+    {
+        state->tweaks = mask;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_comic_fit() const
+{
+    return state->comic_fit;
+}
+
+void TokenViewStyling::set_comic_fit(int fit)
+{
+    fit = std::clamp(fit, 0, 1);
+    if (state->comic_fit != fit)
+    {
+        state->comic_fit = fit;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_comic_split() const
+{
+    return state->comic_split;
+}
+
+void TokenViewStyling::set_comic_split(bool split)
+{
+    if (state->comic_split != split)
+    {
+        state->comic_split = split;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_comic_manga() const
+{
+    return state->comic_manga;
+}
+
+void TokenViewStyling::set_comic_manga(bool manga)
+{
+    if (state->comic_manga != manga)
+    {
+        state->comic_manga = manga;
         notify_subscribers();
     }
 }

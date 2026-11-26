@@ -36,6 +36,7 @@ std::string lower_copy(std::string s)
 namespace
 {
 bool g_book_styles = true;
+int g_tweaks = 0;
 } // namespace
 
 void set_book_styles_enabled(bool enabled)
@@ -46,6 +47,16 @@ void set_book_styles_enabled(bool enabled)
 bool book_styles_enabled()
 {
     return g_book_styles;
+}
+
+void set_style_tweaks(int mask)
+{
+    g_tweaks = mask;
+}
+
+int style_tweaks()
+{
+    return g_tweaks;
 }
 
 void Stylesheet::parse(const std::string &css)
@@ -298,19 +309,22 @@ BookStyle Stylesheet::apply(
         return a->order < b->order;
     });
 
+    const bool plain_sizes = (g_tweaks & TWEAK_PLAIN_SIZES) != 0;
+    const bool plain_breaks = (g_tweaks & TWEAK_PLAIN_BREAKS) != 0;
+    const bool plain_center = (g_tweaks & TWEAK_PLAIN_CENTER) != 0;
     for (const Rule *rule : matched)
     {
-        if (rule->font_pt >= 0)
+        if (!plain_sizes && rule->font_pt >= 0)
         {
             next.scale = rule->font_pt / 12.f;
             next.scale_set = true;
         }
-        else if (rule->font_em >= 0)
+        else if (!plain_sizes && rule->font_em >= 0)
         {
             next.scale = parent_scale * rule->font_em;
             next.scale_set = true;
         }
-        else if (rule->font_pct >= 0)
+        else if (!plain_sizes && rule->font_pct >= 0)
         {
             next.scale = parent_scale * rule->font_pct;
             next.scale_set = true;
@@ -323,17 +337,21 @@ BookStyle Stylesheet::apply(
         {
             next.italic = rule->italic == 1;
         }
-        if (rule->break_before >= 0)
+        if (!plain_breaks && rule->break_before >= 0)
         {
             next.break_before = rule->break_before;
             next.break_before_set = true;
         }
-        if (rule->break_after >= 0)
+        if (!plain_breaks && rule->break_after >= 0)
         {
             next.break_after = rule->break_after;
             next.break_after_set = true;
         }
-        if (rule->align == 1)
+        if (plain_center)
+        {
+            // the book's alignment is ignored
+        }
+        else if (rule->align == 1)
         {
             next.center = true;
             next.center_set = true;

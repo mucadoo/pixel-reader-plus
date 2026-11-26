@@ -12,6 +12,7 @@
 #include "reader/opds.h"
 #include "./book_info_view.h"
 #include "./upload_view.h"
+#include "./reading_history_view.h"
 #include "reader/progress_screen.h"
 #include "reader/reading_speed.h"
 #include "reader/reading_stats.h"
@@ -1198,6 +1199,126 @@ void find_unopened(FSState *s)
     show_results(s, "Not opened yet", "Back to folders", hits);
 }
 
+// The name a language code is shown with in the grouped lists.
+std::string language_display(const std::string &code)
+{
+    std::string base = lowercase(code);
+    const size_t dash = base.find_first_of("-_");
+    if (dash != std::string::npos)
+    {
+        base.resize(dash);
+    }
+    static const std::map<std::string, std::string> names = {
+        {"en", "English"}, {"fr", "French"}, {"pt", "Portuguese"}, {"es", "Spanish"}, {"de", "German"},
+        {"it", "Italian"}, {"nl", "Dutch"}, {"ru", "Russian"}, {"ja", "Japanese"}, {"zh", "Chinese"},
+        {"ko", "Korean"}, {"pl", "Polish"}, {"sv", "Swedish"}, {"la", "Latin"}, {"eng", "English"},
+        {"fra", "French"}, {"fre", "French"}, {"por", "Portuguese"}, {"spa", "Spanish"}, {"deu", "German"}, {"ger", "German"}
+    };
+    const auto found = names.find(base);
+    if (found != names.end())
+    {
+        return found->second;
+    }
+    return base.empty() ? std::string() : code;
+}
+
+enum class GroupBy { Series, Author, Language };
+
+// The library as groups of books by series, author or language. Pick a group to list its books:
+// a series in the order of its numbers, the others by title. Books with no value go in one last group.
+void browse_by_group(FSState *s, GroupBy by)
+{
+    if (!s->info)
+    {
+        return;
+    }
+    const char *heading = by == GroupBy::Series ? "Series" : (by == GroupBy::Author ? "Authors" : "Languages");
+    const auto files = library_files(s);
+    struct Member
+    {
+        std::filesystem::path book;
+        std::string title;
+        double number;
+    };
+    std::map<std::string, std::vector<Member>> groups;
+    std::map<std::string, std::string> shown_names;
+    std::vector<Member> without;
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        progress_screen::show(s->styling, std::string("Reading ") + heading, "", static_cast<int>(i * 100 / files.size()));
+        s->info->load(files[i]);
+        const BookInfo *info = s->info->get(files[i]);
+        std::string value;
+        if (info)
+        {
+            value = by == GroupBy::Series ? info->series : (by == GroupBy::Author ? info->author : language_display(info->language));
+        }
+        Member member = {files[i], info && !info->title.empty() ? info->title : files[i].stem().string(), info ? info->series_number() : 0.0};
+        if (value.empty())
+        {
+            without.push_back(member);
+            continue;
+        }
+        const std::string key = lowercase(value);
+        shown_names.emplace(key, value);
+        groups[key].push_back(member);
+    }
+    if (groups.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info(heading, std::string("None of the books name a ") + (by == GroupBy::Series ? "series." : (by == GroupBy::Author ? "author." : "language.")));
+        }
+        return;
+    }
+
+    std::vector<std::string> keys;
+    for (const auto &group : groups)
+    {
+        keys.push_back(group.first);
+    }
+    if (!without.empty())
+    {
+        keys.push_back(std::string()); // the last row
+    }
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    std::vector<std::vector<Member>> lists;
+    for (const std::string &key : keys)
+    {
+        const std::vector<Member> &members = key.empty() ? without : groups[key];
+        names.push_back(key.empty() ? std::string("(none)") : shown_names[key]);
+        details.push_back(std::to_string(members.size()) + (members.size() == 1 ? " book" : " books"));
+        lists.push_back(members);
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title(heading);
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, by, names, lists](uint32_t index) mutable {
+        if (index >= lists.size())
+        {
+            return;
+        }
+        std::vector<Member> members = lists[index];
+        std::sort(members.begin(), members.end(), [by](const Member &a, const Member &b) {
+            if (by == GroupBy::Series && a.number != b.number)
+            {
+                return a.number < b.number;
+            }
+            return lowercase(a.title) < lowercase(b.title);
+        });
+        std::vector<std::filesystem::path> hits;
+        for (const Member &member : members)
+        {
+            hits.push_back(member.book);
+        }
+        show_results(s, names[index], "Back to folders", hits);
+    });
+    s->on_open_view(menu);
+}
+
 const char *BACKUP_FILE_NAME = "PixelReader backup.zip";
 
 // The address of the OPDS catalog is kept in a small file next to the other saved settings.
@@ -1397,7 +1518,7 @@ void open_online_books(FSState *s)
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -1486,6 +1607,20 @@ void open_library_tools(FSState *s)
                     {
                         refresh_keeping_cursor(s);
                     }
+                }));
+                break;
+            case 7:
+                browse_by_group(s, GroupBy::Series);
+                break;
+            case 8:
+                browse_by_group(s, GroupBy::Author);
+                break;
+            case 9:
+                browse_by_group(s, GroupBy::Language);
+                break;
+            case 10:
+                s->on_open_view(std::make_shared<ReadingHistoryView>(s->styling, [s](const std::string &path) {
+                    return book_title_for(s, std::filesystem::path(path));
                 }));
                 break;
             default:

@@ -1,7 +1,10 @@
 #include "./dictionary.h"
 
+#include "./stardict.h"
+
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -24,6 +27,69 @@ int compare_key(const std::string &word, const char *start, size_t length)
         return 0;
     }
     return word.size() < length ? -1 : 1;
+}
+
+// Lowercase as the lookup does it: ASCII, the accented capitals of the Latin-1 block, and the OE ligature.
+std::string fold_key(const std::string &word)
+{
+    std::string lower = word;
+    for (char &c : lower)
+    {
+        if (c >= 'A' && c <= 'Z')
+        {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    for (size_t i = 0; i + 1 < lower.size(); ++i)
+    {
+        const unsigned char lead = static_cast<unsigned char>(lower[i]);
+        const unsigned char next = static_cast<unsigned char>(lower[i + 1]);
+        if (lead == 0xC3 && next >= 0x80 && next <= 0x9E && next != 0x97)
+        {
+            lower[i + 1] = static_cast<char>(next + 0x20);
+            ++i;
+        }
+        else if (lead == 0xC5 && next == 0x92)
+        {
+            lower[i + 1] = static_cast<char>(0x93);
+            ++i;
+        }
+        else if (lead >= 0xC2)
+        {
+            ++i;
+        }
+    }
+    return lower;
+}
+
+const char *DICTIONARY_FOLDERS[] = {"resources/dictionary", "/mnt/SDCARD/App/PixelReader/resources/dictionary"};
+
+// The .ifo file of a StarDict dictionary of this name: a folder of that name holding one, or name.ifo itself.
+std::filesystem::path find_ifo(const std::string &name)
+{
+    for (const char *folder : DICTIONARY_FOLDERS)
+    {
+        std::error_code ec;
+        const std::filesystem::path base = std::filesystem::path(folder) / name;
+        if (std::filesystem::is_directory(base, ec))
+        {
+            for (const auto &item : std::filesystem::directory_iterator(base, ec))
+            {
+                std::error_code ec_file;
+                if (item.is_regular_file(ec_file) && item.path().extension() == ".ifo")
+                {
+                    return item.path();
+                }
+            }
+        }
+        std::filesystem::path single = base;
+        single += ".ifo";
+        if (std::filesystem::is_regular_file(single, ec))
+        {
+            return single;
+        }
+    }
+    return std::filesystem::path();
 }
 
 } // namespace
@@ -57,13 +123,21 @@ std::string dictionary_name_for_language(const std::string &language)
 std::vector<std::string> dictionary_names()
 {
     std::set<std::string> names;
-    const char *folders[] = {"resources/dictionary", "/mnt/SDCARD/App/PixelReader/resources/dictionary"};
-    for (const char *folder : folders)
+    for (const char *folder : DICTIONARY_FOLDERS)
     {
         std::error_code ec;
         for (const auto &item : std::filesystem::directory_iterator(folder, ec))
         {
             std::error_code ec_file;
+            if (item.is_directory(ec_file) || (item.is_regular_file(ec_file) && item.path().extension() == ".ifo"))
+            {
+                const std::string entry_name = item.is_directory(ec_file) ? item.path().filename().string() : item.path().stem().string();
+                if (!find_ifo(entry_name).empty())
+                {
+                    names.insert(entry_name);
+                }
+                continue;
+            }
             if (!item.is_regular_file(ec_file) || item.path().extension() != ".txt")
             {
                 continue;
@@ -104,8 +178,9 @@ void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
         }
         in.clear();
     }
-    if (!in)
+    if (!in.is_open())
     {
+        load_stardict(progress);
         return;
     }
 
@@ -175,6 +250,59 @@ void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
     }
 }
 
+// A StarDict dictionary is turned into the same sorted lines as a text one, but each line holds only the
+// word and where its article is. The article is read from the file when the word is looked up.
+bool Dictionary::load_stardict(const std::function<void(int)> &progress)
+{
+    const std::filesystem::path ifo = find_ifo(name);
+    stardict::Info info;
+    if (ifo.empty() || !stardict::read_info(ifo, info))
+    {
+        return false;
+    }
+    std::vector<stardict::Entry> entries;
+    if (!stardict::read_index(info, fold_key, entries, progress))
+    {
+        return false;
+    }
+    data.clear();
+    lines.clear();
+    for (const stardict::Entry &entry : entries)
+    {
+        lines.push_back(static_cast<uint32_t>(data.size()));
+        data += entry.key;
+        data += '\t';
+        data += '\x01';
+        data += std::to_string(entry.offset);
+        data += ',';
+        data += std::to_string(entry.size);
+        data += '\n';
+    }
+    articles = std::make_shared<stardict::Articles>(info);
+    ok = !lines.empty();
+    return ok;
+}
+
+// The text for a stored line: a plain gloss as it is, a StarDict place looked up in its file.
+std::optional<std::string> Dictionary::resolve(std::string gloss) const
+{
+    if (gloss.empty() || gloss[0] != '\x01' || !articles)
+    {
+        return gloss;
+    }
+    const size_t comma = gloss.find(',');
+    if (comma == std::string::npos)
+    {
+        return std::nullopt;
+    }
+    const std::string text = articles->text(std::strtoull(gloss.c_str() + 1, nullptr, 10), static_cast<uint32_t>(std::strtoul(gloss.c_str() + comma + 1, nullptr, 10)));
+    if (text.empty())
+    {
+        return std::nullopt;
+    }
+    return text;
+}
+
 void Dictionary::load(const std::function<void(int)> &progress)
 {
     ensure_loaded(progress);
@@ -206,7 +334,7 @@ std::optional<std::string> Dictionary::find_exact(const std::string &key) const
             {
                 --gloss_end;
             }
-            return data.substr(tab + 1, gloss_end - (tab + 1));
+            return resolve(data.substr(tab + 1, gloss_end - (tab + 1)));
         }
         if (cmp < 0)
         {

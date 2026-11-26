@@ -50,6 +50,9 @@ struct ImageLine: public DisplayLine
     std::filesystem::path image_path;
     uint32_t num_lines;
     uint32_t width, height;
+    // Which part of the picture this line shows when a wide page is split in two. crop_w 0 is all of it.
+    uint32_t crop_x = 0;
+    uint32_t crop_w = 0;
 
     ImageLine(
         DocAddr addr,

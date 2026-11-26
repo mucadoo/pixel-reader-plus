@@ -31,6 +31,15 @@ struct Summary
 
 Summary summarize(const std::filesystem::path &book, long long now);
 
+// The day as "2026-11-25" for a moment (seconds since 1970), in local time.
+std::string day_for(long long when);
+
+// The time spent reading on one day ("2026-11-25"), in all books.
+long long seconds_on_day(const std::string &day);
+
+// The books read on one day, with the seconds in each, the longest first.
+std::vector<std::pair<std::filesystem::path, long long>> books_on_day(const std::string &day);
+
 // 3725 seconds as "1h 02m", 540 as "9m".
 std::string format_duration(long long seconds);
 

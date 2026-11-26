@@ -67,7 +67,40 @@ float TokenLineScroller::image_scale(int w, int h) const
         return scale_to_fit_width(w);
     }
     const float page_h = static_cast<float>(std::max(1, static_cast<int>(SCREEN_HEIGHT) - 3 * static_cast<int>(line_height_pixels)));
-    return std::min(2.f, std::min(static_cast<float>(SCREEN_WIDTH) / w, page_h / h));
+    // A split page is two pages side by side, so the size of one of them is what fits.
+    const float shown_w = splits(w, h) ? w / 2.f : static_cast<float>(w);
+    if (comic_fit == 1)
+    {
+        return std::min(2.5f, static_cast<float>(SCREEN_WIDTH) / shown_w);
+    }
+    return std::min(2.f, std::min(static_cast<float>(SCREEN_WIDTH) / shown_w, page_h / h));
+}
+
+void TokenLineScroller::set_comic_options(int fit, bool split, bool manga)
+{
+    comic_fit = fit;
+    comic_split = split;
+    comic_manga = manga;
+}
+
+bool TokenLineScroller::is_comic() const
+{
+    return reader && reader->pages_are_pictures();
+}
+
+bool TokenLineScroller::splits(int w, int h) const
+{
+    return comic_split && is_comic() && h > 0 && w * 10 > h * 12;
+}
+
+std::string TokenLineScroller::image_key(const std::filesystem::path &path) const
+{
+    std::string key = path.string() + "#" + std::to_string(picture_mode);
+    if (is_comic())
+    {
+        key += "." + std::to_string(comic_fit) + (comic_split ? "s" : "");
+    }
+    return key;
 }
 
 std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_lines(const ImageDocToken &token)
@@ -78,12 +111,28 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::image_to_display_li
     if (image && image->h)
     {
         int num_lines = (image->h + line_height_pixels - 1) / line_height_pixels;
-        lines.emplace_back(std::make_unique<ImageLine>(token.address, token.path, num_lines, image->w, image->h));
-        for (int i = 1; i < num_lines; ++i)
+        // A wide page of a comic is shown as two, the left half first (the right half first for manga).
+        // The picture was scaled for one half, so the halves are cut from the scaled picture.
+        const bool split = splits(image->w, image->h);
+        const int parts = split ? 2 : 1;
+        for (int part = 0; part < parts; ++part)
         {
-            auto ref = std::make_unique<ImageRefLine>(token.address, i);
-            ref->continuation = true;
-            lines.emplace_back(std::move(ref));
+            const int half = split ? (comic_manga ? 1 - part : part) : 0;
+            const int crop_x = split ? half * (image->w / 2) : 0;
+            const int crop_w = split ? (half == 0 ? image->w / 2 : image->w - image->w / 2) : image->w;
+            auto first = std::make_unique<ImageLine>(token.address, token.path, num_lines, crop_w, image->h);
+            if (split)
+            {
+                first->crop_x = static_cast<uint32_t>(crop_x);
+                first->crop_w = static_cast<uint32_t>(crop_w);
+            }
+            lines.emplace_back(std::move(first));
+            for (int i = 1; i < num_lines; ++i)
+            {
+                auto ref = std::make_unique<ImageRefLine>(token.address, i);
+                ref->continuation = true;
+                lines.emplace_back(std::move(ref));
+            }
         }
     }
     else
@@ -314,11 +363,15 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
             return;
         }
         int slots = 3;
-        if (SDL_Surface *cached = image_cache.get_image(image_token.path.string() + "#" + std::to_string(picture_mode)))
+        if (SDL_Surface *cached = image_cache.get_image(image_key(image_token.path)))
         {
             if (cached->h > 0)
             {
                 slots = std::max(1, (cached->h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
+                if (splits(cached->w, cached->h))
+                {
+                    slots *= 2;
+                }
             }
         }
         else
@@ -331,6 +384,10 @@ void TokenLineScroller::collect_token_lines(const DocToken &token, std::vector<D
                 float scale = image_scale(w, h);
                 int scaled_h = std::max(1, static_cast<int>(h * scale));
                 slots = std::max(1, (scaled_h + static_cast<int>(line_height_pixels) - 1) / static_cast<int>(line_height_pixels));
+                if (splits(w, h))
+                {
+                    slots *= 2;
+                }
             }
         }
         for (int i = 0; i < slots; ++i)
@@ -522,7 +579,7 @@ std::optional<int> TokenLineScroller::end_line_number() const
 SDL_Surface *TokenLineScroller::load_scaled_image(const std::filesystem::path &path)
 {
     {
-        SDL_Surface *image = image_cache.get_image(path.string() + "#" + std::to_string(picture_mode));
+        SDL_Surface *image = image_cache.get_image(image_key(path));
         if (image)
         {
             return image;
@@ -563,7 +620,7 @@ SDL_Surface *TokenLineScroller::load_scaled_image(const std::filesystem::path &p
         ? surface_unique_ptr { zoomSurface(img_surface.get(), scale, scale, 0) }
         : std::move(img_surface);
     apply_picture_filter(shown.get(), picture_mode);
-    const std::string key = path.string() + "#" + std::to_string(picture_mode);
+    const std::string key = image_key(path);
     image_cache.put_image(key, std::move(shown));
 
     return image_cache.get_image(key);

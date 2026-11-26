@@ -31,6 +31,7 @@
 #include "reader/kosync.h"
 #include "reader/view_stack.h"
 #include "reader/wifi_upload.h"
+#include "./reading_history_view.h"
 
 #include "doc_api/doc_reader.h"
 #include <ctime>
@@ -961,6 +962,12 @@ void ReaderView::open_book_menu()
     {
         actions->push_back({"Export word list", [this]() { export_word_list(*state); }});
     }
+    actions->push_back({"Reading history", [this]() {
+        state->view_stack.push(std::make_shared<ReadingHistoryView>(
+            state->sys_styling,
+            [](const std::string &path) { return std::filesystem::path(path).stem().string(); }
+        ));
+    }});
     actions->push_back({"Reading stats", [this]() {
         state->view_stack.push(std::make_shared<DefinitionView>(
             "Reading stats",

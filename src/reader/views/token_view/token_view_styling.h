@@ -61,6 +61,22 @@ public:
     int get_letter_spacing() const;
     void set_letter_spacing(int level);
 
+    // How the screen is turned: 0 landscape, 1 portrait, 2 portrait turned the other way. Applies after a restart.
+    int get_rotation() const;
+    void set_rotation(int rotation);
+
+    // Which of the style tweaks of a book are on, as bits (see book_style.h). Applies when a book is opened.
+    int get_tweaks() const;
+    void set_tweaks(int mask);
+
+    // How a comic is shown: fit 0 whole page or 1 page width, split wide pages in two, and manga (right to left).
+    int get_comic_fit() const;
+    void set_comic_fit(int fit);
+    bool get_comic_split() const;
+    void set_comic_split(bool split);
+    bool get_comic_manga() const;
+    void set_comic_manga(bool manga);
+
     int get_ruler() const;
     void set_ruler(int mode);
 

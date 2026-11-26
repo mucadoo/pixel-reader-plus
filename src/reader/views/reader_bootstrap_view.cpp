@@ -57,6 +57,7 @@ void ReaderBootstrapView::load_reader()
     auto &state_store = state->state_store;
 
     set_book_styles_enabled(token_view_styling.get_book_styles());
+    set_style_tweaks(token_view_styling.get_tweaks());
     std::shared_ptr<DocReader> reader = create_doc_reader(book_path);
     SSDocReaderCache cache(state_store);
     // The first time a book is opened every part of it is measured. Show how far that is.

@@ -26,6 +26,16 @@ struct BookStyle
 void set_book_styles_enabled(bool enabled);
 bool book_styles_enabled();
 
+// Pieces of a book's styling that can be switched off one by one, with set_style_tweaks, before a book is
+// opened. Smart quotes is a change to the text itself.
+constexpr int TWEAK_PLAIN_BREAKS = 1;   // ignore the book's page breaks, and the new page at each h1
+constexpr int TWEAK_PLAIN_SIZES = 2;    // ignore the book's font sizes
+constexpr int TWEAK_PLAIN_CENTER = 4;   // ignore centering and left alignment
+constexpr int TWEAK_SMART_QUOTES = 8;   // curly quotes in place of straight ones
+constexpr int TWEAK_COUNT = 4;
+void set_style_tweaks(int mask);
+int style_tweaks();
+
 class Stylesheet
 {public:
     void parse(const std::string &css);

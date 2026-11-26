@@ -102,6 +102,32 @@ void note_activity(const std::filesystem::path &book, long long now)
     last_activity = now;
 }
 
+std::string day_for(long long when)
+{
+    return day_key(when);
+}
+
+long long seconds_on_day(const std::string &day)
+{
+    long long total = 0;
+    for (auto it = seconds.lower_bound({day, std::string()}); it != seconds.end() && it->first.first == day; ++it)
+    {
+        total += it->second;
+    }
+    return total;
+}
+
+std::vector<std::pair<std::filesystem::path, long long>> books_on_day(const std::string &day)
+{
+    std::vector<std::pair<std::filesystem::path, long long>> books;
+    for (auto it = seconds.lower_bound({day, std::string()}); it != seconds.end() && it->first.first == day; ++it)
+    {
+        books.emplace_back(std::filesystem::path(it->first.second), it->second);
+    }
+    std::sort(books.begin(), books.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+    return books;
+}
+
 Summary summarize(const std::filesystem::path &book, long long now)
 {
     Summary summary;

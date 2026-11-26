@@ -35,6 +35,9 @@ class TokenLineScroller
     uint32_t line_height_pixels;
     int side_margin = 8; // pixels left empty at both sides of the text together
     int picture_mode = 0;
+    int comic_fit = 0;      // 0 whole page on the screen, 1 as wide as the screen
+    bool comic_split = false; // a wide page is shown as two
+    bool comic_manga = false; // the right half of a split page comes first
     int first_line_indent = 0;
     bool paragraph_gap = true;
     bool bold_body = false;
@@ -79,6 +82,12 @@ public:
     // Call reset_buffer to wrap again.
     // How pictures are shown, a PictureMode. Call reset_buffer to lay out again.
     void set_picture_mode(int mode);
+    // How the pages of a comic are shown. Call reset_buffer to lay out again.
+    void set_comic_options(int fit, bool split, bool manga);
+    bool is_comic() const;
+    // Whether a picture of this size is shown as two pages.
+    bool splits(int w, int h) const;
+    std::string image_key(const std::filesystem::path &path) const;
     void set_text_options(int first_line_indent_pixels, bool blank_between_paragraphs, bool bold_text);
     // Words may be split at the end of a line, with these patterns. Null for never.
     // Call reset_buffer to wrap again.

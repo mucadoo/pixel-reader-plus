@@ -170,6 +170,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Bar middle", bar_item_label(token_view_styling.get_bar_middle()), true, sys_font},
         {"Bar right", bar_item_label(token_view_styling.get_bar_right()), true, sys_font},
         {"Clock", clock_format_label(token_view_styling.get_clock_format()), true, sys_font},
+        {"Screen", rotation_label(token_view_styling.get_rotation()), true, sys_font},
         {"Left margin", margin_label(token_view_styling.get_margin_level()), true, sys_font},
         {"Right margin", margin_label(token_view_styling.get_margin_right()), true, sys_font},
         {"Top margin", vertical_margin_label(token_view_styling.get_margin_top()), true, sys_font},
@@ -196,6 +197,9 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Auto exit", auto_exit_label(token_view_styling.get_auto_exit_minutes()), true, sys_font},
         {"Cover screen", cover_sleep_label(token_view_styling.get_cover_sleep()), true, sys_font},
         {"Book grid", grid_size_label(token_view_styling.get_grid_size()), true, sys_font},
+        {"Style tweaks", style_tweaks_label(token_view_styling.get_tweaks()), false, sys_font},
+        {"Layout profiles", "Open", false, sys_font},
+        {"Comics", std::string(token_view_styling.get_comic_manga() ? "Manga" : "Western") + (token_view_styling.get_comic_split() ? ", split" : "") + (token_view_styling.get_comic_fit() == 1 ? ", wide" : ""), false, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 
@@ -337,7 +341,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         y += row_h;
     }
 
-    const char *footer_left = line_selected == ROW_CONTROLS ? "A  Open" : "Left / right";
+    const char *footer_left = row_actions.count(line_selected) ? "A  Open" : "Left / right";
     auto footer = shade(sys_font, footer_left, quiet, theme.background);
     auto close = shade(sys_font, "B  Close", quiet, theme.background);
     int footer_y = panel_y + panel_h - pad - footer_h;
@@ -561,6 +565,10 @@ void SettingsView::on_keypress(SDLKey key)
                         (token_view_styling.get_word_spacing() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
                 }
+                else if (line_selected == ROW_ROTATION)
+                {
+                    token_view_styling.set_rotation((token_view_styling.get_rotation() + 3 + dir) % 3);
+                }
                 else if (line_selected == ROW_LETTER_SPACING)
                 {
                     token_view_styling.set_letter_spacing(
@@ -651,9 +659,9 @@ void SettingsView::on_keypress(SDLKey key)
             }
             break;
         case SW_BTN_A:
-            if (line_selected == ROW_CONTROLS && controls_action)
+            if (const auto action = row_actions.find(line_selected); action != row_actions.end() && action->second)
             {
-                controls_action();
+                action->second();
             }
             break;
         case SW_BTN_B:
@@ -668,7 +676,12 @@ void SettingsView::on_keypress(SDLKey key)
 
 void SettingsView::set_controls_action(std::function<void()> action)
 {
-    controls_action = std::move(action);
+    row_actions[ROW_CONTROLS] = std::move(action);
+}
+
+void SettingsView::set_row_action(uint32_t row, std::function<void()> action)
+{
+    row_actions[row] = std::move(action);
 }
 
 void SettingsView::terminate()

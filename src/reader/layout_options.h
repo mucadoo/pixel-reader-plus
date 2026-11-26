@@ -54,6 +54,22 @@ inline const char *letter_spacing_label(int level)
     return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
 }
 
+// "Off", or how many of the style tweaks are on.
+inline std::string style_tweaks_label(int mask)
+{
+    int count = 0;
+    for (int bit = 0; bit < 4; ++bit)
+    {
+        count += (mask >> bit) & 1;
+    }
+    return count == 0 ? std::string("Off") : std::to_string(count) + " on";
+}
+
+inline const char *rotation_label(int rotation)
+{
+    return rotation == 1 ? "Portrait" : (rotation == 2 ? "Portrait, flipped" : "Landscape");
+}
+
 inline const char *grid_size_label(int level)
 {
     static const char *labels[3] = {"Large", "Medium", "Small"};

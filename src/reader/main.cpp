@@ -16,6 +16,8 @@
 #include "./view_stack.h"
 #include "./views/definition_view.h"
 #include "./kosync.h"
+#include "./layout_profiles.h"
+#include "./views/settings_menus.h"
 #include "./views/book_grid.h"
 #include "./views/file_selector.h"
 #include "./views/reader_bootstrap_view.h"
@@ -29,6 +31,7 @@
 #include "filetypes/open_doc.h"
 #include "sys/keymap.h"
 #include "sys/screen.h"
+#include <unistd.h>
 #include "sys/trigger_input.h"
 #include "util/fps_limiter.h"
 #include "util/held_key_tracker.h"
@@ -304,13 +307,20 @@ int main(int argc, char **argv)
 
     // Surfaces
     SDL_Surface *video = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_HWSURFACE);
-    SDL_Surface *screen = SDL_CreateRGBSurface(SDL_HWSURFACE, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0, 0, 0, 0);
-    set_render_surface_format(screen->format);
 
     auto config = load_config_with_defaults();
     StateStore state_store(config[CONFIG_KEY_STORE_PATH]);
+
+    // A turned screen is drawn at the swapped size and turned when it is shown.
+    const int active_rotation = settings_get_small_int(state_store, "rotation").value_or(0);
+    set_screen_rotation(active_rotation);
+    SDL_Surface *screen = SDL_CreateRGBSurface(SDL_HWSURFACE, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0, 0, 0, 0);
+    set_render_surface_format(screen->format);
+    bool restart_requested = false;
+
     library_log().load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "library.log");
     reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
+    layout_profiles::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "profiles.tsv");
     collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
@@ -372,6 +382,14 @@ int main(int argc, char **argv)
     token_view_styling.set_margin_bottom(settings_get_small_int(state_store, "margin_bottom").value_or(0));
     token_view_styling.set_ruler(settings_get_small_int(state_store, "ruler").value_or(0));
     token_view_styling.set_letter_spacing(settings_get_small_int(state_store, "letter_spacing").value_or(0));
+    token_view_styling.set_rotation(active_rotation);
+    token_view_styling.set_comic_fit(settings_get_small_int(state_store, "comic_fit").value_or(0));
+    token_view_styling.set_comic_split(settings_get_small_int(state_store, "comic_split").value_or(0) != 0);
+    token_view_styling.set_comic_manga(settings_get_small_int(state_store, "comic_manga").value_or(0) != 0);
+    if (const auto saved_tweaks = state_store.get_setting("tweaks"))
+    {
+        token_view_styling.set_tweaks(std::atoi(saved_tweaks->c_str()));
+    }
     token_view_styling.set_grid_size(settings_get_small_int(state_store, "grid_size").value_or(0));
     BookGrid::set_density(token_view_styling.get_grid_size());
     token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
@@ -419,6 +437,9 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "margin_bottom", token_view_styling.get_margin_bottom());
             settings_set_small_int(state_store, "ruler", token_view_styling.get_ruler());
             settings_set_small_int(state_store, "letter_spacing", token_view_styling.get_letter_spacing());
+            settings_set_small_int(state_store, "comic_fit", token_view_styling.get_comic_fit());
+            settings_set_small_int(state_store, "comic_split", token_view_styling.get_comic_split() ? 1 : 0);
+            settings_set_small_int(state_store, "comic_manga", token_view_styling.get_comic_manga() ? 1 : 0);
             settings_set_small_int(state_store, "grid_size", token_view_styling.get_grid_size());
             BookGrid::set_density(token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
@@ -438,6 +459,8 @@ int main(int argc, char **argv)
             settings_set_bold_text(state_store, token_view_styling.get_bold_text());
         }
         settings_set_auto_exit_minutes(state_store, token_view_styling.get_auto_exit_minutes());
+        settings_set_small_int(state_store, "rotation", token_view_styling.get_rotation());
+        state_store.set_setting("tweaks", std::to_string(token_view_styling.get_tweaks()));
         settings_set_bar_item(state_store, 0, token_view_styling.get_bar_left());
         settings_set_bar_item(state_store, 1, token_view_styling.get_bar_middle());
         settings_set_bar_item(state_store, 2, token_view_styling.get_bar_right());
@@ -467,6 +490,15 @@ int main(int argc, char **argv)
         token_view_styling,
         SYSTEM_FONT
     );
+    settings_view->set_row_action(SettingsView::TWEAKS_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
+        open_style_tweaks_menu(view_stack, sys_styling, token_view_styling);
+    });
+    settings_view->set_row_action(SettingsView::COMIC_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
+        open_comic_menu(view_stack, sys_styling, token_view_styling);
+    });
+    settings_view->set_row_action(SettingsView::PROFILES_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
+        open_layout_profiles_menu(view_stack, sys_styling, token_view_styling);
+    });
     settings_view->set_controls_action([&view_stack, &sys_styling]() {
         view_stack.push(std::make_shared<DefinitionView>(
             "Controls",
@@ -494,6 +526,7 @@ int main(int argc, char **argv)
     auto is_trigger = [](SDLKey key) {
         return key == SW_BTN_L2 || key == SW_BTN_R2;
     };
+    held_key_tracker.set_device_key(device_key_from_screen);
     held_key_tracker.set_held_override([&trigger_input, &is_trigger](SDLKey key) -> std::optional<bool> {
         if (trigger_input.active() && is_trigger(key))
         {
@@ -601,7 +634,7 @@ int main(int argc, char **argv)
 
     // Initial render
     view_stack.render(screen, true);
-    SDL_BlitSurface(screen, NULL, video, NULL);
+    present_screen(screen, video);
     screen_dim::apply(video);
     SDL_Flip(video);
 
@@ -639,7 +672,7 @@ int main(int argc, char **argv)
                         {
                             break; // read from the pad instead
                         }
-                        ran_user_code = handle_key_down(key) || ran_user_code;
+                        ran_user_code = handle_key_down(screen_key_from_device(key)) || ran_user_code;
                     }
                     break;
                 case SDL_KEYUP:
@@ -649,7 +682,7 @@ int main(int argc, char **argv)
                         {
                             break;
                         }
-                        chord_tracker.on_keyrelease(key);
+                        chord_tracker.on_keyrelease(screen_key_from_device(key));
                     }
                     break;
                 default:
@@ -658,6 +691,13 @@ int main(int argc, char **argv)
         }
 
         quit = quit || chord_tracker.exit_requested();
+
+        // A new screen turn takes effect once the settings are closed, by starting the reader again.
+        if (!quit && token_view_styling.get_rotation() != active_rotation && settings_view->is_done())
+        {
+            restart_requested = true;
+            quit = true;
+        }
 
         held_key_tracker.accumulate(avg_loop_time); // Pretend perfect loop timing for event firing consistency
         ran_user_code = held_key_tracker.for_newest_held(key_held_callback) || ran_user_code;
@@ -674,7 +714,7 @@ int main(int argc, char **argv)
 
             if (view_stack.render(screen, force_render))
             {
-                SDL_BlitSurface(screen, NULL, video, NULL);
+                present_screen(screen, video);
                 screen_dim::apply(video);
                 SDL_Flip(video);
             }
@@ -720,7 +760,7 @@ int main(int argc, char **argv)
                         cover->set_screensaver();
                         view_stack.push(cover);
                         view_stack.render(screen, true);
-                        SDL_BlitSurface(screen, NULL, video, NULL);
+                        present_screen(screen, video);
                         screen_dim::apply(video);
                         SDL_Flip(video);
                     }
@@ -744,6 +784,11 @@ int main(int argc, char **argv)
     SDL_FreeSurface(screen);
     SDL_Quit();
     xmlCleanupParser();
-    
+
+    if (restart_requested)
+    {
+        execv("/proc/self/exe", argv);
+    }
+
     return 0;
 }

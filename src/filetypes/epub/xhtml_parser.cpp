@@ -640,7 +640,7 @@ public:
         Frame next = frames.back();
         std::string tag = node->name ? (const char *)node->name : "";
         next.self = stylesheet.apply(next.self, tag, class_list(node));
-        if (tag.size() == 2 && tag[0] == 'h' && tag[1] == '1' && !next.self.break_before_set)
+        if (tag.size() == 2 && tag[0] == 'h' && tag[1] == '1' && !next.self.break_before_set && !(style_tweaks() & TWEAK_PLAIN_BREAKS))
         {
             next.self.break_before = 1;
             next.self.break_before_set = true;
@@ -662,7 +662,7 @@ public:
                 next.self.scale = level == 1 ? 1.5f : level == 2 ? 1.25f : 1.15f;
                 next.self.scale_set = true;
             }
-            if (!next.self.center_set && level <= 2)
+            if (!next.self.center_set && level <= 2 && !(style_tweaks() & TWEAK_PLAIN_CENTER))
             {
                 next.self.center = true;
                 next.self.center_set = true;
@@ -687,28 +687,85 @@ public:
         }
     }
 
+    // The last letter of the text so far, to tell an opening quote from a closing one.
+    char previous_char = ' ';
+
+    // Curly quotes for the straight ones, one letter for one letter, so addresses do not move.
+    std::string smarten(const char *text)
+    {
+        std::string out;
+        const size_t length = std::strlen(text);
+        out.reserve(length + 8);
+        const auto is_word = [](char c) {
+            const unsigned char u = static_cast<unsigned char>(c);
+            return std::isalnum(u) || u >= 0x80;
+        };
+        for (size_t i = 0; i < length; ++i)
+        {
+            const char c = text[i];
+            const char before = out.empty() ? previous_char : out.back();
+            const char after = i + 1 < length ? text[i + 1] : ' ';
+            const bool opening_context = before == ' ' || before == '\t' || before == '\n' || before == '\r'
+                || before == '(' || before == '[' || before == '{' || before == '/'
+                || (static_cast<unsigned char>(before) >= 0x80 && !out.empty() && out.size() >= 3
+                    && (out.compare(out.size() - 3, 3, "\xE2\x80\x94") == 0 || out.compare(out.size() - 3, 3, "\xE2\x80\x93") == 0));
+            if (c == '"')
+            {
+                out += opening_context ? "\xE2\x80\x9C" : "\xE2\x80\x9D";
+            }
+            else if (c == '\'')
+            {
+                if (opening_context && is_word(after))
+                {
+                    out += "\xE2\x80\x98";
+                }
+                else
+                {
+                    out += "\xE2\x80\x99";
+                }
+            }
+            else
+            {
+                out.push_back(c);
+            }
+        }
+        if (!out.empty())
+        {
+            previous_char = out.back();
+        }
+        return out;
+    }
+
     void on_text_node(xmlNodePtr node, int node_depth)
     {
         DEBUG_LOG("\"" << escape_newlines(node->content) << "\"");
 
+        std::string smart;
+        const char *content = reinterpret_cast<const char *>(node->content);
+        if (content && pre_depth == 0 && (style_tweaks() & TWEAK_SMART_QUOTES))
+        {
+            smart = smarten(content);
+            content = smart.c_str();
+        }
+
         if (collecting)
         {
-            if (node->content)
+            if (content)
             {
                 if (in_cell)
                 {
-                    table_cell += (const char *)node->content;
+                    table_cell += content;
                 }
                 else
                 {
-                    table_preface += (const char *)node->content;
+                    table_preface += content;
                 }
-                current_address += get_address_width((const char *)node->content);
+                current_address += get_address_width(content);
             }
             return;
         }
 
-        if (node->content && xmlStrlen(node->content))
+        if (content && *content)
         {
             Node::Type type;
             if (pre_depth > 0)
@@ -732,10 +789,10 @@ public:
                 node_depth,
                 type,
                 node,
-                (const char*)node->content
+                content
             );
 
-            current_address += get_address_width((const char*)node->content);
+            current_address += get_address_width(content);
         }
     }
 

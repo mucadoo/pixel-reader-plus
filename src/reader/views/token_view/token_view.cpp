@@ -66,6 +66,9 @@ struct TokenViewState
     bool bold_text = false;
     int word_spacing = 1;   // level of the word spacing setting
     int letter_spacing = 0; // level of the letter spacing setting
+    int comic_fit = 0;
+    bool comic_split = false;
+    bool comic_manga = false;
     int left_margin;    // pixels left empty at the left of the text
     int right_margin;
     int top_margin;     // pixels left empty above and below the lines
@@ -276,6 +279,10 @@ struct TokenViewState
         set_word_spacing(word_spacing_pixels(word_spacing));
         letter_spacing = token_view_styling.get_letter_spacing();
         set_letter_spacing(letter_spacing_pixels(letter_spacing));
+        comic_fit = token_view_styling.get_comic_fit();
+        comic_split = token_view_styling.get_comic_split();
+        comic_manga = token_view_styling.get_comic_manga();
+        line_scroller.set_comic_options(comic_fit, comic_split, comic_manga);
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -329,6 +336,17 @@ struct TokenViewState
         {
             word_spacing = spacing_level;
             set_word_spacing(word_spacing_pixels(spacing_level));
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (token_view_styling.get_comic_fit() != comic_fit
+            || token_view_styling.get_comic_split() != comic_split
+            || token_view_styling.get_comic_manga() != comic_manga)
+        {
+            comic_fit = token_view_styling.get_comic_fit();
+            comic_split = token_view_styling.get_comic_split();
+            comic_manga = token_view_styling.get_comic_manga();
+            line_scroller.set_comic_options(comic_fit, comic_split, comic_manga);
             line_scroller.reset_buffer();
             needs_render = true;
         }
@@ -1042,7 +1060,7 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
                             height -= dst_y_bottom - y_limit;
                         }
 
-                        SDL_Rect src_rect = {0, src_y, width, height};
+                        SDL_Rect src_rect = {static_cast<Sint16>(image_line->crop_x), src_y, width, height};
                         SDL_Rect dest_rect = {
                             static_cast<Sint16>((SCREEN_WIDTH - width) / 2),
                             dst_y,
@@ -1386,6 +1404,10 @@ void TokenView::on_keypress(SDLKey key)
         case SW_BTN_RIGHT:
             if (key == SW_BTN_LEFT || key == SW_BTN_RIGHT)
             {
+                if (state->comic_manga && state->line_scroller.is_comic())
+                {
+                    key = key == SW_BTN_LEFT ? SW_BTN_RIGHT : SW_BTN_LEFT; // manga is read from the right
+                }
                 if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
                 {
                     turn_page(key == SW_BTN_LEFT ? -1 : 1);
@@ -1543,7 +1565,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
+    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + (state.line_scroller.is_comic() ? ",cf" + std::to_string(state.comic_fit) + (state.comic_split ? "s" : "") : std::string()) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');
     if (!chapter)
     {

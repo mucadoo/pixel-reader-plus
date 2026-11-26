@@ -4,6 +4,7 @@
 #include "reader/view.h"
 
 #include <functional>
+#include <map>
 #include <string>
 
 struct SystemStyling;
@@ -15,34 +16,38 @@ class SettingsView: public View
     static constexpr uint32_t ROW_BAR_LEFT = 6;
     static constexpr uint32_t ROW_BAR_RIGHT = 8;
     static constexpr uint32_t ROW_CLOCK = 9;
-    static constexpr uint32_t ROW_MARGINS = 10;
-    static constexpr uint32_t ROW_MARGIN_RIGHT = 11;
-    static constexpr uint32_t ROW_MARGIN_TOP = 12;
-    static constexpr uint32_t ROW_MARGIN_BOTTOM = 13;
-    static constexpr uint32_t ROW_SPACING = 14;
-    static constexpr uint32_t ROW_JUSTIFY = 15;
-    static constexpr uint32_t ROW_INDENT = 16;
-    static constexpr uint32_t ROW_GAP = 17;
-    static constexpr uint32_t ROW_BOLD = 18;
-    static constexpr uint32_t ROW_HYPHEN = 19;
-    static constexpr uint32_t ROW_PICTURES = 20;
-    static constexpr uint32_t ROW_THIN_BAR = 21;
-    static constexpr uint32_t ROW_WORD_SPACING = 22;
-    static constexpr uint32_t ROW_LETTER_SPACING = 23;
-    static constexpr uint32_t ROW_OVERLAP = 24;
-    static constexpr uint32_t ROW_RULER = 25;
-    static constexpr uint32_t ROW_DICTIONARY = 26;
-    static constexpr uint32_t ROW_SCREEN_DIM = 27;
-    static constexpr uint32_t ROW_BOOK_STYLES = 28;
-    static constexpr uint32_t ROW_HILITE = 29;
-    static constexpr uint32_t ROW_NIGHT = 30;
-    static constexpr uint32_t ROW_NIGHT_FROM = 31;
-    static constexpr uint32_t ROW_NIGHT_UNTIL = 32;
-    static constexpr uint32_t ROW_AUTO_EXIT = 33;
-    static constexpr uint32_t ROW_COVER_SLEEP = 34;
-    static constexpr uint32_t ROW_GRID = 35;
-    static constexpr uint32_t ROW_CONTROLS = 36;
-    static constexpr int ROW_COUNT = 37;
+    static constexpr uint32_t ROW_ROTATION = 10;
+    static constexpr uint32_t ROW_MARGINS = 11;
+    static constexpr uint32_t ROW_MARGIN_RIGHT = 12;
+    static constexpr uint32_t ROW_MARGIN_TOP = 13;
+    static constexpr uint32_t ROW_MARGIN_BOTTOM = 14;
+    static constexpr uint32_t ROW_SPACING = 15;
+    static constexpr uint32_t ROW_JUSTIFY = 16;
+    static constexpr uint32_t ROW_INDENT = 17;
+    static constexpr uint32_t ROW_GAP = 18;
+    static constexpr uint32_t ROW_BOLD = 19;
+    static constexpr uint32_t ROW_HYPHEN = 20;
+    static constexpr uint32_t ROW_PICTURES = 21;
+    static constexpr uint32_t ROW_THIN_BAR = 22;
+    static constexpr uint32_t ROW_WORD_SPACING = 23;
+    static constexpr uint32_t ROW_LETTER_SPACING = 24;
+    static constexpr uint32_t ROW_OVERLAP = 25;
+    static constexpr uint32_t ROW_RULER = 26;
+    static constexpr uint32_t ROW_DICTIONARY = 27;
+    static constexpr uint32_t ROW_SCREEN_DIM = 28;
+    static constexpr uint32_t ROW_BOOK_STYLES = 29;
+    static constexpr uint32_t ROW_HILITE = 30;
+    static constexpr uint32_t ROW_NIGHT = 31;
+    static constexpr uint32_t ROW_NIGHT_FROM = 32;
+    static constexpr uint32_t ROW_NIGHT_UNTIL = 33;
+    static constexpr uint32_t ROW_AUTO_EXIT = 34;
+    static constexpr uint32_t ROW_COVER_SLEEP = 35;
+    static constexpr uint32_t ROW_GRID = 36;
+    static constexpr uint32_t ROW_TWEAKS = 37;
+    static constexpr uint32_t ROW_PROFILES = 38;
+    static constexpr uint32_t ROW_COMIC = 39;
+    static constexpr uint32_t ROW_CONTROLS = 40;
+    static constexpr int ROW_COUNT = 41;
 
     bool _is_done = false;
     bool needs_render = true;
@@ -55,7 +60,7 @@ class SettingsView: public View
     uint32_t styling_sub_id;
 
     int num_menu_items;
-    std::function<void()> controls_action;
+    std::map<uint32_t, std::function<void()>> row_actions; // rows that open something on A
 
     void on_change_theme(int dir);
     void on_change_font_size(int dir);
@@ -66,6 +71,10 @@ class SettingsView: public View
     void on_change_bar(int slot, int dir);
 
 public:
+    static constexpr uint32_t TWEAKS_ROW = ROW_TWEAKS;
+    static constexpr uint32_t PROFILES_ROW = ROW_PROFILES;
+    static constexpr uint32_t COMIC_ROW = ROW_COMIC;
+
     SettingsView(
         SystemStyling &sys_styling,
         TokenViewStyling &token_view_styling,
@@ -81,6 +90,8 @@ public:
     void terminate();
     void unterminate();
     void set_controls_action(std::function<void()> action);
+    // Makes A on a row (such as ROW_TWEAKS) run the action.
+    void set_row_action(uint32_t row, std::function<void()> action);
 };
 
 #endif

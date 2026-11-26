@@ -3,9 +3,12 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace stardict { class Articles; }
 
 // An offline dictionary: one file of "word<TAB>gloss" lines sorted by word.
 class Dictionary
@@ -15,6 +18,10 @@ class Dictionary
     bool ok = false;
     std::string data;
     std::vector<uint32_t> lines;
+    std::shared_ptr<stardict::Articles> articles; // set for a StarDict dictionary
+
+    bool load_stardict(const std::function<void(int)> &progress);
+    std::optional<std::string> resolve(std::string gloss) const;
 
     void ensure_loaded(const std::function<void(int)> &progress = {});
     std::optional<std::string> find_exact(const std::string &key) const;
@@ -34,7 +41,8 @@ public:
 };
 
 // The names of the dictionaries on the card: every .txt file in resources/dictionary except the
-// license notes. Drop a file of "word<TAB>meaning" lines in that folder to add your own; words are
+// license notes, and every StarDict dictionary (a folder with a .ifo file in it, or a .ifo file with its
+// .idx and .dict or .dict.dz beside it). Drop a file of "word<TAB>meaning" lines in that folder to add your own; words are
 // written in lowercase, and the file need not be sorted.
 std::vector<std::string> dictionary_names();
 

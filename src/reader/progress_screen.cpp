@@ -94,7 +94,22 @@ void show(SystemStyling &styling, const std::string &title, const std::string &d
     {
         return;
     }
-    draw(video, styling, title, detail, percent);
+    // Drawn at the size of the page, then turned onto the display like everything else.
+    static SDL_Surface *page = nullptr;
+    if (!page || page->w != SCREEN_WIDTH || page->h != SCREEN_HEIGHT)
+    {
+        if (page)
+        {
+            SDL_FreeSurface(page);
+        }
+        page = SDL_CreateRGBSurface(SDL_SWSURFACE, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0, 0, 0, 0);
+        if (!page)
+        {
+            return;
+        }
+    }
+    draw(page, styling, title, detail, percent);
+    present_screen(page, video);
     screen_dim::apply(video);
     SDL_Flip(video);
 }

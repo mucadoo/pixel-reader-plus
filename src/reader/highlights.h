@@ -58,12 +58,17 @@ struct Highlight
     DocAddr second = 0;
     std::string text;
     HighlightStyle style = HighlightStyle::Marker;
+    std::string note; // what the reader wrote about it, empty when nothing
 
     Highlight(DocAddr first, DocAddr second, std::string text = {}, HighlightStyle style = HighlightStyle::Marker)
         : first(first), second(second), text(std::move(text)), style(style)
     {
     }
 };
+
+// The letter the Markdown export and import use for a style: y, g, b, p, u or s.
+char highlight_style_letter(HighlightStyle style);
+HighlightStyle highlight_style_from_letter(char letter);
 
 std::vector<Highlight> load_highlights(const std::filesystem::path &path);
 void save_highlights(const std::filesystem::path &path, const std::vector<Highlight> &highlights);

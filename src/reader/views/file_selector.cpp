@@ -1959,9 +1959,11 @@ void open_all_highlights(FSState *s)
         const std::string title = book_title_for(s, book.first);
         for (const Highlight &highlight : load_highlights(file))
         {
-            if (!highlight.text.empty())
+            if (!highlight.text.empty() || !highlight.note.empty())
             {
-                rows.push_back({book.first, title, highlight.text, highlight.first});
+                const std::string shown = (highlight.text.empty() ? std::string("(text not saved)") : highlight.text)
+                    + (highlight.note.empty() ? std::string() : "  [" + highlight.note + "]");
+                rows.push_back({book.first, title, shown, highlight.first});
             }
             if (rows.size() >= 1000)
             {
@@ -1978,6 +1980,63 @@ void open_all_highlights(FSState *s)
         return;
     }
     show_highlight_rows(s, rows, "");
+}
+
+// Writes every highlight and note of every opened book into one Markdown file in the books folder.
+void export_all_highlights(FSState *s)
+{
+    std::vector<std::pair<std::filesystem::path, LibraryLog::Entry>> books = library_log().all();
+    std::stable_sort(books.begin(), books.end(), [](const auto &a, const auto &b) {
+        return a.first.filename().string() < b.first.filename().string();
+    });
+    const std::filesystem::path out_path = library_root(s) / "All highlights.md";
+    std::ofstream out(out_path, std::ios::trunc);
+    out << "# All highlights\n\n";
+    size_t books_written = 0;
+    size_t total = 0;
+    for (const auto &book : books)
+    {
+        if (book.second.book_id.empty() || s->store_dir.empty())
+        {
+            continue;
+        }
+        const auto file = s->store_dir / "books" / (book.second.book_id + ".highlights");
+        std::error_code ec;
+        if (!std::filesystem::exists(file, ec))
+        {
+            continue;
+        }
+        std::vector<Highlight> list = load_highlights(file);
+        if (list.empty())
+        {
+            continue;
+        }
+        std::stable_sort(list.begin(), list.end(), [](const Highlight &a, const Highlight &b) { return a.first < b.first; });
+        out << "## " << book_title_for(s, book.first) << "\n\n";
+        for (const Highlight &highlight : list)
+        {
+            out << "> " << (highlight.text.empty() ? std::string("(text not saved)") : highlight.text) << "\n\n";
+            if (!highlight.note.empty())
+            {
+                out << "**Note:** " << highlight.note << "\n\n";
+            }
+            ++total;
+        }
+        ++books_written;
+    }
+    out.close();
+    if (s->on_info)
+    {
+        if (!out || total == 0)
+        {
+            s->on_info("Export highlights", total == 0 ? "There are no highlights yet." : "Could not write the file.");
+        }
+        else
+        {
+            s->on_info("Export highlights", "Saved " + std::to_string(total) + " highlights from " + std::to_string(books_written)
+                + (books_written == 1 ? " book to\n" : " books to\n") + out_path.string());
+        }
+    }
 }
 
 // The words around each match in every book of the library, so a phrase can be found when the
@@ -2233,7 +2292,7 @@ void tidy_folder(FSState *s)
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)", "Receive books over wifi", "Browse by series", "Browse by author", "Browse by language", "Reading history", "All highlights", "Search inside all books", "Browse by tag or genre", "Tidy this folder into author folders", "Reading stats", "Export all highlights and notes"
     };
     const auto choose = [s](uint32_t index) {
         const std::filesystem::path zip = library_root(s) / BACKUP_FILE_NAME;
@@ -2343,6 +2402,34 @@ void open_library_tools(FSState *s)
             case 14:
                 tidy_folder(s);
                 break;
+            case 16:
+                export_all_highlights(s);
+                break;
+            case 15:
+            {
+                if (!s->on_info)
+                {
+                    break;
+                }
+                std::vector<long long> finished_times;
+                for (const auto &entry : library_log().all())
+                {
+                    if (entry.second.finished())
+                    {
+                        finished_times.push_back(entry.second.last_opened);
+                    }
+                }
+                s->on_info("Reading stats", reading_stats::detailed_report(
+                    std::filesystem::path(),
+                    static_cast<long long>(std::time(nullptr)),
+                    library_log().started_count(),
+                    library_log().finished_count(),
+                    finished_times,
+                    0,
+                    [s](const std::string &path) { return book_title_for(s, std::filesystem::path(path)); }
+                ));
+                break;
+            }
             case 12:
                 s->on_open_view(std::make_shared<TextInputView>(
                     "Search inside all books",
@@ -2367,7 +2454,7 @@ void open_library_tools(FSState *s)
     // Index in `names` above to the group the tool belongs to.
     const char *groups[] = {
         "Browse", "Clean up", "Browse", "Back up", "Back up", "Get books", "Get books",
-        "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up"
+        "Browse", "Browse", "Browse", "Browse", "Browse", "", "Browse", "Clean up", "Browse", "Back up"
     };
     std::vector<GroupedEntry> grouped;
     for (size_t i = 0; i < names.size(); ++i)

@@ -27,6 +27,7 @@
 #include "./book_covers.h"
 #include "./screen_dim.h"
 #include "./layout_options.h"
+#include "./views/font_preview_view.h"
 #include "./views/settings_view.h"
 #include "reader/controls_guide.h"
 #include "./views/token_view/token_view_styling.h"
@@ -561,6 +562,13 @@ int main(int argc, char **argv)
     settings_view->set_row_action(SettingsView::PROFILES_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
         open_layout_profiles_menu(view_stack, sys_styling, token_view_styling);
     });
+    // A on Font or Font size shows a sample paragraph, to choose both by sight.
+    for (const uint32_t row : {1u, 2u})
+    {
+        settings_view->set_row_action(row, [&view_stack, &sys_styling]() {
+            view_stack.push(std::make_shared<FontPreviewView>(sys_styling));
+        });
+    }
     settings_view->set_controls_action([&view_stack, &sys_styling]() {
         view_stack.push(std::make_shared<DefinitionView>(
             "Controls",

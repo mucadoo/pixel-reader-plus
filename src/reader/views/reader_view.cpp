@@ -15,6 +15,7 @@
 #include "reader/book_info.h"
 #include "reader/book_layout.h"
 #include "reader/bookmarks.h"
+#include "reader/book_layout.h"
 #include "reader/controls_guide.h"
 #include "./token_view/token_view.h"
 #include "./token_view/token_view_styling.h"
@@ -556,6 +557,35 @@ void add_bookmark(ReaderViewState &state)
     show_message(state, "Bookmark added");
 }
 
+// True when the page on screen holds a bookmark.
+bool page_has_bookmark(ReaderViewState &state)
+{
+    DocAddr from = 0;
+    DocAddr until = 0;
+    return state.token_view->visible_range(from, until) && bookmark_in_range(state.bookmarks, from, until);
+}
+
+// Removes the bookmark on this page, or adds one when there is none.
+void toggle_bookmark(ReaderViewState &state)
+{
+    DocAddr from = 0;
+    DocAddr until = 0;
+    if (state.token_view->visible_range(from, until) && bookmark_in_range(state.bookmarks, from, until))
+    {
+        state.bookmarks.erase(
+            std::remove_if(state.bookmarks.begin(), state.bookmarks.end(), [from, until](const Bookmark &b) {
+                return b.address >= from && b.address < until;
+            }),
+            state.bookmarks.end()
+        );
+        save_bookmarks(state.bookmarks_path, state.bookmarks);
+        refresh_marks(state);
+        show_message(state, "Bookmark removed");
+        return;
+    }
+    add_bookmark(state);
+}
+
 // Goes to the next or previous bookmark or highlight in book order.
 void go_to_mark(ReaderView &reader_view, ReaderViewState &state, bool forward)
 {
@@ -749,7 +779,7 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
         for (size_t index : *order)
         {
             const Highlight &highlight = highlights[index];
-            names.push_back(highlight.text.empty() ? std::string("(text not saved)") : highlight.text);
+            names.push_back(std::string(highlight.note.empty() ? "" : "* ") + (highlight.text.empty() ? std::string("(text not saved)") : highlight.text));
             details.push_back(percent_label(state, highlight.first));
         }
         m.set_entries(names);
@@ -758,7 +788,7 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
     fill(*menu);
     menu->set_title("Highlights");
     menu->set_empty_message("No highlights yet\nPress Y, pick words, then A");
-    menu->set_hints({"A  Go", "X  Delete", "B  Close"});
+    menu->set_hints({"A  Go", "Y  Note", "X  Delete", "B  Close"});
     menu->set_uses_x(true);
     menu->set_close_on_select();
     menu->set_on_selection([&reader_view, &state, order](uint32_t index) {
@@ -767,7 +797,35 @@ void open_highlights_menu(ReaderView &reader_view, ReaderViewState &state)
             reader_view.jump_to(state.token_view->highlights()[(*order)[index]].first);
         }
     });
-    menu->set_default_on_keypress([&state, order, fill](SDLKey key, SelectionMenu &m) {
+    std::weak_ptr<SelectionMenu> weak_menu = menu;
+    menu->set_default_on_keypress([&state, order, fill, weak_menu](SDLKey key, SelectionMenu &m) {
+        if (key == SW_BTN_Y)
+        {
+            const uint32_t at = m.get_cursor_pos();
+            if (at >= order->size())
+            {
+                return;
+            }
+            const size_t which = (*order)[at];
+            state.view_stack.push(std::make_shared<TextInputView>(
+                "Note (empty removes it)",
+                state.token_view->highlights()[which].note,
+                [&state, which, at, order, fill, weak_menu](const std::string &typed) {
+                    std::string note = typed;
+                    while (!note.empty() && note.back() == ' ') note.pop_back();
+                    while (!note.empty() && note.front() == ' ') note.erase(0, 1);
+                    state.token_view->set_highlight_note(which, note);
+                    if (auto open = weak_menu.lock())
+                    {
+                        fill(*open);
+                        open->set_cursor_pos(at);
+                    }
+                },
+                state.sys_styling,
+                300
+            ));
+            return;
+        }
         if (key != SW_BTN_X)
         {
             return;
@@ -866,7 +924,22 @@ void export_word_list(ReaderViewState &state)
     ));
 }
 
-// Writes the highlights next to the book as a text file, which the book list can open too.
+// The name of the Markdown file of highlights next to the book.
+std::filesystem::path highlights_file_for(const ReaderViewState &state)
+{
+    std::string name = state.book_title;
+    for (char &c : name)
+    {
+        if (std::string("/\\:*?\"<>|").find(c) != std::string::npos)
+        {
+            c = '_';
+        }
+    }
+    return state.book_path.parent_path() / (name + " - highlights.md");
+}
+
+// Writes the highlights and their notes next to the book as a Markdown file. Each one ends with a
+// comment holding its place, so the file can be read back into the book later.
 void export_highlights(ReaderViewState &state)
 {
     const auto &highlights = state.token_view->highlights();
@@ -876,25 +949,29 @@ void export_highlights(ReaderViewState &state)
         return;
     }
 
-    std::string name = state.book_title;
-    for (char &c : name)
-    {
-        if (std::string("/\\:*?\"<>|").find(c) != std::string::npos)
-        {
-            c = '_';
-        }
-    }
-    const std::filesystem::path out_path = state.book_path.parent_path() / (name + " - highlights.txt");
-
+    const std::filesystem::path out_path = highlights_file_for(state);
+    const auto &toc = state.reader->get_table_of_contents();
     std::ofstream out(out_path, std::ios::trunc);
-    out << state.book_title << "\n\nHighlights\n\n";
+    out << "# " << state.book_title << "\n\n## Highlights\n\n";
+    std::string last_chapter;
     for (size_t index : highlight_order(highlights))
     {
         const Highlight &highlight = highlights[index];
+        const auto position = state.reader->get_toc_position(highlight.first);
+        if (position.toc_index < toc.size() && toc[position.toc_index].display_name != last_chapter)
+        {
+            last_chapter = toc[position.toc_index].display_name;
+            out << "### " << last_chapter << "\n\n";
+        }
         const int color = marker_color_of(highlight.style);
-        out << percent_label(state, highlight.first) << "  "
-            << (color > 0 ? std::string("[") + highlight_color_name(color) + "] " : std::string())
-            << (highlight.text.empty() ? std::string("(text not saved)") : highlight.text) << "\n\n";
+        out << "> " << (highlight.text.empty() ? std::string("(text not saved)") : highlight.text) << "\n\n";
+        if (!highlight.note.empty())
+        {
+            out << "**Note:** " << highlight.note << "\n\n";
+        }
+        out << "*" << percent_label(state, highlight.first)
+            << (color > 0 ? std::string(", ") + highlight_color_name(color) : std::string()) << "*\n";
+        out << "<!-- px " << highlight.first << " " << highlight.second << " " << highlight_style_letter(highlight.style) << " -->\n\n";
     }
     out.close();
 
@@ -905,9 +982,65 @@ void export_highlights(ReaderViewState &state)
     }
     state.view_stack.push(std::make_shared<DefinitionView>(
         "Highlights exported",
-        "Saved " + std::to_string(highlights.size()) + " highlights to\n" + out_path.string(),
+        "Saved " + std::to_string(highlights.size()) + " highlights and notes to\n" + out_path.string()
+            + "\n\nImport highlights reads the file back into this book, on this or another copy of it.",
         state.sys_styling
     ));
+}
+
+// Reads the Markdown file written by Export highlights and adds what the book does not have yet.
+void import_highlights(ReaderViewState &state)
+{
+    const std::filesystem::path in_path = highlights_file_for(state);
+    std::ifstream in(in_path);
+    if (!in)
+    {
+        show_message(state, "No highlights file next to the book");
+        return;
+    }
+    std::vector<Highlight> found;
+    std::string text;
+    std::string note;
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        if (line.rfind("> ", 0) == 0)
+        {
+            text = line.substr(2);
+            if (text == "(text not saved)")
+            {
+                text.clear();
+            }
+        }
+        else if (line.rfind("**Note:** ", 0) == 0)
+        {
+            note = line.substr(10);
+        }
+        else if (line.rfind("<!-- px ", 0) == 0)
+        {
+            unsigned long long first = 0;
+            unsigned long long second = 0;
+            char letter = 'y';
+            if (std::sscanf(line.c_str(), "<!-- px %llu %llu %c", &first, &second, &letter) >= 2 && second > first)
+            {
+                found.emplace_back(static_cast<DocAddr>(first), static_cast<DocAddr>(second), text, highlight_style_from_letter(letter));
+                found.back().note = note;
+            }
+            text.clear();
+            note.clear();
+        }
+    }
+    if (found.empty())
+    {
+        show_message(state, "No highlights found in the file");
+        return;
+    }
+    const size_t changed = state.token_view->merge_highlights(found);
+    show_message(state, std::to_string(changed) + " added or updated, " + std::to_string(found.size() - std::min(found.size(), changed)) + " already there");
 }
 
 } // namespace
@@ -922,6 +1055,7 @@ static std::map<std::string, Dictionary> &dictionary_cache()
 static void open_dictionary_browser(ReaderViewState &state);
 void open_search_menu(ReaderView &reader_view, ReaderViewState &state);
 static void step_match(ReaderView &reader_view, ReaderViewState &state, int direction);
+static void open_controls_guide(ReaderViewState &state);
 
 void ReaderView::open_book_menu()
 {
@@ -975,7 +1109,7 @@ void ReaderView::open_book_menu()
         }
     });
     group = "Marks";
-    add({"Add bookmark", [this]() { add_bookmark(*state); }});
+    add({page_has_bookmark(*state) ? "Remove the bookmark on this page" : "Add bookmark", [this]() { toggle_bookmark(*state); }});
     add({
         "Bookmarks (" + std::to_string(state->bookmarks.size()) + ")",
         [this]() { open_bookmarks_menu(*this, *state); }
@@ -1103,6 +1237,11 @@ void ReaderView::open_book_menu()
         add({"Jump back", [this]() { jump_back(); }});
     }
     group = "Tools";
+    add({"Reset this book's layout", [this]() {
+        book_layout::reset();
+        show_message(*state, "This book now uses the default layout");
+    }});
+    add({"Controls guide", [this]() { open_controls_guide(*state); }});
     add({
         std::string("Screen dim: ") + screen_dim::label_for_level(state->token_view_styling.get_screen_dim()),
         [this]() {
@@ -1182,12 +1321,26 @@ void ReaderView::open_book_menu()
     add({"Reading stats", [this]() {
         state->view_stack.push(std::make_shared<DefinitionView>(
             "Reading stats",
-            reading_stats::report(
-                state->book_path,
-                static_cast<long long>(std::time(nullptr)),
-                library_log().started_count(),
-                library_log().finished_count()
-            ),
+            [this]() {
+                std::vector<long long> finished_times;
+                for (const auto &entry : library_log().all())
+                {
+                    if (entry.second.finished())
+                    {
+                        finished_times.push_back(entry.second.last_opened);
+                    }
+                }
+                const auto extent = state->reader->get_progress_extent(get_current_address(*state), false);
+                return reading_stats::detailed_report(
+                    state->book_path,
+                    static_cast<long long>(std::time(nullptr)),
+                    library_log().started_count(),
+                    library_log().finished_count(),
+                    finished_times,
+                    static_cast<long long>(extent.first),
+                    [](const std::string &path) { return std::filesystem::path(path).stem().string(); }
+                );
+            }(),
             state->sys_styling
         ));
     }});
@@ -1198,7 +1351,14 @@ void ReaderView::open_book_menu()
     });
     if (!state->token_view->highlights().empty())
     {
-        add({"Export highlights", [this]() { export_highlights(*state); }});
+        add({"Export highlights and notes", [this]() { export_highlights(*state); }});
+    }
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(highlights_file_for(*state), ec))
+        {
+            add({"Import highlights", [this]() { import_highlights(*state); }});
+        }
     }
 
     std::vector<GroupedEntry> entries;
@@ -2124,7 +2284,7 @@ void ReaderView::handle_keypress(SDLKey key)
 
     if (key == SW_BTN_START)
     {
-        open_controls_guide(*state);
+        toggle_bookmark(*state);
         return;
     }
 

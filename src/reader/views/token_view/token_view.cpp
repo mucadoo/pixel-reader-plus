@@ -25,6 +25,7 @@
 #include "util/throttled.h"
 
 #include <algorithm>
+#include <limits>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -2316,6 +2317,62 @@ void TokenView::remove_highlight(size_t index)
     state->highlights.erase(state->highlights.begin() + static_cast<std::ptrdiff_t>(index));
     state->remember_highlights();
     state->needs_render = true;
+}
+
+void TokenView::set_highlight_note(size_t index, const std::string &note)
+{
+    if (index >= state->highlights.size())
+    {
+        return;
+    }
+    state->highlights[index].note = note;
+    state->remember_highlights();
+}
+
+size_t TokenView::merge_highlights(const std::vector<Highlight> &incoming)
+{
+    size_t changed = 0;
+    for (const Highlight &item : incoming)
+    {
+        bool found = false;
+        for (Highlight &have : state->highlights)
+        {
+            if (have.first == item.first && have.second == item.second)
+            {
+                found = true;
+                if (have.note.empty() && !item.note.empty())
+                {
+                    have.note = item.note;
+                    ++changed;
+                }
+                break;
+            }
+        }
+        if (!found)
+        {
+            state->highlights.push_back(item);
+            ++changed;
+        }
+    }
+    if (changed > 0)
+    {
+        state->remember_highlights();
+        state->needs_render = true;
+    }
+    return changed;
+}
+
+bool TokenView::visible_range(DocAddr &from, DocAddr &until) const
+{
+    const DisplayLine *first = state->line_scroller.get_line_relative(0);
+    if (!first)
+    {
+        return false;
+    }
+    const DisplayLine *after = state->line_scroller.get_line_relative(visible_text_lines(*state));
+    from = first->address;
+    until = after ? after->address : std::numeric_limits<DocAddr>::max();
+    return true;
 }
 
 void TokenView::move_word_selection(SDLKey key)

@@ -157,6 +157,17 @@ void close()
     apply(defaults);
 }
 
+void reset()
+{
+    if (!styling || !is_active)
+    {
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::remove(book_file, ec);
+    apply(defaults);
+}
+
 bool active()
 {
     return is_active;

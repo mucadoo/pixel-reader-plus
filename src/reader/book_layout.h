@@ -20,6 +20,9 @@ void open(const std::filesystem::path &file);
 // The book was closed. The defaults come back.
 void close();
 
+// Drops the layout kept for the open book, so it uses the defaults again.
+void reset();
+
 // True while a book is open.
 bool active();
 

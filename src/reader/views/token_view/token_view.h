@@ -98,6 +98,11 @@ public:
 
     const std::vector<Highlight> &highlights() const;
     void remove_highlight(size_t index);
+    void set_highlight_note(size_t index, const std::string &note);
+    // Adds the highlights that are not there yet, and fills in notes that are missing. Returns how many changed.
+    size_t merge_highlights(const std::vector<Highlight> &incoming);
+    // The addresses the page on screen covers: from the first line up to the next page. false when nothing is shown.
+    bool visible_range(DocAddr &from, DocAddr &until) const;
 };
 
 #endif

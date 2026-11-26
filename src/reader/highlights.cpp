@@ -30,6 +30,13 @@ std::vector<Highlight> load_highlights(const std::filesystem::path &path)
         {
             text.erase(0, 1);
         }
+        // A note follows the words after a tab.
+        std::string note;
+        if (const size_t tab = text.find('\t'); tab != std::string::npos)
+        {
+            note = text.substr(tab + 1);
+            text.erase(tab);
+        }
         // An optional {u}, {s}, {g}, {b} or {p} in front of the text names the style.
         HighlightStyle style = HighlightStyle::Marker;
         if (text.size() >= 3 && text[0] == '{' && text[2] == '}'
@@ -43,6 +50,7 @@ std::vector<Highlight> load_highlights(const std::filesystem::path &path)
             text.erase(0, text.size() == 3 ? 3 : 4);
         }
         highlights.emplace_back(begin, end, text, style);
+        highlights.back().note = note;
     }
     return highlights;
 }
@@ -76,6 +84,18 @@ void save_highlights(const std::filesystem::path &path, const std::vector<Highli
         if (!highlight.text.empty())
         {
             out << ' ' << highlight.text;
+        }
+        if (!highlight.note.empty())
+        {
+            std::string note = highlight.note;
+            for (char &c : note)
+            {
+                if (c == '\t' || c == '\n' || c == '\r')
+                {
+                    c = ' ';
+                }
+            }
+            out << '\t' << note;
         }
         out << '\n';
     }
@@ -155,4 +175,30 @@ void toggle_highlight(std::vector<Highlight> &highlights, DocAddr begin, DocAddr
         return;
     }
     highlights.emplace_back(begin, end, text, style);
+}
+
+char highlight_style_letter(HighlightStyle style)
+{
+    switch (style)
+    {
+        case HighlightStyle::Underline: return 'u';
+        case HighlightStyle::Strikeout: return 's';
+        case HighlightStyle::MarkerGreen: return 'g';
+        case HighlightStyle::MarkerBlue: return 'b';
+        case HighlightStyle::MarkerPink: return 'p';
+        default: return 'y';
+    }
+}
+
+HighlightStyle highlight_style_from_letter(char letter)
+{
+    switch (letter)
+    {
+        case 'u': return HighlightStyle::Underline;
+        case 's': return HighlightStyle::Strikeout;
+        case 'g': return HighlightStyle::MarkerGreen;
+        case 'b': return HighlightStyle::MarkerBlue;
+        case 'p': return HighlightStyle::MarkerPink;
+        default: return HighlightStyle::Marker;
+    }
 }

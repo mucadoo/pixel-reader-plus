@@ -2,6 +2,7 @@
 #define READING_STATS_H_
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,20 @@ std::string format_duration(long long seconds);
 
 // The text of the statistics screen for a book.
 std::string report(const std::filesystem::path &book, long long now, int books_started, int books_finished);
+
+// The longer statistics screen: this book (when one is given) with its reading speed, the totals over
+// 7 and 30 days, the best day, a chart of the last 14 days, the most read books and the books finished
+// each month. finished_times are the last-opened moments (seconds since 1970) of the finished books.
+// book_units_read is how far into the book the reader is, in address units, 0 when unknown.
+std::string detailed_report(
+    const std::filesystem::path &book,
+    long long now,
+    int books_started,
+    int books_finished,
+    const std::vector<long long> &finished_times,
+    long long book_units_read,
+    const std::function<std::string(const std::string &)> &title_for
+);
 
 } // namespace reading_stats
 

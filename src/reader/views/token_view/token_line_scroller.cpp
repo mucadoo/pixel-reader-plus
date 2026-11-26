@@ -187,7 +187,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
             {
                 return line_fits(s, len);
             }
-            int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0) - (s == full ? indent_px : 0);
+            int avail = SCREEN_WIDTH - side_margin - (quote ? 18 : 0) - (s == full ? indent_px : 0);
             int width = measure_styled(
                 full,
                 static_cast<uint32_t>(s - full),
@@ -263,7 +263,7 @@ std::vector<std::unique_ptr<DisplayLine>> TokenLineScroller::render_display_line
         };
         if (hyphenator && hyphenator->ready() && style_font && !pre && header_level == 0 && !centered)
         {
-            const int avail = SCREEN_WIDTH - side_margin * 2 - (quote ? 18 : 0);
+            const int avail = SCREEN_WIDTH - side_margin - (quote ? 18 : 0);
             const int hyphen_w = measure_styled("-", 0, 1, {}, base_bold, base_italic, scale, font_for);
             wrap_lines_hyphenated(
                 full,

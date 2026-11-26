@@ -65,7 +65,11 @@ struct TokenViewState
     bool paragraph_gap = true;
     bool bold_text = false;
     int word_spacing = 1;   // level of the word spacing setting
-    int side_margin;    // pixels left empty at each side of the text
+    int left_margin;    // pixels left empty at the left of the text
+    int right_margin;
+    int top_margin;     // pixels left empty above and below the lines
+    int bottom_margin;
+    int ruler_line = 0; // the line the reading ruler marks, counted from the top of the page
     int spacing_extra;  // pixels added to every line on top of the font's own
     int line_height;
 
@@ -184,7 +188,7 @@ struct TokenViewState
 
     int num_display_lines() const
     {
-        return SCREEN_HEIGHT / line_height;
+        return std::max(1, (static_cast<int>(SCREEN_HEIGHT) - top_margin - bottom_margin) / line_height);
     }
 
     int num_text_display_lines() const
@@ -195,17 +199,23 @@ struct TokenViewState
 
     int excess_pxl_y() const
     {
-        return SCREEN_HEIGHT - num_display_lines() * line_height;
+        return SCREEN_HEIGHT - top_margin - bottom_margin - num_display_lines() * line_height;
+    }
+
+    // Where the first line starts: the top margin and half of what is left over.
+    int top_pad() const
+    {
+        return top_margin + excess_pxl_y() / 2;
     }
 
     int line_pxl_limit_y() const
     {
         if (!token_view_styling.get_show_title_bar())
         {
-            return SCREEN_HEIGHT;
+            return SCREEN_HEIGHT - bottom_margin;
         }
 
-        return SCREEN_HEIGHT - line_height - excess_pxl_y() / 2;
+        return top_pad() + num_text_display_lines() * line_height;
     }
 
     TokenViewState(std::shared_ptr<DocReader> reader, DocAddr address, SystemStyling &sys_styling, TokenViewStyling &token_view_styling)
@@ -227,7 +237,10 @@ struct TokenViewState
               needs_render = true;
           })),
           current_font(sys_styling.get_loaded_font()),
-          side_margin(margin_pixels(token_view_styling.get_margin_level())),
+          left_margin(margin_pixels(token_view_styling.get_margin_level())),
+          right_margin(margin_pixels(token_view_styling.get_margin_right())),
+          top_margin(vertical_margin_pixels(token_view_styling.get_margin_top())),
+          bottom_margin(vertical_margin_pixels(token_view_styling.get_margin_bottom())),
           spacing_extra(spacing_pixels(token_view_styling.get_spacing_level())),
           line_height(detect_line_height(sys_styling.get_font_name(), sys_styling.get_font_size()) + line_padding + spacing_extra),
           line_scroller(
@@ -236,7 +249,7 @@ struct TokenViewState
               [this](const char *s, uint32_t len) {
                   return line_fits_on_screen(
                       current_font,
-                      SCREEN_WIDTH - side_margin * 2,
+                      SCREEN_WIDTH - left_margin - right_margin,
                       s,
                       len
                   );
@@ -245,7 +258,7 @@ struct TokenViewState
               [this](float scale, bool pre, int style) {
                   return this->font_for(scale, pre, style);
               },
-              side_margin
+              left_margin + right_margin
           ),
           line_scroll_throttle(250, 50),
           page_scroll_throttle(750, 150),
@@ -286,6 +299,9 @@ struct TokenViewState
     void apply_layout_options()
     {
         const int margin = margin_pixels(token_view_styling.get_margin_level());
+        const int margin_r = margin_pixels(token_view_styling.get_margin_right());
+        const int margin_t = vertical_margin_pixels(token_view_styling.get_margin_top());
+        const int margin_b = vertical_margin_pixels(token_view_styling.get_margin_bottom());
         const int spacing = spacing_pixels(token_view_styling.get_spacing_level());
         if (token_view_styling.get_hyphenate() && !hyphenator.ready())
         {
@@ -328,15 +344,19 @@ struct TokenViewState
             line_scroller.reset_buffer();
             needs_render = true;
         }
-        if (margin == side_margin && spacing == spacing_extra)
+        if (margin == left_margin && margin_r == right_margin && margin_t == top_margin && margin_b == bottom_margin
+            && spacing == spacing_extra)
         {
             return;
         }
-        side_margin = margin;
+        left_margin = margin;
+        right_margin = margin_r;
+        top_margin = margin_t;
+        bottom_margin = margin_b;
         spacing_extra = spacing;
         line_height = detect_line_height(current_font) + line_padding + spacing_extra;
         line_scroller.set_line_height_pixels(line_height);
-        line_scroller.set_side_margin(side_margin);
+        line_scroller.set_side_margin(left_margin + right_margin);
         line_scroller.reset_buffer();
         needs_render = true;
     }
@@ -494,7 +514,7 @@ static void layout_visible_words(TokenViewState &state)
     state.visible.assign(n, TokenViewState::VisibleText());
     const int line_height = state.line_height;
     const int line_padding = state.line_padding;
-    int line_y = state.excess_pxl_y() / 2;
+    int line_y = state.top_pad();
 
     for (int i = 0; i < n; ++i)
     {
@@ -524,13 +544,13 @@ static void layout_visible_words(TokenViewState &state)
                     text_line->address_lead
                 );
                 int indent = (text_line->quote ? 18 : 0) + text_line->first_indent;
-                int avail = SCREEN_WIDTH - state.side_margin * 2 - indent;
+                int avail = SCREEN_WIDTH - state.left_margin - state.right_margin - indent;
                 if (state.token_view_styling.get_justify() && !text_line->centered && !text_line->pre
                     && text_line->header_level == 0 && !text_line->paragraph_end && text_line->slot_span <= 1)
                 {
                     justify_layout(layout, avail);
                 }
-                int origin = state.side_margin + indent;
+                int origin = state.left_margin + indent;
                 if (text_line->centered)
                 {
                     origin += std::max(0, (avail - layout.width) / 2);
@@ -876,6 +896,49 @@ static void draw_selection_hint(
     }
 }
 
+// Mixes a block of the surface toward a color. The alpha is out of 256.
+static void blend_rect(SDL_Surface *surface, int x, int y, int w, int h, SDL_Color color, int alpha)
+{
+    if (!surface || surface->format->BytesPerPixel != 4)
+    {
+        return;
+    }
+    const int y0 = std::max(0, y);
+    const int y1 = std::min(static_cast<int>(surface->h), y + h);
+    const int x0 = std::max(0, x);
+    const int x1 = std::min(static_cast<int>(surface->w), x + w);
+    if (y0 >= y1 || x0 >= x1)
+    {
+        return;
+    }
+    const bool lock = SDL_MUSTLOCK(surface);
+    if (lock && SDL_LockSurface(surface) != 0)
+    {
+        return;
+    }
+    const SDL_PixelFormat *fmt = surface->format;
+    const int keep = 256 - alpha;
+    const uint32_t cr = color.r * alpha;
+    const uint32_t cg = color.g * alpha;
+    const uint32_t cb = color.b * alpha;
+    for (int row = y0; row < y1; ++row)
+    {
+        uint32_t *pixels = reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(surface->pixels) + static_cast<size_t>(row) * surface->pitch);
+        for (int col = x0; col < x1; ++col)
+        {
+            const uint32_t p = pixels[col];
+            const uint32_t r = (((p & fmt->Rmask) >> fmt->Rshift) * keep + cr) >> 8;
+            const uint32_t g = (((p & fmt->Gmask) >> fmt->Gshift) * keep + cg) >> 8;
+            const uint32_t b = (((p & fmt->Bmask) >> fmt->Bshift) * keep + cb) >> 8;
+            pixels[col] = (p & ~(fmt->Rmask | fmt->Gmask | fmt->Bmask)) | (r << fmt->Rshift) | (g << fmt->Gshift) | (b << fmt->Bshift);
+        }
+    }
+    if (lock)
+    {
+        SDL_UnlockSurface(surface);
+    }
+}
+
 bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
 {
     if (!state->needs_render && !force_render)
@@ -906,7 +969,7 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
 
     // In Page mode only the current page is drawn. Lines past its end belong to the next page.
     int num_text_display_lines = visible_text_lines(*state);
-    const Uint16 padding_y = state->excess_pxl_y() / 2;
+    const Uint16 padding_y = state->top_pad();
     Sint16 line_y = padding_y;
 
     for (int i = 0; i < num_text_display_lines; ++i)
@@ -985,6 +1048,29 @@ bool TokenView::render(SDL_Surface *dest_surface, bool force_render)
         }
 
         line_y += line_height;
+    }
+
+    // The reading ruler marks one line, either by tinting it or by fading all the others.
+    const int ruler_mode = state->token_view_styling.get_ruler();
+    if (ruler_mode != 0 && !state->selecting)
+    {
+        int shown_lines = 0;
+        while (shown_lines < num_text_display_lines && state->line_scroller.get_line_relative(shown_lines))
+        {
+            ++shown_lines;
+        }
+        state->ruler_line = std::clamp(state->ruler_line, 0, std::max(0, shown_lines - 1));
+        const int ruler_y = padding_y + state->ruler_line * line_height;
+        const int text_end = padding_y + num_text_display_lines * line_height;
+        if (ruler_mode == 1)
+        {
+            blend_rect(dest_surface, 0, ruler_y, SCREEN_WIDTH, line_height, theme.highlight_background, 110);
+        }
+        else
+        {
+            blend_rect(dest_surface, 0, padding_y, SCREEN_WIDTH, ruler_y - padding_y, theme.background, 185);
+            blend_rect(dest_surface, 0, ruler_y + line_height, SCREEN_WIDTH, text_end - ruler_y - line_height, theme.background, 185);
+        }
     }
 
     if (state->selecting)
@@ -1211,7 +1297,48 @@ void TokenView::on_keypress(SDLKey key)
     switch (key) {
         case SW_BTN_UP:
         case SW_BTN_DOWN:
-            if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+            if (state->token_view_styling.get_ruler() != 0 && !state->selecting)
+            {
+                // The ruler moves a line and turns the page at the edge of it.
+                const bool page_mode = state->token_view_styling.get_reading_mode() == ReadingMode::Page;
+                const int count = visible_text_lines(*state);
+                int shown_lines = 0;
+                while (shown_lines < count && state->line_scroller.get_line_relative(shown_lines))
+                {
+                    ++shown_lines;
+                }
+                state->needs_render = true;
+                if (key == SW_BTN_DOWN)
+                {
+                    if (state->ruler_line + 1 < shown_lines)
+                    {
+                        ++state->ruler_line;
+                    }
+                    else if (page_mode)
+                    {
+                        turn_page(1);
+                        state->ruler_line = 0;
+                    }
+                    else
+                    {
+                        scroll(1);
+                    }
+                }
+                else if (state->ruler_line > 0)
+                {
+                    --state->ruler_line;
+                }
+                else if (page_mode)
+                {
+                    turn_page(-1);
+                    state->ruler_line = 1000; // the last line, once the page is there
+                }
+                else
+                {
+                    scroll(-1);
+                }
+            }
+            else if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
             {
                 turn_page(key == SW_BTN_UP ? -1 : 1);
             }
@@ -1250,6 +1377,7 @@ void TokenView::on_keypress(SDLKey key)
                 if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
                 {
                     turn_page(key == SW_BTN_LEFT ? -1 : 1);
+                    state->ruler_line = 0;
                 }
                 else if (key == SW_BTN_LEFT)
                 {
@@ -1289,7 +1417,7 @@ void TokenView::on_keyheld(SDLKey key, uint32_t held_time_ms)
     switch (key) {
         case SW_BTN_UP:
         case SW_BTN_DOWN:
-            if (state->token_view_styling.get_reading_mode() == ReadingMode::Page)
+            if (state->token_view_styling.get_reading_mode() == ReadingMode::Page && state->token_view_styling.get_ruler() == 0)
             {
                 if (state->page_scroll_throttle(held_time_ms))
                 {
@@ -1401,7 +1529,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key.push_back('\n');
     key += std::to_string(state.sys_styling.get_font_size());
     key.push_back('\n');
-    key += std::to_string(state.side_margin) + "," + std::to_string(state.spacing_extra);
+    key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
     key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
     key.push_back('\n');

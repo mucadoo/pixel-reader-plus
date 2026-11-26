@@ -1,0 +1,10 @@
+apple	x
+applaud	x
+hello	x
+helmet	x
+help	x
+love	x
+run	x
+study	x
+teh	x
+the	x

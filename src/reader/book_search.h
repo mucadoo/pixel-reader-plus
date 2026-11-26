@@ -16,14 +16,20 @@ struct SearchHit
     std::string snippet;
 };
 
-// Every place the word turns up in the book, in order, ignoring case and
-// matching whole words only. Stops after max_hits. progress is told how far
+struct SearchOptions
+{
+    bool whole_word = true;  // a match may not touch letters or digits at either end
+    bool match_case = false; // capitals must match too
+};
+
+// Every place the word or phrase turns up in the book, in order. Stops after max_hits. progress is told how far
 // through the book the search is, 0 to 100.
 std::vector<SearchHit> search_book(
     const DocReader &reader,
     const std::string &word,
     size_t max_hits,
-    const std::function<void(int percent)> &progress
+    const std::function<void(int percent)> &progress,
+    const SearchOptions &options = SearchOptions()
 );
 
 #endif

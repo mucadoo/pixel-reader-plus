@@ -63,11 +63,12 @@ std::vector<SearchHit> search_book(
     const DocReader &reader,
     const std::string &word,
     size_t max_hits,
-    const std::function<void(int percent)> &progress
+    const std::function<void(int percent)> &progress,
+    const SearchOptions &options
 )
 {
     std::vector<SearchHit> hits;
-    const std::string needle = lookup_lowercase(word);
+    const std::string needle = options.match_case ? word : lookup_lowercase(word);
     if (needle.empty())
     {
         return hits;
@@ -96,14 +97,14 @@ std::vector<SearchHit> search_book(
         {
             continue;
         }
-        const std::string lower = lookup_lowercase(*text);
+        const std::string lower = options.match_case ? *text : lookup_lowercase(*text);
         size_t from = 0;
         while ((from = lower.find(needle, from)) != std::string::npos)
         {
             const bool before = from > 0 && is_word_byte(static_cast<unsigned char>(lower[from - 1]));
             const size_t after_at = from + needle.size();
             const bool after = after_at < lower.size() && is_word_byte(static_cast<unsigned char>(lower[after_at]));
-            if (!before && !after)
+            if (!options.whole_word || (!before && !after))
             {
                 hits.push_back({token->address, snippet_around(*text, from, needle.size())});
                 if (hits.size() >= max_hits)

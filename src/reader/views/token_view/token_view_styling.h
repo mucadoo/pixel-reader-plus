@@ -44,6 +44,18 @@ public:
     // Margin and line spacing steps (see layout_options.h), and whether lines are justified
     int get_margin_level() const;
     void set_margin_level(int level);
+    // The other three margins, each a level of margin_pixels (right) or vertical_margin_pixels (top, bottom)
+    int get_margin_right() const;
+    void set_margin_right(int level);
+    int get_margin_top() const;
+    void set_margin_top(int level);
+    int get_margin_bottom() const;
+    void set_margin_bottom(int level);
+
+    // Reading ruler mode: 0 off, 1 line, 2 focus
+    int get_ruler() const;
+    void set_ruler(int mode);
+
     int get_spacing_level() const;
     void set_spacing_level(int level);
     bool get_justify() const;
@@ -77,6 +89,12 @@ public:
     // language of the book.
     const std::string &get_dictionary() const;
     void set_dictionary(const std::string &name);
+
+    // Book search: bit 1 whole words only, bit 2 match case. And the last searches, joined by |.
+    int get_search_options() const;
+    void set_search_options(int bits);
+    const std::string &get_search_history() const;
+    void set_search_history(const std::string &joined);
 
     // Color of new highlights: 0 Yellow, 1 Green, 2 Blue, 3 Pink
     int get_highlight_color() const;

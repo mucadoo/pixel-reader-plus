@@ -18,6 +18,9 @@ namespace
 struct Layout
 {
     int margin = DEFAULT_MARGIN_LEVEL;
+    int margin_right = DEFAULT_MARGIN_LEVEL;
+    int margin_top = 0;
+    int margin_bottom = 0;
     int spacing = DEFAULT_SPACING_LEVEL;
     bool justify = false;
     bool hyphenate = false;
@@ -37,6 +40,9 @@ Layout current()
 {
     Layout layout;
     layout.margin = styling->get_margin_level();
+    layout.margin_right = styling->get_margin_right();
+    layout.margin_top = styling->get_margin_top();
+    layout.margin_bottom = styling->get_margin_bottom();
     layout.spacing = styling->get_spacing_level();
     layout.justify = styling->get_justify();
     layout.hyphenate = styling->get_hyphenate();
@@ -51,6 +57,9 @@ void apply(const Layout &layout)
 {
     applying = true;
     styling->set_margin_level(layout.margin);
+    styling->set_margin_right(layout.margin_right);
+    styling->set_margin_top(layout.margin_top);
+    styling->set_margin_bottom(layout.margin_bottom);
     styling->set_spacing_level(layout.spacing);
     styling->set_justify(layout.justify);
     styling->set_hyphenate(layout.hyphenate);
@@ -84,7 +93,10 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
         const std::string value = line.substr(eq + 1);
         try
         {
-            if (key == "margin") layout.margin = std::stoi(value);
+            if (key == "margin") { layout.margin = std::stoi(value); layout.margin_right = layout.margin; }
+            else if (key == "margin_right") layout.margin_right = std::stoi(value);
+            else if (key == "margin_top") layout.margin_top = std::stoi(value);
+            else if (key == "margin_bottom") layout.margin_bottom = std::stoi(value);
             else if (key == "spacing") layout.spacing = std::stoi(value);
             else if (key == "justify") layout.justify = value == "1";
             else if (key == "hyphenate") layout.hyphenate = value == "1";
@@ -149,6 +161,9 @@ void save_if_active()
     std::filesystem::create_directories(book_file.parent_path(), ec);
     std::ofstream out(book_file, std::ios::trunc);
     out << "margin=" << layout.margin << "\n"
+        << "margin_right=" << layout.margin_right << "\n"
+        << "margin_top=" << layout.margin_top << "\n"
+        << "margin_bottom=" << layout.margin_bottom << "\n"
         << "spacing=" << layout.spacing << "\n"
         << "justify=" << (layout.justify ? 1 : 0) << "\n"
         << "hyphenate=" << (layout.hyphenate ? 1 : 0) << "\n"

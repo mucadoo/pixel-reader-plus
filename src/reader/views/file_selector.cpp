@@ -9,6 +9,7 @@
 #include "reader/browser_sort.h"
 #include "reader/collections.h"
 #include "reader/library_log.h"
+#include "reader/opds.h"
 #include "reader/progress_screen.h"
 #include "reader/reading_speed.h"
 #include "reader/reading_stats.h"
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <ctime>
 #include <cctype>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include <SDL/SDL.h>
@@ -1190,10 +1192,204 @@ void find_unopened(FSState *s)
 
 const char *BACKUP_FILE_NAME = "PixelReader backup.zip";
 
+// The address of the OPDS catalog is kept in a small file next to the other saved settings.
+std::string read_opds_address(const FSState *s)
+{
+    if (s->store_dir.empty())
+    {
+        return std::string();
+    }
+    std::ifstream in(s->store_dir / "opds_url");
+    std::string line;
+    std::getline(in, line);
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+    {
+        line.pop_back();
+    }
+    return line;
+}
+
+void write_opds_address(const FSState *s, const std::string &address)
+{
+    if (s->store_dir.empty())
+    {
+        return;
+    }
+    std::ofstream out(s->store_dir / "opds_url", std::ios::trunc);
+    out << address << "\n";
+}
+
+// Saves a book from the catalog in the Downloads folder of the library.
+void opds_download(FSState *s, const opds::Entry &entry)
+{
+    const std::filesystem::path folder = library_root(s) / "Downloads";
+    std::filesystem::path target = folder / opds::file_name_for(entry.title, entry.author, entry.extension);
+    std::error_code ec;
+    for (int n = 2; std::filesystem::exists(target, ec) && n < 100; ++n)
+    {
+        target = folder / opds::file_name_for(entry.title + " (" + std::to_string(n) + ")", entry.author, entry.extension);
+    }
+    const std::string title = entry.title;
+    std::string error;
+    progress_screen::show(s->styling, "Downloading", title, -1);
+    const bool ok = opds::download(entry.href, target, error, [s, title](size_t got, size_t total) {
+        progress_screen::show(
+            s->styling,
+            "Downloading",
+            title,
+            total > 0 ? static_cast<int>(got * 100 / total) : -1
+        );
+    });
+    if (s->on_info)
+    {
+        s->on_info("Online books", ok ? "Saved in the Downloads folder:\n" + target.filename().string() : error);
+    }
+    if (ok && !s->search_active)
+    {
+        refresh_keeping_cursor(s);
+    }
+}
+
+// Shows one page of the catalog. Choosing a catalog opens it on top, so B goes back one level.
+void opds_open(FSState *s, const std::string &url)
+{
+    std::string body;
+    std::string error;
+    progress_screen::show(s->styling, "Online books", "Connecting...", -1);
+    if (!opds::fetch(url, body, error, [s](size_t got, size_t) {
+            progress_screen::show(s->styling, "Online books", std::to_string(got / 1024) + " KB", -1);
+        }))
+    {
+        if (s->on_info)
+        {
+            s->on_info("Online books", error);
+        }
+        return;
+    }
+    auto feed = std::make_shared<opds::Feed>();
+    if (!opds::parse_feed(body, url, *feed, error))
+    {
+        if (s->on_info)
+        {
+            s->on_info("Online books", error);
+        }
+        return;
+    }
+    if (feed->entries.empty() && feed->next.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Online books", "This catalog has nothing to list.");
+        }
+        return;
+    }
+    std::vector<std::string> names;
+    std::vector<std::string> details;
+    for (const opds::Entry &entry : feed->entries)
+    {
+        names.push_back((entry.is_book ? "" : "> ") + entry.title);
+        std::string detail = entry.author;
+        if (entry.is_book)
+        {
+            std::string upper = entry.extension;
+            for (char &c : upper)
+            {
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            }
+            detail += (detail.empty() ? "" : "  ") + upper;
+        }
+        details.push_back(detail);
+    }
+    if (!feed->next.empty())
+    {
+        names.push_back("More...");
+        details.push_back("");
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_details(details);
+    menu->set_title(feed->title.empty() ? "Online books" : feed->title);
+    menu->set_hints({"A  Open or get", "B  Back"});
+    menu->set_on_selection([s, feed](uint32_t index) {
+        if (index < feed->entries.size())
+        {
+            const opds::Entry &entry = feed->entries[index];
+            if (entry.is_book)
+            {
+                opds_download(s, entry);
+            }
+            else
+            {
+                opds_open(s, entry.href);
+            }
+        }
+        else if (!feed->next.empty())
+        {
+            opds_open(s, feed->next);
+        }
+    });
+    s->on_open_view(menu);
+}
+
+void opds_ask_address(FSState *s)
+{
+    const std::string current = read_opds_address(s);
+    s->on_open_view(std::make_shared<TextInputView>(
+        "Catalog address (http://...)",
+        current.empty() ? std::string("http://") : current,
+        [s](const std::string &typed) {
+            std::string address = typed;
+            while (!address.empty() && address.back() == ' ') address.pop_back();
+            if (address.empty() || address == "http://")
+            {
+                return;
+            }
+            write_opds_address(s, address);
+            opds_open(s, address);
+        },
+        s->styling,
+        200
+    ));
+}
+
+void open_online_books(FSState *s)
+{
+    if (s->store_dir.empty())
+    {
+        if (s->on_info)
+        {
+            s->on_info("Online books", "There is no place to keep the address.");
+        }
+        return;
+    }
+    const std::string address = read_opds_address(s);
+    if (address.empty())
+    {
+        opds_ask_address(s);
+        return;
+    }
+    std::vector<std::string> names = {"Open the catalog", "Change the address"};
+    auto menu = std::make_shared<SelectionMenu>(names, s->styling);
+    menu->set_title("Online books");
+    menu->set_details({address, ""});
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([s, address](uint32_t index) {
+        if (index == 0)
+        {
+            opds_open(s, address);
+        }
+        else
+        {
+            opds_ask_address(s);
+        }
+    });
+    s->on_open_view(menu);
+}
+
 void open_library_tools(FSState *s)
 {
     const std::vector<std::string> names = {
-        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup"
+        "Books by status", "Find copies", "Books not opened yet", "Back up settings and notes", "Restore from backup", "Get books online (OPDS)"
     };
     auto menu = std::make_shared<SelectionMenu>(names, s->styling);
     menu->set_title("Library tools");
@@ -1273,6 +1469,9 @@ void open_library_tools(FSState *s)
                 s->on_open_view(confirm);
                 break;
             }
+            case 5:
+                open_online_books(s);
+                break;
             default:
                 break;
         }

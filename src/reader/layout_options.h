@@ -20,6 +20,28 @@ inline const char *margin_label(int level)
     return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
 }
 
+// Space left empty above and below the text, in pixels.
+inline int vertical_margin_pixels(int level)
+{
+    static const int values[LAYOUT_LEVEL_COUNT] = {0, 8, 16, 28};
+    return values[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+inline const char *vertical_margin_label(int level)
+{
+    static const char *labels[LAYOUT_LEVEL_COUNT] = {"None", "Small", "Medium", "Large"};
+    return labels[level < 0 ? 0 : (level >= LAYOUT_LEVEL_COUNT ? LAYOUT_LEVEL_COUNT - 1 : level)];
+}
+
+// The reading ruler: 0 off, 1 marks the line, 2 dims the others.
+constexpr int RULER_MODE_COUNT = 3;
+
+inline const char *ruler_label(int mode)
+{
+    static const char *labels[RULER_MODE_COUNT] = {"Off", "Line", "Focus"};
+    return labels[mode < 0 ? 0 : (mode >= RULER_MODE_COUNT ? RULER_MODE_COUNT - 1 : mode)];
+}
+
 // Pixels added to the height of every line, on top of the font's own.
 inline int spacing_pixels(int level)
 {

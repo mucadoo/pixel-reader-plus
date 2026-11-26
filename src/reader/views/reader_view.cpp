@@ -18,6 +18,7 @@
 #include "./token_view/token_view_styling.h"
 
 #include "reader/dictionary.h"
+#include "reader/text_style.h"
 #include "reader/library_log.h"
 #include "reader/reading_speed.h"
 #include "reader/book_search.h"
@@ -120,7 +121,9 @@ DocAddr get_current_address(const ReaderViewState &state)
     return 0;
 }
 
-void open_toc_menu(ReaderView &reader_view, ReaderViewState &state)
+// The chapter list, with how long each chapter is and how far along you are. X folds the sub-chapters
+// away, so a book with many parts shows only the parts.
+void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded = false)
 {
     const auto &toc = state.reader->get_table_of_contents();
     if (toc.empty())
@@ -128,45 +131,89 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state)
         return;
     }
 
-    // setup toc entries & callbacks
-    std::vector<std::string> menu_names;
-    for (const auto &toc_item: toc)
+    const uint32_t current_toc_index = state.reader->get_toc_position(get_current_address(state)).toc_index;
+    bool has_nested = false;
+    for (const auto &toc_item : toc)
     {
-        std::string indent(toc_item.indent_level * 2, ' ');
-        menu_names.push_back(indent + toc_item.display_name);
+        has_nested = has_nested || toc_item.indent_level > 0;
+    }
+    folded = folded && has_nested;
+
+    // The rows shown, as indexes into the table of contents.
+    auto visible = std::make_shared<std::vector<uint32_t>>();
+    std::vector<std::string> menu_names;
+    std::vector<std::string> menu_details;
+    size_t marker_row = 0;
+    for (uint32_t i = 0; i < toc.size(); ++i)
+    {
+        if (folded && toc[i].indent_level > 0)
+        {
+            continue;
+        }
+        if (i <= current_toc_index)
+        {
+            marker_row = visible->size();
+        }
+        visible->push_back(i);
+        menu_names.push_back(std::string(toc[i].indent_level * 2, ' ') + toc[i].display_name);
+
+        const DocAddr start = state.reader->get_toc_item_address(i);
+        const uint32_t length = state.reader->get_progress_extent(start, true).second;
+        std::string detail;
+        if (i < current_toc_index)
+        {
+            detail = "Read";
+        }
+        else
+        {
+            uint32_t left = length;
+            std::string percent;
+            if (i == current_toc_index)
+            {
+                const uint32_t done = state.reader->get_toc_position(get_current_address(state)).progress_percent;
+                percent = std::to_string(done) + "%  ";
+                left = static_cast<uint32_t>(static_cast<unsigned long long>(length) * (100 - std::min<uint32_t>(done, 100)) / 100);
+            }
+            const long long seconds = reading_speed::seconds_for(left);
+            detail = percent + (seconds >= 0 ? reading_stats::format_duration(seconds) : std::string());
+        }
+        menu_details.push_back(detail);
     }
 
-    auto current_toc_index = state.reader->get_toc_position(get_current_address(state)).toc_index;
-    auto toc_select_menu = std::make_shared<SelectionMenu>(
-        menu_names,
-        state.sys_styling
-    );
-    toc_select_menu->set_on_selection([&reader_view, last_toc_index=current_toc_index](uint32_t toc_index) {
-        if (toc_index != last_toc_index)
+    auto toc_select_menu = std::make_shared<SelectionMenu>(menu_names, state.sys_styling);
+    toc_select_menu->set_details(menu_details);
+    toc_select_menu->set_on_selection([&reader_view, visible, last_toc_index = current_toc_index](uint32_t row) {
+        if (row < visible->size() && (*visible)[row] != last_toc_index)
         {
-            reader_view.seek_to_toc_index(toc_index);
+            reader_view.seek_to_toc_index((*visible)[row]);
         }
     });
     toc_select_menu->set_close_on_select();
-    toc_select_menu->set_title("Chapters");
-
-    // select current toc item
-    if (current_toc_index < toc.size())
+    toc_select_menu->set_title(folded ? "Chapters (folded)" : "Chapters");
+    if (has_nested)
     {
-        toc_select_menu->set_marker(current_toc_index);
-        toc_select_menu->set_cursor_pos(current_toc_index);
+        toc_select_menu->set_uses_x(true);
+        toc_select_menu->set_hints({"A  Go", folded ? "X  Unfold" : "X  Fold", "B  Close"});
     }
 
-    toc_select_menu->set_default_on_keypress([](SDLKey key, SelectionMenu &toc) {
+    // select current toc item
+    toc_select_menu->set_marker(static_cast<uint32_t>(marker_row));
+    toc_select_menu->set_cursor_pos(static_cast<uint32_t>(marker_row));
+
+    toc_select_menu->set_default_on_keypress([&reader_view, &state, folded, has_nested](SDLKey key, SelectionMenu &toc) {
         if (key == SW_BTN_SELECT)
         {
             toc.close();
+        }
+        else if (key == SW_BTN_X && has_nested)
+        {
+            toc.close();
+            open_toc_menu(reader_view, state, !folded);
         }
     });
 
     state.view_stack.push(toc_select_menu);
 }
-
 void show_message(ReaderViewState &state, const std::string &message)
 {
     state.view_stack.push(std::make_shared<PopupView>(
@@ -560,6 +607,7 @@ void export_highlights(ReaderViewState &state)
 } // namespace
 
 void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen = std::string());
+void open_search_menu(ReaderView &reader_view, ReaderViewState &state);
 
 void ReaderView::open_book_menu()
 {
@@ -604,6 +652,10 @@ void ReaderView::open_book_menu()
             state->sys_styling
         ));
     }});
+    if (!state->reader->pages_are_pictures())
+    {
+        actions->push_back({"Search in book", [this]() { open_search_menu(*this, *state); }});
+    }
     actions->push_back({state->reader->pages_are_pictures() ? "Browse pages" : "Skim the book", [this]() {
         state->view_stack.push(std::make_shared<PageBrowserView>(
             state->reader,
@@ -655,8 +707,9 @@ void ReaderView::open_book_menu()
             "Look up a word",
             "",
             [this](const std::string &typed) {
-                std::string word = typed;
+                std::string word = lookup_lowercase(typed);
                 while (!word.empty() && word.back() == ' ') word.pop_back();
+                while (!word.empty() && word.front() == ' ') word.erase(0, 1);
                 if (!word.empty())
                 {
                     show_definition(*state, word);
@@ -937,19 +990,61 @@ static void open_controls_guide(ReaderViewState &state)
     ));
 }
 
-// Finds the word everywhere in the book and lists the places. The scan reads the
-// whole book, so a bar shows how far it has got.
+// Puts the search at the front of the remembered searches.
+static void remember_search(ReaderViewState &state, const std::string &query)
+{
+    std::string clean = query;
+    for (char &c : clean)
+    {
+        if (c == '|')
+        {
+            c = ' ';
+        }
+    }
+    std::vector<std::string> items = {clean};
+    std::string current = state.token_view_styling.get_search_history();
+    std::string piece;
+    for (char c : current + "|")
+    {
+        if (c == '|')
+        {
+            if (!piece.empty() && piece != clean && items.size() < 8)
+            {
+                items.push_back(piece);
+            }
+            piece.clear();
+        }
+        else
+        {
+            piece.push_back(c);
+        }
+    }
+    std::string joined;
+    for (const std::string &item : items)
+    {
+        joined += (joined.empty() ? "" : "|") + item;
+    }
+    state.token_view_styling.set_search_history(joined);
+}
+
+// Finds the word or phrase everywhere in the book and lists the places, with the chapter of each.
+// The scan reads the whole book, so a bar shows how far it has got.
 static void run_search(ReaderView &reader_view, ReaderViewState &state, const std::string &word)
 {
     SystemStyling &styling = state.sys_styling;
     constexpr size_t MAX_HITS = 300;
+    SearchOptions options;
+    options.whole_word = (state.token_view_styling.get_search_options() & 1) != 0;
+    options.match_case = (state.token_view_styling.get_search_options() & 2) != 0;
+    remember_search(state, word);
     const auto hits = std::make_shared<std::vector<SearchHit>>(search_book(
         *state.reader,
         word,
         MAX_HITS,
         [&styling, &word](int percent) {
             progress_screen::show(styling, "Searching", word, percent);
-        }
+        },
+        options
     ));
     // The search screen was drawn straight to the display, so draw the page again.
     state.token_view->invalidate();
@@ -963,10 +1058,20 @@ static void run_search(ReaderView &reader_view, ReaderViewState &state, const st
     auto menu = std::make_shared<SelectionMenu>(state.sys_styling);
     std::vector<std::string> names;
     std::vector<std::string> details;
+    const auto &toc = state.reader->get_table_of_contents();
     for (const SearchHit &hit : *hits)
     {
         names.push_back(hit.snippet);
-        details.push_back(percent_label(state, hit.address));
+        std::string detail = percent_label(state, hit.address);
+        if (!toc.empty())
+        {
+            const uint32_t chapter = state.reader->get_toc_position(hit.address).toc_index;
+            if (chapter < toc.size())
+            {
+                detail += "  " + toc[chapter].display_name;
+            }
+        }
+        details.push_back(detail);
     }
     menu->set_entries(names);
     menu->set_details(details);
@@ -985,6 +1090,76 @@ static void run_search(ReaderView &reader_view, ReaderViewState &state, const st
     state.view_stack.push(menu);
 }
 
+// The search menu of the book menu: a new search, the two options, and the last searches.
+void open_search_menu(ReaderView &reader_view, ReaderViewState &state)
+{
+    const int bits = state.token_view_styling.get_search_options();
+    std::vector<std::string> history;
+    {
+        std::string piece;
+        for (char c : state.token_view_styling.get_search_history() + "|")
+        {
+            if (c == '|')
+            {
+                if (!piece.empty())
+                {
+                    history.push_back(piece);
+                }
+                piece.clear();
+            }
+            else
+            {
+                piece.push_back(c);
+            }
+        }
+    }
+    std::vector<std::string> names = {
+        "Type a search...",
+        std::string("Whole words: ") + ((bits & 1) ? "On" : "Off"),
+        std::string("Match case: ") + ((bits & 2) ? "On" : "Off")
+    };
+    std::vector<std::string> details = {"", "", ""};
+    for (const std::string &item : history)
+    {
+        names.push_back(item);
+        details.push_back("recent");
+    }
+    auto menu = std::make_shared<SelectionMenu>(names, state.sys_styling);
+    menu->set_details(details);
+    menu->set_title("Search in book");
+    menu->set_compact(true);
+    menu->set_close_on_select();
+    menu->set_on_selection([&reader_view, &state, history, bits](uint32_t index) {
+        if (index == 0)
+        {
+            state.view_stack.push(std::make_shared<TextInputView>(
+                "Search in book",
+                history.empty() ? std::string() : history.front(),
+                [&reader_view, &state](const std::string &typed) {
+                    std::string query = typed;
+                    while (!query.empty() && query.back() == ' ') query.pop_back();
+                    while (!query.empty() && query.front() == ' ') query.erase(0, 1);
+                    if (!query.empty())
+                    {
+                        run_search(reader_view, state, query);
+                    }
+                },
+                state.sys_styling,
+                60
+            ));
+        }
+        else if (index == 1 || index == 2)
+        {
+            state.token_view_styling.set_search_options(bits ^ (index == 1 ? 1 : 2));
+            open_search_menu(reader_view, state);
+        }
+        else if (index - 3 < history.size())
+        {
+            run_search(reader_view, state, history[index - 3]);
+        }
+    });
+    state.view_stack.push(menu);
+}
 // Looks the text up in the dictionary of the book language, falling back to English, and shows it.
 // A phrase that has no entry of its own is looked up word by word.
 void show_definition(ReaderViewState &state, const std::string &lookup, const std::string &chosen)
@@ -1066,6 +1241,25 @@ void show_definition(ReaderViewState &state, const std::string &lookup, const st
         }
         if (body.empty())
         {
+            // Offer the nearest words instead of a dead end.
+            const std::vector<std::string> near = words.size() == 1 ? dictionary->suggest(lookup) : std::vector<std::string>();
+            if (!near.empty())
+            {
+                auto pick = std::make_shared<SelectionMenu>(near, state.sys_styling);
+                pick->set_title("No entry: " + lookup);
+                pick->set_details(std::vector<std::string>(near.size(), ""));
+                pick->set_compact(true);
+                pick->set_close_on_select();
+                pick->set_hints({"A  Look up", "B  Close"});
+                pick->set_on_selection([&state, near, chosen](uint32_t index) {
+                    if (index < near.size())
+                    {
+                        show_definition(state, near[index], chosen);
+                    }
+                });
+                state.view_stack.push(pick);
+                return;
+            }
             body = "No entry for \"" + lookup + "\"";
         }
     }

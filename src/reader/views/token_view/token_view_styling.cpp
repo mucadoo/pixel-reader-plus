@@ -22,8 +22,14 @@ struct TokenViewStylingState
     bool paragraph_gap = true;
     std::string night_theme;
     std::string dictionary;
+    std::string search_history;
+    int search_options = 1;
     bool thin_bar = false;
     int scroll_overlap = 0;
+    int margin_right = 0;
+    int margin_top = 0;
+    int margin_bottom = 0;
+    int ruler = 0;
     int word_spacing = 1;
     int cover_sleep = 0;
     int highlight_color = 0;
@@ -173,6 +179,66 @@ void TokenViewStyling::set_margin_level(int level)
     }
 }
 
+int TokenViewStyling::get_margin_right() const
+{
+    return state->margin_right;
+}
+
+void TokenViewStyling::set_margin_right(int level)
+{
+    level = std::clamp(level, 0, LAYOUT_LEVEL_COUNT - 1);
+    if (state->margin_right != level)
+    {
+        state->margin_right = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_margin_top() const
+{
+    return state->margin_top;
+}
+
+void TokenViewStyling::set_margin_top(int level)
+{
+    level = std::clamp(level, 0, LAYOUT_LEVEL_COUNT - 1);
+    if (state->margin_top != level)
+    {
+        state->margin_top = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_margin_bottom() const
+{
+    return state->margin_bottom;
+}
+
+void TokenViewStyling::set_margin_bottom(int level)
+{
+    level = std::clamp(level, 0, LAYOUT_LEVEL_COUNT - 1);
+    if (state->margin_bottom != level)
+    {
+        state->margin_bottom = level;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_ruler() const
+{
+    return state->ruler;
+}
+
+void TokenViewStyling::set_ruler(int mode)
+{
+    mode = std::clamp(mode, 0, 2);
+    if (state->ruler != mode)
+    {
+        state->ruler = mode;
+        notify_subscribers();
+    }
+}
+
 int TokenViewStyling::get_spacing_level() const
 {
     return state->spacing_level;
@@ -316,6 +382,35 @@ void TokenViewStyling::set_thin_bar(bool on)
     if (state->thin_bar != on)
     {
         state->thin_bar = on;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_search_options() const
+{
+    return state->search_options;
+}
+
+void TokenViewStyling::set_search_options(int bits)
+{
+    bits = std::clamp(bits, 0, 3);
+    if (state->search_options != bits)
+    {
+        state->search_options = bits;
+        notify_subscribers();
+    }
+}
+
+const std::string &TokenViewStyling::get_search_history() const
+{
+    return state->search_history;
+}
+
+void TokenViewStyling::set_search_history(const std::string &joined)
+{
+    if (state->search_history != joined)
+    {
+        state->search_history = joined;
         notify_subscribers();
     }
 }

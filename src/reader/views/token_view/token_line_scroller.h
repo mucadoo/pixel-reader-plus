@@ -33,7 +33,7 @@ class TokenLineScroller
     std::optional<int> global_end_line;
 
     uint32_t line_height_pixels;
-    int side_margin = 4;
+    int side_margin = 8; // pixels left empty at both sides of the text together
     int picture_mode = 0;
     int first_line_indent = 0;
     bool paragraph_gap = true;
@@ -60,7 +60,7 @@ public:
         std::function<bool(const char *, uint32_t)> line_fits,
         uint32_t line_height_pixels,
         StyleFontFn style_font,
-        int side_margin = 4
+        int side_margin = 8
     );
 
     void collect_token_lines(const DocToken &token, std::vector<DocAddr> &line_addresses);

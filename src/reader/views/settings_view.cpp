@@ -170,7 +170,10 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Bar middle", bar_item_label(token_view_styling.get_bar_middle()), true, sys_font},
         {"Bar right", bar_item_label(token_view_styling.get_bar_right()), true, sys_font},
         {"Clock", clock_format_label(token_view_styling.get_clock_format()), true, sys_font},
-        {"Margins", margin_label(token_view_styling.get_margin_level()), true, sys_font},
+        {"Left margin", margin_label(token_view_styling.get_margin_level()), true, sys_font},
+        {"Right margin", margin_label(token_view_styling.get_margin_right()), true, sys_font},
+        {"Top margin", vertical_margin_label(token_view_styling.get_margin_top()), true, sys_font},
+        {"Bottom margin", vertical_margin_label(token_view_styling.get_margin_bottom()), true, sys_font},
         {"Line spacing", spacing_label(token_view_styling.get_spacing_level()), true, sys_font},
         {"Justify", token_view_styling.get_justify() ? "On" : "Off", true, sys_font},
         {"Indent", indent_label(token_view_styling.get_indent_level()), true, sys_font},
@@ -181,6 +184,7 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Thin bar", token_view_styling.get_thin_bar() ? "On" : "Off", true, sys_font},
         {"Word spacing", word_spacing_label(token_view_styling.get_word_spacing()), true, sys_font},
         {"Scroll overlap", std::to_string(token_view_styling.get_scroll_overlap()) + (token_view_styling.get_scroll_overlap() == 1 ? " line" : " lines"), true, sys_font},
+        {"Reading ruler", ruler_label(token_view_styling.get_ruler()), true, sys_font},
         {"Dictionary", token_view_styling.get_dictionary().empty() ? std::string("Auto") : token_view_styling.get_dictionary(), true, sys_font},
         {"Screen dim", screen_dim::label_for_level(token_view_styling.get_screen_dim()), true, sys_font},
         {"Book styles", token_view_styling.get_book_styles() ? "On" : "Off", true, sys_font},
@@ -488,6 +492,28 @@ void SettingsView::on_keypress(SDLKey key)
                     token_view_styling.set_margin_level(
                         (token_view_styling.get_margin_level() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
+                }
+                else if (line_selected == ROW_MARGIN_RIGHT)
+                {
+                    token_view_styling.set_margin_right(
+                        (token_view_styling.get_margin_right() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_MARGIN_TOP)
+                {
+                    token_view_styling.set_margin_top(
+                        (token_view_styling.get_margin_top() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_MARGIN_BOTTOM)
+                {
+                    token_view_styling.set_margin_bottom(
+                        (token_view_styling.get_margin_bottom() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
+                    );
+                }
+                else if (line_selected == ROW_RULER)
+                {
+                    token_view_styling.set_ruler((token_view_styling.get_ruler() + RULER_MODE_COUNT + dir) % RULER_MODE_COUNT);
                 }
                 else if (line_selected == ROW_SPACING)
                 {

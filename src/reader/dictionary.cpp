@@ -253,6 +253,151 @@ std::optional<std::string> Dictionary::lookup(const std::string &key)
     return std::nullopt;
 }
 
+namespace
+{
+
+// Whether the words differ by at most one letter added, dropped, changed, or two letters swapped.
+bool within_one_edit(const std::string &a, const std::string &b)
+{
+    const size_t la = a.size();
+    const size_t lb = b.size();
+    if (la > lb + 1 || lb > la + 1)
+    {
+        return false;
+    }
+    size_t i = 0;
+    while (i < la && i < lb && a[i] == b[i])
+    {
+        ++i;
+    }
+    if (i == la && i == lb)
+    {
+        return true;
+    }
+    if (la == lb)
+    {
+        if (a.compare(i + 1, std::string::npos, b, i + 1, std::string::npos) == 0)
+        {
+            return true; // one letter changed
+        }
+        return i + 1 < la && a[i] == b[i + 1] && a[i + 1] == b[i] && a.compare(i + 2, std::string::npos, b, i + 2, std::string::npos) == 0;
+    }
+    const std::string &longer = la > lb ? a : b;
+    const std::string &shorter = la > lb ? b : a;
+    return longer.compare(i + 1, std::string::npos, shorter, i, std::string::npos) == 0;
+}
+
+} // namespace
+
+std::vector<std::string> Dictionary::suggest(const std::string &key, size_t max_count)
+{
+    ensure_loaded();
+    std::vector<std::string> found;
+    if (!ok || key.size() < 2)
+    {
+        return found;
+    }
+    const auto add = [&](const std::string &word) {
+        if (found.size() < max_count && word != key && std::find(found.begin(), found.end(), word) == found.end())
+        {
+            found.push_back(word);
+        }
+    };
+    const auto key_at = [this](size_t index) {
+        const size_t start = lines[index];
+        size_t tab = data.find('\t', start);
+        const size_t eol = data.find('\n', start);
+        if (tab == std::string::npos || (eol != std::string::npos && tab > eol))
+        {
+            tab = eol == std::string::npos ? data.size() : eol;
+        }
+        return std::string(data, start, tab - start);
+    };
+
+    // 1. The key without an ending: running -> run, studies -> study, loved -> love.
+    static const char *endings[] = {"ing", "ed", "es", "s", "ly", "er", "est", "ment", "ness", "ful", "al", "ion"};
+    for (const char *ending : endings)
+    {
+        const std::string suffix = ending;
+        if (key.size() > suffix.size() + 2 && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            const std::string stem = key.substr(0, key.size() - suffix.size());
+            for (const std::string &candidate : {stem, stem + "e", stem + "y", stem.substr(0, stem.size() - 1), stem.substr(0, stem.size() - 1) + "y"})
+            {
+                if (candidate.size() > 2 && find_exact(candidate))
+                {
+                    add(candidate);
+                }
+            }
+        }
+    }
+
+    // 2. Words that start with the key, then with the key cut short by one or two letters.
+    for (size_t cut = 0; cut <= 2 && key.size() > cut + 3 && found.size() < max_count; ++cut)
+    {
+        const std::string prefix = key.substr(0, key.size() - cut);
+        size_t lo = 0;
+        size_t hi = lines.size();
+        while (lo < hi)
+        {
+            const size_t mid = lo + (hi - lo) / 2;
+            if (key_at(mid) < prefix)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+        for (size_t i = lo; i < lines.size() && found.size() < max_count; ++i)
+        {
+            const std::string word = key_at(i);
+            if (word.compare(0, prefix.size(), prefix) != 0)
+            {
+                break;
+            }
+            if (word.size() <= key.size() + 4)
+            {
+                add(word);
+            }
+        }
+    }
+
+    // 3. One slip of the finger away. Only the first letters are trusted to be right in a
+    // misspelling, so only words with the same first letter are looked at.
+    if (found.size() < max_count && key.size() >= 4)
+    {
+        size_t lo = 0;
+        size_t hi = lines.size();
+        const std::string first(1, key[0]);
+        while (lo < hi)
+        {
+            const size_t mid = lo + (hi - lo) / 2;
+            if (key_at(mid) < first)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+        for (size_t i = lo; i < lines.size() && found.size() < max_count; ++i)
+        {
+            const std::string word = key_at(i);
+            if (word.empty() || word[0] != key[0])
+            {
+                break;
+            }
+            if (within_one_edit(key, word))
+            {
+                add(word);
+            }
+        }
+    }
+    return found;
+}
 bool Dictionary::available()
 {
     ensure_loaded();

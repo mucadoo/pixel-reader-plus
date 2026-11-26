@@ -25,6 +25,9 @@ public:
 
     std::optional<std::string> lookup(const std::string &key);
     bool available();
+    // Words close to a key that has no entry: the key without a common ending, words that start with
+    // it, and words one letter away from it. Best guesses first.
+    std::vector<std::string> suggest(const std::string &key, size_t max_count = 8);
     bool is_loaded() const { return loaded; }
     // Reads the file now, reporting 0 to 100 as it goes. A later lookup then answers at once.
     void load(const std::function<void(int)> &progress);

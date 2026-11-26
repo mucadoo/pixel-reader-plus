@@ -55,7 +55,7 @@ public:
     // percent follows the Progress setting; the other two are always given
     // Where the chapter and page counters of the bar stand. Pages left are -1 when not known.
     void set_bar_extras(int chapter_index, int chapter_count, int chapter_pages_left, int book_pages_left);
-    void set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent, int chapter_minutes, int book_minutes);
+    void set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent);
     // Redraws the bar when the clock in it changes minute.
     bool tick(uint32_t elapsed_ms) override;
 

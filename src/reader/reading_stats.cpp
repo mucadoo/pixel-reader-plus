@@ -193,47 +193,6 @@ std::string report(const std::filesystem::path &book, long long now, int books_s
     return out;
 }
 
-long long average_reading_day(long long now)
-{
-    std::map<std::string, long long> per_day;
-    for (const auto &item : seconds)
-    {
-        per_day[item.first.first] += item.second;
-    }
-    long long total = 0;
-    int days = 0;
-    for (int back = 0; back < 30; ++back)
-    {
-        const auto found = per_day.find(day_key(now - static_cast<long long>(back) * 86400));
-        if (found != per_day.end() && found->second > 0)
-        {
-            total += found->second;
-            ++days;
-        }
-    }
-    return days > 0 ? total / days : 0;
-}
-
-long long days_to_finish(long long seconds_left, long long average_day)
-{
-    if (seconds_left < 0 || average_day <= 0)
-    {
-        return 0;
-    }
-    const long long days = (seconds_left + average_day - 1) / average_day;
-    return days < 1 ? 1 : days;
-}
-
-std::string finish_text(long long seconds_left, long long now)
-{
-    const long long days = days_to_finish(seconds_left, average_reading_day(now));
-    if (days <= 0)
-    {
-        return "";
-    }
-    return "about " + std::to_string(days) + (days == 1 ? " day" : " days") + ", around " + day_key(now + days * 86400);
-}
-
 std::string detailed_report(
     const std::filesystem::path &book,
     long long now,
@@ -241,8 +200,7 @@ std::string detailed_report(
     int books_finished,
     const std::vector<long long> &finished_times,
     long long book_units_read,
-    const std::function<std::string(const std::string &)> &title_for,
-    long long book_units_total
+    const std::function<std::string(const std::string &)> &title_for
 )
 {
     const Summary s = summarize(book, now);
@@ -267,17 +225,6 @@ std::string detailed_report(
             char text[48];
             std::snprintf(text, sizeof(text), "Speed  about %d words a minute\n", static_cast<int>(words_per_minute + 0.5));
             out += text;
-            if (book_units_total > book_units_read)
-            {
-                // The time still to read at the pace of this book, and when that comes if you keep reading like this.
-                const long long left = static_cast<long long>(static_cast<double>(book_units_total - book_units_read) * static_cast<double>(s.book_total) / static_cast<double>(book_units_read));
-                const std::string finish = finish_text(left, now);
-                if (!finish.empty())
-                {
-                    out += "Time left  " + format_duration(left) + "\n";
-                    out += "Finish  " + finish + "\n";
-                }
-            }
         }
         out += "\n";
     }

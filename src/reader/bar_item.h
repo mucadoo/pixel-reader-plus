@@ -15,8 +15,6 @@ enum class BarItem {
     BookPercent,
     Time,
     Date,
-    ChapterTimeLeft,
-    BookTimeLeft,
     ChapterNumber,    // chapter x of y
     ChapterPagesLeft, // pages left in the chapter
     BookPagesLeft,    // pages left in the book

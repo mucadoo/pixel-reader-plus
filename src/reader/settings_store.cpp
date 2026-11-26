@@ -140,28 +140,6 @@ void settings_set_browser_sort(StateStore &state_store, BrowserSort sort)
     state_store.set_setting("browser_sort", encode_browser_sort(sort));
 }
 
-std::optional<double> settings_get_reading_speed(const StateStore &state_store)
-{
-    const auto &opt = state_store.get_setting("reading_speed");
-    if (!opt)
-    {
-        return std::nullopt;
-    }
-    try
-    {
-        return std::stod(*opt);
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
-}
-
-void settings_set_reading_speed(StateStore &state_store, double speed)
-{
-    state_store.set_setting("reading_speed", std::to_string(speed));
-}
-
 std::optional<bool> settings_get_hide_finished(const StateStore &state_store)
 {
     const auto opt = state_store.get_setting("hide_finished");

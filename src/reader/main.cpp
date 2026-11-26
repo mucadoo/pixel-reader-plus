@@ -9,7 +9,6 @@
 #include "./work_pump.h"
 #include "./font_catalog.h"
 #include "./library_log.h"
-#include "./reading_speed.h"
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
 #include "./button_actions.h"
@@ -214,7 +213,6 @@ void initialize_views(
         });
         fs->set_flush_state([&state_store]() {
             state_store.flush();
-            reading_speed::flush();
             reading_stats::flush();
             vocabulary::flush();
         });
@@ -531,13 +529,6 @@ int main(int argc, char **argv)
     token_view_styling.set_auto_exit_minutes(settings_get_auto_exit_minutes(state_store).value_or(0));
     book_layout::attach(token_view_styling);
     book_layout::attach_system(sys_styling);
-    if (const auto speed = settings_get_reading_speed(state_store))
-    {
-        reading_speed::set_units_per_second(*speed);
-    }
-    reading_speed::set_saver([&state_store](double speed) {
-        settings_set_reading_speed(state_store, speed);
-    });
     token_view_styling.subscribe_to_changes([&token_view_styling, &state_store]() {
         // Persist changes
         library_status::configure(token_view_styling.get_library_status(), token_view_styling.get_clock_format() == ClockFormat::H12);
@@ -887,7 +878,6 @@ int main(int argc, char **argv)
             // miyoo mini when this happens.
             state_store.flush();
             library_log().flush();
-            reading_speed::flush();
             reading_stats::flush();
             idle_timer.reset();
             save_timer.reset();
@@ -927,8 +917,7 @@ int main(int argc, char **argv)
                         // Make sure nothing is lost if the device switches off.
                         state_store.flush();
                         library_log().flush();
-                        reading_speed::flush();
-                        reading_stats::flush();
+                                    reading_stats::flush();
                     }
                     view_stack.push(std::make_shared<PopupView>(
                         std::string("Battery low: ") + std::to_string(level) + "%"
@@ -978,7 +967,6 @@ int main(int argc, char **argv)
     view_stack.shutdown();
     open_guard::end();
     state_store.flush();
-    reading_speed::flush();
     library_log().flush();
     reading_stats::flush();
 

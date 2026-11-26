@@ -31,7 +31,6 @@
 #include "reader/book_info.h"
 #include "reader/text_style.h"
 #include "reader/library_log.h"
-#include "reader/reading_speed.h"
 #include "reader/book_search.h"
 #include "reader/reading_stats.h"
 #include "reader/vocabulary.h"
@@ -265,30 +264,14 @@ void open_toc_menu(
         }
         menu_names.push_back(std::string(wanted.empty() ? toc[i].indent_level * 2 : 0, ' ') + mark + toc[i].display_name);
 
-        const DocAddr start = state.reader->get_toc_item_address(i);
-        const uint32_t length = state.reader->get_progress_extent(start, true).second;
         std::string detail;
-        const long long whole_seconds = reading_speed::seconds_for(length);
         if (i < current_toc_index)
         {
-            detail = "Read" + (whole_seconds >= 0 ? "  " + reading_stats::format_duration(whole_seconds) : std::string());
+            detail = "Read";
         }
-        else
+        else if (i == current_toc_index)
         {
-            uint32_t left = length;
-            std::string percent;
-            if (i == current_toc_index)
-            {
-                const uint32_t done = state.reader->get_toc_position(get_current_address(state)).progress_percent;
-                percent = std::to_string(done) + "%  ";
-                left = static_cast<uint32_t>(static_cast<unsigned long long>(length) * (100 - std::min<uint32_t>(done, 100)) / 100);
-            }
-            const long long seconds = reading_speed::seconds_for(left);
-            detail = percent + (seconds >= 0 ? reading_stats::format_duration(seconds) : std::string());
-            if (i == current_toc_index && seconds >= 0 && whole_seconds > seconds)
-            {
-                detail += " left of " + reading_stats::format_duration(whole_seconds);
-            }
+            detail = std::to_string(state.reader->get_toc_position(get_current_address(state)).progress_percent) + "%";
         }
         menu_details.push_back(detail);
     }
@@ -2181,8 +2164,7 @@ void ReaderView::open_book_menu()
                     library_log().finished_count(),
                     finished_times,
                     static_cast<long long>(extent.first),
-                    [](const std::string &path) { return std::filesystem::path(path).stem().string(); },
-                    static_cast<long long>(extent.second)
+                    [](const std::string &path) { return std::filesystem::path(path).stem().string(); }
                 );
             }(),
             state->sys_styling
@@ -2256,7 +2238,6 @@ ReaderView::ReaderView(
         std::move(highlights_path)
     ))
 {
-    reading_speed::reset_position();
     reading_stats::reset();
     const auto book_info = read_epub_info(path);
     state->book_title = book_display_title(book_info, path);
@@ -2300,7 +2281,6 @@ ReaderView::~ReaderView()
     catch (...)
     {
     }
-    reading_speed::flush();
     library_log().flush();
     reader_clear_work();
     state->token_view_styling.unsubscribe_from_changes(
@@ -2340,23 +2320,11 @@ void ReaderView::update_token_view_title(DocAddr address)
     {
         state->token_view->page_numbers(chapter, page, pages);
     }
-    // Time left from how fast pages have been going by.
-    const auto book_extent = state->reader->get_progress_extent(address, false);
-    reading_speed::note_position(book_extent.first, static_cast<long long>(std::time(nullptr)));
-    const auto minutes_left = [](std::pair<uint32_t, uint32_t> extent) -> int {
-        if (extent.second == 0)
-        {
-            return -1;
-        }
-        const uint32_t units = extent.second > extent.first ? extent.second - extent.first : 0;
-        const long long seconds = reading_speed::seconds_for(units);
-        return seconds < 0 ? -1 : static_cast<int>((seconds + 59) / 60);
-    };
-    const int chapter_minutes = minutes_left(state->reader->get_progress_extent(address, true));
-    const int book_minutes = minutes_left(book_extent);
 
     state->token_view->set_title_progress(
-        progress_percent, page, pages, chapter_percent, book_percent, chapter_minutes, book_minutes);
+        progress_percent, page, pages, chapter_percent, book_percent);
+
+    const auto book_extent = state->reader->get_progress_extent(address, false);
 
     // Chapter x of y, and the pages left. The page count is exact for what the progress setting
     // measures and estimated from the text left for the other.

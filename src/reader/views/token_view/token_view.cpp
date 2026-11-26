@@ -90,8 +90,6 @@ struct TokenViewState
     int title_chapter_count = 0;
     int title_chapter_pages_left = -1; // -1 when unknown
     int title_book_pages_left = -1;
-    int title_chapter_minutes = -1; // minutes left, -1 when unknown
-    int title_book_minutes = -1;
     uint32_t title_page = 0;
     uint32_t title_pages = 0;
     std::string title_label; // the printed page number the book gives, empty when it gives none
@@ -508,25 +506,6 @@ static std::string bar_text(const TokenViewState &state, BarItem item)
         case BarItem::BookPercent:
             snprintf(text, sizeof(text), "Book %d%%", state.title_book_percent);
             return text;
-        case BarItem::ChapterTimeLeft:
-        case BarItem::BookTimeLeft:
-        {
-            const int minutes = item == BarItem::ChapterTimeLeft ? state.title_chapter_minutes : state.title_book_minutes;
-            if (minutes < 0)
-            {
-                return "";
-            }
-            const char *prefix = item == BarItem::ChapterTimeLeft ? "Ch" : "Book";
-            if (minutes >= 60)
-            {
-                snprintf(text, sizeof(text), "%s %dh %02dm", prefix, minutes / 60, minutes % 60);
-            }
-            else
-            {
-                snprintf(text, sizeof(text), "%s %dm", prefix, minutes);
-            }
-            return text;
-        }
         case BarItem::ChapterNumber:
             if (state.title_chapter_index <= 0 || state.title_chapter_count <= 0)
             {
@@ -1635,19 +1614,16 @@ void TokenView::set_book_title(const std::string &title)
     }
 }
 
-void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent, int chapter_minutes, int book_minutes)
+void TokenView::set_title_progress(int percent, uint32_t page, uint32_t pages, int chapter_percent, int book_percent)
 {
     if (percent != state->title_progress_percent || page != state->title_page || pages != state->title_pages
-        || chapter_percent != state->title_chapter_percent || book_percent != state->title_book_percent
-        || chapter_minutes != state->title_chapter_minutes || book_minutes != state->title_book_minutes)
+        || chapter_percent != state->title_chapter_percent || book_percent != state->title_book_percent)
     {
         state->title_progress_percent = percent;
         state->title_page = page;
         state->title_pages = pages;
         state->title_chapter_percent = chapter_percent;
         state->title_book_percent = book_percent;
-        state->title_chapter_minutes = chapter_minutes;
-        state->title_book_minutes = book_minutes;
         state->needs_render = true;
     }
 }

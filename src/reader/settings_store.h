@@ -42,8 +42,6 @@ std::optional<bool> settings_get_justify(const StateStore &state_store);
 void settings_set_justify(StateStore &state_store, bool justify);
 
 // How fast the reader reads, in address units per second
-std::optional<double> settings_get_reading_speed(const StateStore &state_store);
-void settings_set_reading_speed(StateStore &state_store, double speed);
 
 // Color theme
 std::optional<std::string> settings_get_color_theme(const StateStore &state_store);

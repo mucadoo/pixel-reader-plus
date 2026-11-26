@@ -30,7 +30,6 @@
 #include "./upload_view.h"
 #include "./reading_history_view.h"
 #include "reader/progress_screen.h"
-#include "reader/reading_speed.h"
 #include "reader/reading_stats.h"
 #include "./text_input_view.h"
 #include "reader/system_styling.h"
@@ -152,37 +151,6 @@ std::string book_kind(const std::string &file_name)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     return ext;
-}
-
-// How long the book takes at your reading speed: what is left for a book you have
-// opened, a rough whole-book figure for text formats, nothing for an unopened epub.
-std::string reading_time_text(const FSEntry &entry, const LibraryLog::Entry *log)
-{
-    long long seconds = -1;
-    bool rough = false;
-    if (log && log->units > 0)
-    {
-        if (log->finished())
-        {
-            return "";
-        }
-        seconds = reading_speed::seconds_for(static_cast<uint32_t>(static_cast<unsigned long long>(log->units) * (100 - log->percent) / 100));
-    }
-    else
-    {
-        const std::string kind = book_kind(entry.name);
-        if (kind == "EPUB" || entry.size == 0)
-        {
-            return "";
-        }
-        seconds = reading_speed::seconds_for(static_cast<uint32_t>(entry.size * 85 / 100));
-        rough = true;
-    }
-    if (seconds < 0)
-    {
-        return "";
-    }
-    return (rough ? "~" : "") + reading_stats::format_duration(seconds) + (rough ? "" : " left");
 }
 
 std::string folder_title(const std::filesystem::path &path)
@@ -843,11 +811,6 @@ void rebuild_views(FSState *s)
             menu_entries.push_back(prefix + (info && !info->author.empty() ? title + " - " + info->author : title));
             std::string kind = book_kind(entry.name);
             std::string detail = kind.empty() ? format_size(entry.size) : kind + ", " + format_size(entry.size);
-            const std::string time_left = reading_time_text(entry, log);
-            if (!time_left.empty())
-            {
-                detail = time_left + ", " + detail;
-            }
             {
                 const MarkCounts marks = mark_counts(s, log);
                 if (marks.highlights + marks.bookmarks > 0)
@@ -1001,11 +964,6 @@ std::string properties_text(const FSState *s, const FSEntry &entry)
         std::string kind = book_kind(entry.name);
         body += "Type\n" + (kind.empty() ? std::string("Book") : kind + " book") + "\n\n";
         body += "Size\n" + format_size(entry.size) + "\n\n";
-        const std::string time_left = reading_time_text(entry, library_log().get(s->path / entry.name));
-        if (!time_left.empty())
-        {
-            body += "Reading time\n" + time_left + "\n\n";
-        }
     }
     body += "Location\n" + s->path.string();
     return body;
@@ -3540,7 +3498,6 @@ void show_info(FSState *s)
         {
             facts.push_back({"Rating", std::to_string(log->rating) + " / 5"});
         }
-        facts.push_back({"Reading time", reading_time_text(entry, log)});
         {
             const MarkCounts marks = mark_counts(s, log);
             if (marks.highlights + marks.bookmarks > 0)
@@ -3557,11 +3514,6 @@ void show_info(FSState *s)
                 part(marks.bookmarks, "bookmark", "bookmarks");
                 facts.push_back({"Marks", text});
             }
-        }
-        if (log && log->units > 0 && !log->finished() && log->percent > 0)
-        {
-            const long long left = reading_speed::seconds_for(static_cast<uint32_t>(static_cast<unsigned long long>(log->units) * (100 - log->percent) / 100));
-            facts.push_back({"Finish", reading_stats::finish_text(left, static_cast<long long>(std::time(nullptr)))});
         }
         struct stat st;
         if (::stat(book.c_str(), &st) == 0)

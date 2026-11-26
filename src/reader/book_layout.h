@@ -4,7 +4,9 @@
 #include <filesystem>
 
 class TokenViewStyling;
+class SystemStyling;
 
+// The font and its size are kept for each book too.
 // Margins, line spacing, justify, hyphenate and Page or Scroll can be kept for
 // each book. While a book is open, changing them in Settings changes that book
 // only. Outside a book they change the defaults every book starts from.
@@ -13,6 +15,8 @@ namespace book_layout
 
 // Once, with the styling the reader uses.
 void attach(TokenViewStyling &styling);
+// Once, to keep the font and size for each book as well.
+void attach_system(SystemStyling &system);
 
 // A book was opened. Its own layout, if it has one, replaces the defaults.
 void open(const std::filesystem::path &file);

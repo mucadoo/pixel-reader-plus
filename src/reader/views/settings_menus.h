@@ -17,4 +17,7 @@ void open_custom_colors_menu(ViewStack &stack, SystemStyling &system);
 // Saved sets of page settings: save the current ones, use one, replace it, delete it.
 void open_layout_profiles_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling);
 
+// What the Start and A buttons do while reading.
+void open_button_actions_menu(ViewStack &stack, SystemStyling &system);
+
 #endif

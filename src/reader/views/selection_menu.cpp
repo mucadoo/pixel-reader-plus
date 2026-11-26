@@ -2,6 +2,7 @@
 #include "./selection_menu.h"
 
 #include "./menu_draw.h"
+#include "reader/library_status.h"
 #include "sys/screen.h"
 #include "sys/keymap.h"
 #include "reader/shoulder_keymap.h"
@@ -321,7 +322,16 @@ bool SelectionMenu::render(SDL_Surface *dest_surface, bool force_render)
         {
             std::snprintf(count, sizeof(count), "%u / %u", cursor_pos + 1, static_cast<unsigned>(entries.size()));
         }
-        draw_title_bar(dest_surface, loaded_font, theme, line_height, title, count);
+        std::string counter = count;
+        if (show_status)
+        {
+            status_shown = library_status::text();
+            if (!status_shown.empty())
+            {
+                counter = status_shown + (counter.empty() ? "" : "   " + counter);
+            }
+        }
+        draw_title_bar(dest_surface, loaded_font, theme, line_height, title, counter);
     }
 
     Sint16 x = chrome ? 16 : line_padding;
@@ -442,12 +452,26 @@ bool SelectionMenu::is_modal()
 
 bool SelectionMenu::tick(uint32_t elapsed_ms)
 {
+    bool changed = false;
+    if (show_status)
+    {
+        status_elapsed_ms += elapsed_ms;
+        if (status_elapsed_ms >= 5000)
+        {
+            status_elapsed_ms = 0;
+            if (library_status::text() != status_shown)
+            {
+                needs_render = true;
+                changed = true;
+            }
+        }
+    }
     if (marquee.tick(elapsed_ms))
     {
         needs_render = true;
         return true;
     }
-    return false;
+    return changed;
 }
 
 bool SelectionMenu::is_done()

@@ -262,7 +262,7 @@ bool DefinitionView::render(SDL_Surface *dest_surface, bool force_render)
     y += line_h / 2;
 
     build_layout();
-    const int bottom_reserved = on_lookup ? line_h : 0;
+    const int bottom_reserved = on_lookup || card_next ? line_h : 0;
     visible_lines = static_cast<uint32_t>(std::max(1, (SCREEN_HEIGHT - y - pad - bottom_reserved) / line_h));
     if (scroll_pos > lines.size())
     {
@@ -295,7 +295,18 @@ bool DefinitionView::render(SDL_Surface *dest_surface, bool force_render)
             SDL_FreeSurface(surface);
         }
     }
-    if (on_lookup)
+    if (card_next)
+    {
+        menu_draw::draw_hint_bar(
+            dest_surface,
+            font,
+            theme,
+            line_h,
+            revealed ? std::vector<std::string> {"A  Knew it", "Y  Again", "B  Stop"}
+                     : std::vector<std::string> {"A  Show the meaning", "B  Stop"}
+        );
+    }
+    else if (on_lookup)
     {
         menu_draw::draw_hint_bar(
             dest_surface,
@@ -323,6 +334,50 @@ bool DefinitionView::is_modal()
 
 void DefinitionView::on_keypress(SDLKey key)
 {
+    if (card_next)
+    {
+        if (key == SW_BTN_B)
+        {
+            _is_done = true;
+        }
+        else if (!revealed && key == SW_BTN_A)
+        {
+            revealed = true;
+            body = card_body;
+            lines.clear();
+            scroll_pos = 0;
+            _needs_render = true;
+        }
+        else if (revealed && (key == SW_BTN_A || key == SW_BTN_Y))
+        {
+            const auto next = card_next(key == SW_BTN_A);
+            if (next)
+            {
+                title = next->first;
+                card_body = next->second;
+                body.clear();
+                revealed = false;
+                lines.clear();
+                scroll_pos = 0;
+                _needs_render = true;
+            }
+            else
+            {
+                _is_done = true;
+            }
+        }
+        else if (revealed && key == SW_BTN_UP && scroll_pos > 0)
+        {
+            --scroll_pos;
+            _needs_render = true;
+        }
+        else if (revealed && key == SW_BTN_DOWN)
+        {
+            ++scroll_pos;
+            _needs_render = true;
+        }
+        return;
+    }
     if (on_lookup)
     {
         if (lines.empty())

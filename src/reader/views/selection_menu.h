@@ -29,6 +29,9 @@ class SelectionMenu: public View
     bool close_on_select = false;
     bool compact = false;
     bool x_is_used = false;
+    bool show_status = false;
+    std::string status_shown;
+    uint32_t status_elapsed_ms = 0;
 
     SystemStyling &styling;
     const uint32_t styling_sub_id;
@@ -62,6 +65,8 @@ public:
     // Define fallback keypress handler
     void set_default_on_keypress(std::function<void(SDLKey, SelectionMenu &)> callback);
     void set_close_on_select();
+    // Shows the library status line (time, battery, free space) before the counter in the title bar.
+    void set_show_status() { show_status = true; }
     // B calls this first. When it returns true the press is handled and the menu stays open.
     void set_on_back(std::function<bool()> callback) { on_back = std::move(callback); }
     // The menu uses the X button itself, for example to delete a row.

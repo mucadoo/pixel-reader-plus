@@ -3,6 +3,7 @@
 #include "./selection_menu.h"
 #include "./text_input_view.h"
 #include "filetypes/epub/book_style.h"
+#include "reader/button_actions.h"
 #include "reader/color_theme_def.h"
 #include "reader/layout_profiles.h"
 #include "reader/system_styling.h"
@@ -214,6 +215,53 @@ std::vector<std::string> typography_details(const TokenViewStyling &styling)
 }
 
 } // namespace
+
+void open_button_actions_menu(ViewStack &stack, SystemStyling &system)
+{
+    const auto current = []() {
+        return std::vector<std::string> {
+            button_actions::action_name(button_actions::get(button_actions::SLOT_START)),
+            button_actions::action_name(button_actions::get(button_actions::SLOT_A)),
+        };
+    };
+    auto menu = std::make_shared<SelectionMenu>(
+        std::vector<std::string> {"Start button", "A button"},
+        system
+    );
+    menu->set_details(current());
+    menu->set_title("Button actions while reading");
+    menu->set_compact(true);
+    menu->set_hints({"A  Change", "B  Close"});
+    std::weak_ptr<SelectionMenu> weak = menu;
+    menu->set_on_selection([weak, &stack, &system, current](uint32_t index) {
+        if (index >= button_actions::SLOT_COUNT)
+        {
+            return;
+        }
+        const auto slot = static_cast<button_actions::Slot>(index);
+        std::vector<std::string> names;
+        for (int action = 0; action < button_actions::ACTION_COUNT; ++action)
+        {
+            names.push_back(button_actions::action_name(action));
+        }
+        auto choices = std::make_shared<SelectionMenu>(names, system);
+        choices->set_title(button_actions::slot_name(slot));
+        choices->set_compact(true);
+        choices->set_close_on_select();
+        choices->set_marker(static_cast<uint32_t>(button_actions::get(slot)));
+        choices->set_cursor_pos(static_cast<uint32_t>(button_actions::get(slot)));
+        choices->set_hints({"A  Use", "B  Back"});
+        choices->set_on_selection([weak, slot, current](uint32_t action) {
+            button_actions::set(slot, static_cast<int>(action));
+            if (auto self = weak.lock())
+            {
+                self->set_details(current());
+            }
+        });
+        stack.push(choices);
+    });
+    stack.push(menu);
+}
 
 void open_typography_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling)
 {

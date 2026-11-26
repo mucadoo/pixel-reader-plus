@@ -58,8 +58,8 @@ const std::vector<Category> &categories()
         {"Text", {19, 20, 23, 24, 40, 29, 37}, false},
         {"Reading", {5, 4, 3, 25, 26, 21, 27}, false},
         {"Bar and clock", {6, 7, 8, 9, 22}, false},
-        {"Library and power", {36, 41, 34, 35, 42}, false},
-        {"Controls", {43}, true},
+        {"Library and power", {36, 41, 44, 34, 35, 42}, false},
+        {"Controls", {43, 45}, false},
     };
     return list;
 }
@@ -227,7 +227,9 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Typography", std::string(token_view_styling.get_ligatures() ? "Ligatures" : "Plain") + (token_view_styling.get_widow_control() ? ", widows" : ""), false, sys_font},
         {"On start", token_view_styling.get_startup() == 1 ? "Last book" : "Library", true, sys_font},
         {"Low battery", token_view_styling.get_low_battery_warning() ? "Warn" : "Off", true, sys_font},
-        {"Controls", "Open", false, sys_font},
+        {"Controls guide", "Open", false, sys_font},
+        {"Library status", token_view_styling.get_library_status() == 0 ? "Off" : token_view_styling.get_library_status() == 1 ? "Time, battery" : "Time, battery, space", true, sys_font},
+        {"Button actions", "Open", false, sys_font},
     };
 
     // What is on screen: the groups, or the rows of the group that was opened.
@@ -642,6 +644,10 @@ void SettingsView::on_keypress(SDLKey key)
                     token_view_styling.set_scroll_overlap(
                         (token_view_styling.get_scroll_overlap() + LAYOUT_LEVEL_COUNT + dir) % LAYOUT_LEVEL_COUNT
                     );
+                }
+                else if (line_selected == ROW_LIBRARY_STATUS)
+                {
+                    token_view_styling.set_library_status((token_view_styling.get_library_status() + 3 + dir) % 3);
                 }
                 else if (line_selected == ROW_STARTUP)
                 {

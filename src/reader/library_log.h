@@ -29,6 +29,7 @@ public:
         long long last_opened = 0;
         Status status = Status::Auto;
         bool favorite = false;
+        int rating = 0;      // 0 for none, else 1 to 5 stars
         uint32_t units = 0;  // length of the book in address units, 0 until it has been opened
         std::string book_id; // names the files kept for the book, empty until it has been opened
 
@@ -60,6 +61,7 @@ public:
     void remove(const std::filesystem::path &book);
     void rename(const std::filesystem::path &from, const std::filesystem::path &to);
     void set_favorite(const std::filesystem::path &book, bool favorite);
+    void set_rating(const std::filesystem::path &book, int rating);
 
     const Entry *get(const std::filesystem::path &book) const;
     // The book opened last that still exists, if any.

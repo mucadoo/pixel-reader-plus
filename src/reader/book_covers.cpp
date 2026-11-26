@@ -1,5 +1,6 @@
 #include "./book_covers.h"
 
+#include "./calibre_sidecar.h"
 #include "filetypes/epub/epub_metadata.h"
 #include "sys/screen.h"
 #include "util/sdl_pointer.h"
@@ -352,7 +353,27 @@ bool read_book_cover(const std::filesystem::path &book, std::vector<char> &bytes
     {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
-    return ext == ".epub" && read_epub_cover(book, bytes, format);
+    if (ext == ".epub" && read_epub_cover(book, bytes, format))
+    {
+        return true;
+    }
+    // A picture Calibre (or you) put beside the book.
+    if (const auto picture = calibre_sidecar::cover_for(book))
+    {
+        std::ifstream in(*picture, std::ios::binary);
+        if (in)
+        {
+            bytes.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::string kind = picture->extension().string();
+            for (char &ch : kind)
+            {
+                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            }
+            format = kind == ".png" ? "PNG" : "JPG";
+            return !bytes.empty();
+        }
+    }
+    return false;
 }
 
 BookCovers::BookCovers(std::filesystem::path dir)
@@ -470,7 +491,7 @@ void BookCovers::want(const std::vector<std::filesystem::path> &books)
             slots[path] = slot;
             continue;
         }
-        if (std::filesystem::exists(none_file, ec) || !is_epub(book))
+        if (std::filesystem::exists(none_file, ec) || (!is_epub(book) && !calibre_sidecar::cover_for(book)))
         {
             slots[path].none = true;
             continue;

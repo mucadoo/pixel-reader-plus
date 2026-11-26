@@ -12,6 +12,7 @@
 #include "./selection_menu.h"
 #include "./menu_draw.h"
 #include "reader/progress_screen.h"
+#include "reader/button_actions.h"
 #include "reader/book_info.h"
 #include "reader/book_layout.h"
 #include "reader/bookmarks.h"
@@ -50,6 +51,8 @@
 #include <SDL/SDL.h>
 
 #include <algorithm>
+#include <deque>
+#include <set>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -157,7 +160,15 @@ void apply_book_language(ReaderViewState &state)
     }
 }
 
-void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded = false, const std::string &filter = std::string())
+// The chapter list. Parts with sections under them can be folded: collapsed holds the folded ones.
+// keep_row puts the cursor on that row, for when the list is drawn again after a change.
+void open_toc_menu(
+    ReaderView &reader_view,
+    ReaderViewState &state,
+    std::set<uint32_t> collapsed = {},
+    const std::string &filter = std::string(),
+    int keep_row = -1
+)
 {
     const auto &toc = state.reader->get_table_of_contents();
     if (toc.empty())
@@ -173,7 +184,32 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
     }
     // A filter lists only the chapters with those words in their name, all at one level.
     const std::string wanted = lookup_lowercase(filter);
-    folded = folded && has_nested && wanted.empty();
+    if (!has_nested || !wanted.empty())
+    {
+        collapsed.clear();
+    }
+    // A chapter is a parent when the next one is nested deeper. A folded parent hides what is nested under it.
+    std::vector<bool> is_parent(toc.size(), false);
+    std::vector<bool> hidden(toc.size(), false);
+    {
+        bool hiding = false;
+        uint32_t hide_level = 0;
+        for (uint32_t i = 0; i < toc.size(); ++i)
+        {
+            is_parent[i] = i + 1 < toc.size() && toc[i + 1].indent_level > toc[i].indent_level;
+            if (hiding && toc[i].indent_level > hide_level)
+            {
+                hidden[i] = true;
+                continue;
+            }
+            hiding = false;
+            if (is_parent[i] && collapsed.count(i))
+            {
+                hiding = true;
+                hide_level = toc[i].indent_level;
+            }
+        }
+    }
 
     // The rows shown, as indexes into the table of contents.
     auto visible = std::make_shared<std::vector<uint32_t>>();
@@ -182,7 +218,7 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
     size_t marker_row = 0;
     for (uint32_t i = 0; i < toc.size(); ++i)
     {
-        if (folded && toc[i].indent_level > 0)
+        if (hidden[i])
         {
             continue;
         }
@@ -195,7 +231,12 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
             marker_row = visible->size();
         }
         visible->push_back(i);
-        menu_names.push_back(std::string(wanted.empty() ? toc[i].indent_level * 2 : 0, ' ') + toc[i].display_name);
+        std::string mark;
+        if (has_nested && wanted.empty())
+        {
+            mark = is_parent[i] ? (collapsed.count(i) ? "+ " : "- ") : "  ";
+        }
+        menu_names.push_back(std::string(wanted.empty() ? toc[i].indent_level * 2 : 0, ' ') + mark + toc[i].display_name);
 
         const DocAddr start = state.reader->get_toc_item_address(i);
         const uint32_t length = state.reader->get_progress_extent(start, true).second;
@@ -234,11 +275,11 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
         }
     });
     toc_select_menu->set_close_on_select();
-    toc_select_menu->set_title(!wanted.empty() ? "Chapters: " + filter : folded ? "Chapters (folded)" : "Chapters");
+    toc_select_menu->set_title(!wanted.empty() ? "Chapters: " + filter : !collapsed.empty() ? "Chapters (folded)" : "Chapters");
     if (has_nested && wanted.empty())
     {
         toc_select_menu->set_uses_x(true);
-        toc_select_menu->set_hints({"A  Go", folded ? "X  Unfold" : "X  Fold", "Y  Find", "B  Close"});
+        toc_select_menu->set_hints({"A  Go", "Start  Fold part", collapsed.empty() ? "X  Fold all" : "X  Unfold all", "Y  Find", "B  Close"});
     }
     else
     {
@@ -247,9 +288,9 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
 
     // select current toc item
     toc_select_menu->set_marker(static_cast<uint32_t>(marker_row));
-    toc_select_menu->set_cursor_pos(static_cast<uint32_t>(marker_row));
+    toc_select_menu->set_cursor_pos(static_cast<uint32_t>(keep_row >= 0 && keep_row < static_cast<int>(visible->size()) ? keep_row : static_cast<int>(marker_row)));
 
-    toc_select_menu->set_default_on_keypress([&reader_view, &state, folded, has_nested, filter](SDLKey key, SelectionMenu &toc) {
+    toc_select_menu->set_default_on_keypress([&reader_view, &state, collapsed, is_parent, visible, has_nested, filter](SDLKey key, SelectionMenu &toc) {
         if (key == SW_BTN_SELECT)
         {
             toc.close();
@@ -257,7 +298,36 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
         else if (key == SW_BTN_X && has_nested && filter.empty())
         {
             toc.close();
-            open_toc_menu(reader_view, state, !folded);
+            std::set<uint32_t> next;
+            if (collapsed.empty())
+            {
+                // Fold every part that has sections, keeping the one level of parts on show.
+                const auto &items = state.reader->get_table_of_contents();
+                for (uint32_t i = 0; i < items.size(); ++i)
+                {
+                    if (is_parent[i] && items[i].indent_level == 0)
+                    {
+                        next.insert(i);
+                    }
+                }
+            }
+            open_toc_menu(reader_view, state, next);
+        }
+        else if (key == SW_BTN_START && has_nested && filter.empty())
+        {
+            const uint32_t row = toc.get_cursor_pos();
+            if (row >= visible->size() || !is_parent[(*visible)[row]])
+            {
+                return;
+            }
+            std::set<uint32_t> next = collapsed;
+            const uint32_t index = (*visible)[row];
+            if (!next.erase(index))
+            {
+                next.insert(index);
+            }
+            toc.close();
+            open_toc_menu(reader_view, state, next, std::string(), static_cast<int>(row));
         }
         else if (key == SW_BTN_Y)
         {
@@ -269,7 +339,7 @@ void open_toc_menu(ReaderView &reader_view, ReaderViewState &state, bool folded 
                     std::string text = typed;
                     while (!text.empty() && text.back() == ' ') text.pop_back();
                     while (!text.empty() && text.front() == ' ') text.erase(0, 1);
-                    open_toc_menu(reader_view, state, false, text);
+                    open_toc_menu(reader_view, state, {}, text);
                 },
                 state.sys_styling,
                 40
@@ -890,6 +960,64 @@ void open_word_list(ReaderViewState &state)
     state.view_stack.push(menu);
 }
 
+// Goes through the words that are due, one card at a time.
+void review_words(ReaderViewState &state)
+{
+    const long long now = static_cast<long long>(std::time(nullptr));
+    auto queue = std::make_shared<std::deque<std::string>>();
+    for (const std::string &word : vocabulary::due_words(now))
+    {
+        if (queue->size() < 30)
+        {
+            queue->push_back(word);
+        }
+    }
+    if (queue->empty())
+    {
+        show_message(state, "Nothing to review right now");
+        return;
+    }
+    auto total = std::make_shared<size_t>(queue->size());
+    auto retried = std::make_shared<std::set<std::string>>();
+    const auto card_for = [queue, total](const std::string &word) -> std::pair<std::string, std::string> {
+        std::string meaning;
+        std::string book;
+        for (const auto &entry : vocabulary::entries())
+        {
+            if (entry.word == word)
+            {
+                meaning = entry.gloss;
+                book = entry.book;
+                break;
+            }
+        }
+        const size_t done = *total - std::min(*total, queue->size()) + 1;
+        return {
+            word + "   (" + std::to_string(done) + " / " + std::to_string(*total) + ")",
+            meaning + (book.empty() ? std::string() : "\n\nFrom: " + book)
+        };
+    };
+    const auto first = card_for(queue->front());
+    auto view = std::make_shared<DefinitionView>(first.first, std::string(), state.sys_styling);
+    view->set_card(first.second, [queue, total, retried, card_for](bool known) -> std::optional<std::pair<std::string, std::string>> {
+        const std::string word = queue->front();
+        queue->pop_front();
+        vocabulary::grade(word, known, static_cast<long long>(std::time(nullptr)));
+        if (!known && retried->insert(word).second)
+        {
+            // Once more at the end of this session
+            queue->push_back(word);
+            ++*total;
+        }
+        if (queue->empty())
+        {
+            return std::nullopt;
+        }
+        return card_for(queue->front());
+    });
+    state.view_stack.push(view);
+}
+
 // Writes the word list next to the book as a text file.
 void export_word_list(ReaderViewState &state)
 {
@@ -1309,6 +1437,8 @@ void ReaderView::open_book_menu()
     });
     if (!vocabulary::entries().empty())
     {
+        const size_t due = vocabulary::due_words(static_cast<long long>(std::time(nullptr))).size();
+        add({"Review words (" + std::to_string(due) + " due)", [this]() { review_words(*state); }});
         add({"Export word list", [this]() { export_word_list(*state); }});
     }
     group = "Tools";
@@ -2208,30 +2338,80 @@ static void open_word_actions(ReaderView &reader_view, ReaderViewState &state)
 static void offer_next_book(ReaderViewState &state)
 {
     const auto next = next_book::find_next(state.book_path, next_book::shared_cache(), false);
-    std::vector<std::string> entries;
+    std::string next_title;
     if (next)
     {
         next_book::shared_cache().load(next->path);
         const BookInfo *info = next_book::shared_cache().get(next->path);
-        const std::string title = info && !info->title.empty() ? info->title : next->path.stem().string();
-        entries.push_back(std::string(next->by_series ? "Next in series: " : "Next in folder: ") + title);
+        next_title = std::string(next->by_series ? "Next in series: " : "Next in folder: ")
+            + (info && !info->title.empty() ? info->title : next->path.stem().string());
     }
-    entries.push_back("Back to the list");
-    entries.push_back("Stay here");
-    auto menu = std::make_shared<SelectionMenu>(entries, state.sys_styling);
-    menu->set_title("End of the book");
-    menu->set_compact(true);
-    menu->set_close_on_select();
-    const bool has_next = next.has_value();
-    menu->set_on_selection([&state, has_next, next](uint32_t index) {
-        if (has_next && index == 0)
+    const auto summary = reading_stats::summarize(state.book_path, static_cast<long long>(std::time(nullptr)));
+    const LibraryLog::Entry *log = library_log().get(state.book_path);
+
+    enum class Row { Next, Rating, Info, Back, Stay };
+    auto rows = std::make_shared<std::vector<Row>>();
+    auto menu = std::make_shared<SelectionMenu>(std::vector<std::string> {}, state.sys_styling);
+    std::weak_ptr<SelectionMenu> weak = menu;
+    // The rows are drawn again when the rating changes.
+    auto fill = [&state, next, next_title, summary, rows](SelectionMenu &m) {
+        rows->clear();
+        std::vector<std::string> names;
+        std::vector<std::string> details;
+        const auto add = [&](Row kind, const std::string &name, const std::string &detail) {
+            rows->push_back(kind);
+            names.push_back(name);
+            details.push_back(detail);
+        };
+        if (next)
         {
-            next_book::request(next->path);
-            state.is_done = true;
+            add(Row::Next, next_title, "");
         }
-        else if (index == (has_next ? 1u : 0u))
+        const LibraryLog::Entry *now = library_log().get(state.book_path);
+        const int stars = now ? now->rating : 0;
+        add(Row::Rating, "Your rating (A changes it)", stars > 0 ? std::string(static_cast<size_t>(stars), '*') + std::string(static_cast<size_t>(5 - stars), '-') : std::string("not rated"));
+        add(Row::Info, "Time spent reading it", reading_stats::format_duration(summary.book_total));
+        add(Row::Info, "Books finished so far", std::to_string(library_log().finished_count()));
+        add(Row::Back, "Back to the list", "");
+        add(Row::Stay, "Stay here", "");
+        m.set_entries(names);
+        m.set_details(details);
+    };
+    fill(*menu);
+    menu->set_title("You finished " + state.book_title);
+    menu->set_compact(true);
+    menu->set_hints({"A  Choose", "B  Stay"});
+    menu->set_on_selection([&state, next, rows, weak, fill](uint32_t index) {
+        auto open = weak.lock();
+        if (!open || index >= rows->size())
         {
-            state.is_done = true;
+            return;
+        }
+        switch ((*rows)[index])
+        {
+            case Row::Next:
+                next_book::request(next->path);
+                state.is_done = true;
+                open->close();
+                break;
+            case Row::Rating:
+            {
+                const LibraryLog::Entry *now = library_log().get(state.book_path);
+                library_log().set_rating(state.book_path, ((now ? now->rating : 0) + 1) % 6);
+                library_log().flush();
+                fill(*open);
+                open->set_cursor_pos(index);
+                break;
+            }
+            case Row::Back:
+                state.is_done = true;
+                open->close();
+                break;
+            case Row::Stay:
+                open->close();
+                break;
+            case Row::Info:
+                break;
         }
     });
     state.view_stack.push(menu);
@@ -2252,6 +2432,71 @@ void ReaderView::on_keypress(SDLKey key)
     const bool was_ready = pagination_ready();
     handle_keypress(key);
     settle_pagination(was_ready);
+}
+
+void ReaderView::run_button_action(int action)
+{
+    switch (action)
+    {
+        case button_actions::ACTION_BOOKMARK:
+            toggle_bookmark(*state);
+            break;
+        case button_actions::ACTION_TITLE_BAR:
+            state->token_view_styling.set_show_title_bar(!state->token_view_styling.get_show_title_bar());
+            break;
+        case button_actions::ACTION_CHAPTERS:
+            if (!state->reader->get_table_of_contents().empty())
+            {
+                open_toc_menu(*this, *state);
+            }
+            break;
+        case button_actions::ACTION_SEARCH:
+            open_search_menu(*this, *state);
+            break;
+        case button_actions::ACTION_GO_TO_PERCENT:
+        {
+            const uint32_t now = state->reader->get_global_progress_percent(get_current_address(*state));
+            state->view_stack.push(std::make_shared<GotoView>(
+                "Go to", "%", 0, 100, now,
+                [this](uint32_t percent) { jump_to(state->reader->get_address_at_percent(percent)); },
+                state->sys_styling
+            ));
+            break;
+        }
+        case button_actions::ACTION_BOOK_MAP:
+        {
+            std::vector<DocAddr> bookmark_addresses;
+            for (const Bookmark &bookmark : state->bookmarks)
+            {
+                bookmark_addresses.push_back(bookmark.address);
+            }
+            std::vector<DocAddr> highlight_addresses;
+            for (const Highlight &highlight : state->token_view->highlights())
+            {
+                highlight_addresses.push_back(highlight.first);
+            }
+            state->view_stack.push(std::make_shared<BookMapView>(
+                state->reader,
+                get_current_address(*state),
+                bookmark_addresses,
+                highlight_addresses,
+                [this](DocAddr address) { jump_to(address); },
+                state->sys_styling
+            ));
+            break;
+        }
+        case button_actions::ACTION_JUMP_BACK:
+            jump_back();
+            break;
+        case button_actions::ACTION_NEXT_CHAPTER:
+            jump_chapter(*this, *state, 1);
+            break;
+        case button_actions::ACTION_PREVIOUS_CHAPTER:
+            jump_chapter(*this, *state, -1);
+            break;
+        default:
+            break;
+    }
 }
 
 void ReaderView::handle_keypress(SDLKey key)
@@ -2284,7 +2529,7 @@ void ReaderView::handle_keypress(SDLKey key)
 
     if (key == SW_BTN_START)
     {
-        toggle_bookmark(*state);
+        run_button_action(button_actions::get(button_actions::SLOT_START));
         return;
     }
 
@@ -2312,9 +2557,7 @@ void ReaderView::handle_keypress(SDLKey key)
 
     switch (key) {
         case SW_BTN_A:
-            state->token_view_styling.set_show_title_bar(
-                !state->token_view_styling.get_show_title_bar()
-            );
+            run_button_action(button_actions::get(button_actions::SLOT_A));
             break;
         case SW_BTN_SELECT:
             open_book_menu();

@@ -37,6 +37,7 @@ struct TokenViewStylingState
     int word_spacing = 1;
     int cover_sleep = 0;
     int startup = 0;
+    int library_status = 0;
     bool low_battery_warning = true;
     int highlight_color = 0;
     int screen_dim = 0;
@@ -422,6 +423,21 @@ void TokenViewStyling::set_cover_sleep(int step)
     if (state->cover_sleep != step)
     {
         state->cover_sleep = step;
+        notify_subscribers();
+    }
+}
+
+int TokenViewStyling::get_library_status() const
+{
+    return state->library_status;
+}
+
+void TokenViewStyling::set_library_status(int level)
+{
+    level = std::clamp(level, 0, 2);
+    if (state->library_status != level)
+    {
+        state->library_status = level;
         notify_subscribers();
     }
 }

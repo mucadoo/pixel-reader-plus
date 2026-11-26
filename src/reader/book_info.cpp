@@ -1,5 +1,6 @@
 #include "./book_info.h"
 
+#include "./calibre_sidecar.h"
 #include "filetypes/epub/epub_metadata.h"
 #include "filetypes/text/markup.h"
 #include "util/zip_utils.h"
@@ -17,7 +18,7 @@
 namespace
 {
 
-constexpr const char *CACHE_MAGIC = "PXI4";
+constexpr const char *CACHE_MAGIC = "PXI5";
 
 bool is_epub(const std::filesystem::path &book)
 {
@@ -137,7 +138,90 @@ std::string tidy(const std::string &text)
 
 } // namespace
 
+namespace
+{
+
+// The metadata Calibre keeps in an .opf file beside the book. Empty fields stay empty.
+std::optional<BookInfo> read_sidecar_info(const std::filesystem::path &book)
+{
+    const auto opf = calibre_sidecar::opf_for(book);
+    if (!opf)
+    {
+        return std::nullopt;
+    }
+    std::ifstream in(*opf, std::ios::binary);
+    if (!in)
+    {
+        return std::nullopt;
+    }
+    std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (xml.size() > 4 * 1024 * 1024)
+    {
+        return std::nullopt;
+    }
+    PackageContents package;
+    if (!epub_parse_package_contents(opf->filename().string(), xml.c_str(), package))
+    {
+        return std::nullopt;
+    }
+    BookInfo info;
+    info.title = tidy(package.title);
+    info.author = tidy(package.author);
+    info.language = tidy(package.language);
+    info.series = tidy(package.series);
+    info.series_index = tidy(package.series_index);
+    info.description = strip_tags(tidy(package.description));
+    info.publisher = tidy(package.publisher);
+    info.subjects = tidy(package.subjects);
+    info.date = tidy(package.date);
+    if (info.date.size() > 10)
+    {
+        info.date.resize(10);
+    }
+    return info;
+}
+
+std::optional<BookInfo> read_embedded_info(const std::filesystem::path &book);
+
+} // namespace
+
 std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
+{
+    std::optional<BookInfo> info = read_embedded_info(book);
+    // What Calibre wrote beside the book wins where it says something.
+    if (const auto sidecar = read_sidecar_info(book))
+    {
+        if (!info)
+        {
+            info = BookInfo();
+        }
+        const auto take = [](std::string &mine, const std::string &theirs) {
+            if (!theirs.empty())
+            {
+                mine = theirs;
+            }
+        };
+        take(info->title, sidecar->title);
+        take(info->author, sidecar->author);
+        take(info->language, sidecar->language);
+        take(info->series, sidecar->series);
+        take(info->series_index, sidecar->series_index);
+        take(info->description, sidecar->description);
+        take(info->publisher, sidecar->publisher);
+        take(info->subjects, sidecar->subjects);
+        take(info->date, sidecar->date);
+        if (info->empty())
+        {
+            return std::nullopt;
+        }
+    }
+    return info;
+}
+
+namespace
+{
+
+std::optional<BookInfo> read_embedded_info(const std::filesystem::path &book)
 {
     markup::Format format;
     if (is_markup(book, format))
@@ -194,6 +278,8 @@ std::optional<BookInfo> read_epub_info(const std::filesystem::path &book)
     zip_close(zip);
     return result;
 }
+
+} // namespace
 
 double BookInfo::series_number() const
 {

@@ -50,7 +50,9 @@ class SettingsView: public View
     static constexpr uint32_t ROW_STARTUP = 41;
     static constexpr uint32_t ROW_LOW_BATTERY = 42;
     static constexpr uint32_t ROW_CONTROLS = 43;
-    static constexpr int ROW_COUNT = 44;
+    static constexpr uint32_t ROW_LIBRARY_STATUS = 44;
+    static constexpr uint32_t ROW_BUTTONS = 45;
+    static constexpr int ROW_COUNT = 46;
 
     bool _is_done = false;
     bool needs_render = true;
@@ -80,6 +82,7 @@ class SettingsView: public View
 
 public:
     static constexpr uint32_t TWEAKS_ROW = ROW_TWEAKS;
+    static constexpr uint32_t BUTTONS_ROW = ROW_BUTTONS;
     static constexpr uint32_t PROFILES_ROW = ROW_PROFILES;
     static constexpr uint32_t CUSTOM_COLORS_ROW = ROW_CUSTOM_COLORS;
     static constexpr uint32_t TYPOGRAPHY_ROW = ROW_TYPOGRAPHY;

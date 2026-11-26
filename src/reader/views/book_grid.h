@@ -63,6 +63,9 @@ private:
     uint32_t cursor_pos = 0;
     uint32_t first_row = 0;
     bool needs_render = true;
+    bool show_status = false;
+    std::string status_shown;
+    uint32_t status_elapsed_ms = 0;
     menu_draw::Marquee marquee;
     Throttled move_throttle;
 
@@ -90,6 +93,8 @@ public:
     void set_title(std::string new_title);
     void set_hints(std::vector<std::string> new_hints);
     void set_empty_message(std::string message);
+    // Shows the library status line (time, battery, free space) before the counter in the title bar.
+    void set_show_status() { show_status = true; }
     // Move the cursor without telling the focus callback.
     void set_cursor(uint32_t index);
     uint32_t cursor() const;

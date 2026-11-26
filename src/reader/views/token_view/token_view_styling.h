@@ -125,6 +125,10 @@ public:
     int get_startup() const;
     void set_startup(int mode);
 
+    // The line at the top of the book list: 0 off, 1 time and battery, 2 adds the free space on the card
+    int get_library_status() const;
+    void set_library_status(int level);
+
     // Whether a warning shows when the battery runs low
     bool get_low_battery_warning() const;
     void set_low_battery_warning(bool on);

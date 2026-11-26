@@ -1,7 +1,9 @@
 #include "./book_layout.h"
 
+#include "./font_catalog.h"
 #include "./layout_options.h"
 #include "./reading_mode.h"
+#include "./system_styling.h"
 #include "./views/token_view/token_view_styling.h"
 
 #include <fstream>
@@ -31,9 +33,12 @@ struct Layout
     bool widow_control = false;
     std::string language;
     ReadingMode reading = ReadingMode::Scroll;
+    std::string font; // empty when the system styling is not attached
+    int font_size = 0;
 };
 
 TokenViewStyling *styling = nullptr;
+SystemStyling *system_styling = nullptr;
 bool is_active = false;
 bool applying = false;
 std::filesystem::path book_file;
@@ -56,6 +61,11 @@ Layout current()
     layout.widow_control = styling->get_widow_control();
     layout.language = styling->get_book_language();
     layout.reading = styling->get_reading_mode();
+    if (system_styling)
+    {
+        layout.font = system_styling->get_font_name();
+        layout.font_size = static_cast<int>(system_styling->get_font_size());
+    }
     return layout;
 }
 
@@ -76,6 +86,11 @@ void apply(const Layout &layout)
     styling->set_widow_control(layout.widow_control);
     styling->set_book_language(layout.language);
     styling->set_reading_mode(layout.reading);
+    if (system_styling && !layout.font.empty() && layout.font_size > 0)
+    {
+        system_styling->set_font_name(get_valid_font_name(layout.font));
+        system_styling->set_font_size(static_cast<uint32_t>(layout.font_size));
+    }
     applying = false;
 }
 
@@ -116,6 +131,8 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
             else if (key == "widows") layout.widow_control = value == "1";
             else if (key == "language") layout.language = value;
             else if (key == "reading") layout.reading = value == "page" ? ReadingMode::Page : ReadingMode::Scroll;
+            else if (key == "font") layout.font = value;
+            else if (key == "font_size") layout.font_size = std::stoi(value);
         }
         catch (...)
         {
@@ -129,6 +146,11 @@ bool read_file(const std::filesystem::path &file, Layout &layout)
 void attach(TokenViewStyling &s)
 {
     styling = &s;
+}
+
+void attach_system(SystemStyling &s)
+{
+    system_styling = &s;
 }
 
 void open(const std::filesystem::path &file)
@@ -197,6 +219,11 @@ void save_if_active()
         << "widows=" << (layout.widow_control ? 1 : 0) << "\n"
         << "language=" << layout.language << "\n"
         << "reading=" << (layout.reading == ReadingMode::Page ? "page" : "scroll") << "\n";
+    if (!layout.font.empty())
+    {
+        out << "font=" << layout.font << "\n"
+            << "font_size=" << layout.font_size << "\n";
+    }
 }
 
 } // namespace book_layout

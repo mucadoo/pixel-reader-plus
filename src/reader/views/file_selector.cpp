@@ -2,6 +2,7 @@
 
 #include "./book_grid.h"
 #include "./grouped_menu.h"
+#include "reader/library_status.h"
 #include "./selection_menu.h"
 #include "doc_api/doc_reader.h"
 #include "filetypes/open_doc.h"
@@ -647,6 +648,7 @@ void rebuild_views(FSState *s)
         ? ""
         : (!s->search_active && s->filter != 0 ? std::string("No book here is ") + filter_label(s->filter) + "\nY, Show: switches the books shown" : s->search_active ? (s->collection.empty() ? "No book matches" : "This collection has no books") : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
 
+    library_status::set_folder(s->path);
     s->menu.set_title(folder);
     s->menu.set_entries(menu_entries);
     s->menu.set_details(menu_details);
@@ -2828,6 +2830,10 @@ void show_info(FSState *s)
         {
             facts.push_back({"Progress", std::to_string(log->finished() ? 100 : log->percent) + "%"});
         }
+        if (log && log->rating > 0)
+        {
+            facts.push_back({"Rating", std::to_string(log->rating) + " / 5"});
+        }
         facts.push_back({"Reading time", reading_time_text(entry, log)});
         struct stat st;
         if (::stat(book.c_str(), &st) == 0)
@@ -2967,6 +2973,8 @@ FileSelector::FileSelector(std::filesystem::path path, SystemStyling &styling, s
         state->top_folder = top_folder;
     }
 
+    state->menu.set_show_status();
+    state->grid.set_show_status();
     state->menu.set_on_selection([this](uint32_t menu_index) {
         on_menu_entry_selected(this->state.get(), menu_index);
     });

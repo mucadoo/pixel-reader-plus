@@ -1,6 +1,7 @@
 #include "./library_log.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <system_error>
@@ -53,7 +54,12 @@ void LibraryLog::load(std::filesystem::path path)
                 const int status = std::stoi(parts[2]);
                 entry.status = status == 1 ? Status::Finished
                     : (status == 2 ? Status::Reading : (status == 3 ? Status::ToRead : (status == 4 ? Status::OnHold : Status::Auto)));
-                entry.favorite = parts[3] == "1";
+                // "1" or "0", then an optional "r" and the rating, such as "1r4"
+                entry.favorite = !parts[3].empty() && parts[3][0] == '1';
+                if (const size_t rated = parts[3].find('r'); rated != std::string::npos)
+                {
+                    entry.rating = std::clamp(std::atoi(parts[3].c_str() + rated + 1), 0, 5);
+                }
                 size_t path_at = 4;
                 if (parts.size() >= 6)
                 {
@@ -99,7 +105,7 @@ void LibraryLog::flush()
         const Entry &e = item.second;
         out << e.percent << '\t' << e.last_opened << '\t'
             << (e.status == Status::Finished ? 1 : (e.status == Status::Reading ? 2 : (e.status == Status::ToRead ? 3 : (e.status == Status::OnHold ? 4 : 0)))) << '\t'
-            << (e.favorite ? 1 : 0) << '\t' << e.book_id << (e.units ? "," + std::to_string(e.units) : std::string()) << '\t' << item.first << '\n';
+            << (e.favorite ? 1 : 0) << (e.rating > 0 ? "r" + std::to_string(e.rating) : std::string()) << '\t' << e.book_id << (e.units ? "," + std::to_string(e.units) : std::string()) << '\t' << item.first << '\n';
     }
     dirty = false;
 }
@@ -189,6 +195,17 @@ void LibraryLog::remove(const std::filesystem::path &book)
 {
     if (entries.erase(book.string()) > 0)
     {
+        dirty = true;
+    }
+}
+
+void LibraryLog::set_rating(const std::filesystem::path &book, int rating)
+{
+    Entry &entry = entries[book.string()];
+    rating = std::clamp(rating, 0, 5);
+    if (entry.rating != rating)
+    {
+        entry.rating = rating;
         dirty = true;
     }
 }

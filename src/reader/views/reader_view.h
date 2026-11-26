@@ -63,6 +63,7 @@ public:
     void go_to_page(bool chapter, uint32_t page);
     // Returns to the place before the last jump. False when there is none.
     bool jump_back();
+    void run_button_action(int action);
     bool can_jump_back() const;
     void open_book_menu();
 };

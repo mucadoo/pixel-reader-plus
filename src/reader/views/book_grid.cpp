@@ -3,6 +3,7 @@
 #include "./menu_draw.h"
 #include "reader/book_covers.h"
 #include "reader/config.h"
+#include "reader/library_status.h"
 #include "reader/shoulder_keymap.h"
 #include "reader/system_styling.h"
 #include "sys/keymap.h"
@@ -303,6 +304,20 @@ bool BookGrid::tick(uint32_t elapsed_ms)
 {
     bool redraw = false;
 
+    if (show_status)
+    {
+        status_elapsed_ms += elapsed_ms;
+        if (status_elapsed_ms >= 5000)
+        {
+            status_elapsed_ms = 0;
+            if (library_status::text() != status_shown)
+            {
+                needs_render = true;
+                redraw = true;
+            }
+        }
+    }
+
     if (covers)
     {
         const Layout l = compute_layout();
@@ -518,7 +533,16 @@ bool BookGrid::render(SDL_Surface *dest, bool force_render)
     {
         std::snprintf(counter, sizeof(counter), "%u / %u", cursor_pos + 1, static_cast<unsigned>(items.size()));
     }
-    draw_title_bar(dest, font, theme, l.line_height, title, counter);
+    std::string shown_counter = counter;
+    if (show_status)
+    {
+        status_shown = library_status::text();
+        if (!status_shown.empty())
+        {
+            shown_counter = status_shown + (shown_counter.empty() ? "" : "   " + shown_counter);
+        }
+    }
+    draw_title_bar(dest, font, theme, l.line_height, title, shown_counter);
 
     const uint32_t cols = static_cast<uint32_t>(l.cols);
     for (uint32_t r = 0; r < static_cast<uint32_t>(l.rows); ++r)

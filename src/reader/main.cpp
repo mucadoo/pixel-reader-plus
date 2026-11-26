@@ -1,5 +1,6 @@
 #include "./config.h"
 #include "./battery.h"
+#include "./library_status.h"
 #include "./book_layout.h"
 #include "./views/popup_view.h"
 #include "./reading_stats.h"
@@ -10,6 +11,7 @@
 #include "./reading_speed.h"
 #include "./settings_store.h"
 #include "./shoulder_keymap.h"
+#include "./button_actions.h"
 #include "./state_store.h"
 #include "./system_styling.h"
 #include "./collections.h"
@@ -356,6 +358,7 @@ int main(int argc, char **argv)
     reading_stats::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "stats.log");
     layout_profiles::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "profiles.tsv");
     collections::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "collections.tsv");
+    button_actions::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "buttons.txt");
     vocabulary::load(std::filesystem::path(config[CONFIG_KEY_STORE_PATH]) / "vocabulary.tsv");
 
     // Preload & check fonts
@@ -413,9 +416,17 @@ int main(int argc, char **argv)
                 background.r, background.g, background.b, text.r, text.g, text.b, highlight.r, highlight.g, highlight.b);
             settings_set_custom_colors(state_store, colors);
         }
-        settings_set_font_name(state_store, sys_styling.get_font_name());
-        settings_set_font_size(state_store, sys_styling.get_font_size());
         settings_set_shoulder_keymap(state_store, sys_styling.get_shoulder_keymap());
+        if (book_layout::active())
+        {
+            // Inside a book the font and size belong to that book alone.
+            book_layout::save_if_active();
+        }
+        else
+        {
+            settings_set_font_name(state_store, sys_styling.get_font_name());
+            settings_set_font_size(state_store, sys_styling.get_font_size());
+        }
     });
 
     // Text Styling
@@ -451,6 +462,8 @@ int main(int argc, char **argv)
     }
     token_view_styling.set_grid_size(settings_get_small_int(state_store, "grid_size").value_or(0));
     token_view_styling.set_startup(settings_get_small_int(state_store, "startup").value_or(0));
+    token_view_styling.set_library_status(settings_get_small_int(state_store, "library_status").value_or(0));
+    library_status::configure(token_view_styling.get_library_status(), token_view_styling.get_clock_format() == ClockFormat::H12);
     token_view_styling.set_low_battery_warning(settings_get_small_int(state_store, "low_battery").value_or(1) != 0);
     BookGrid::set_density(token_view_styling.get_grid_size());
     token_view_styling.set_word_spacing(settings_get_small_int(state_store, "word_spacing").value_or(1));
@@ -467,6 +480,7 @@ int main(int argc, char **argv)
     token_view_styling.set_night_until(settings_get_night_hour(state_store, false).value_or(7));
     token_view_styling.set_auto_exit_minutes(settings_get_auto_exit_minutes(state_store).value_or(0));
     book_layout::attach(token_view_styling);
+    book_layout::attach_system(sys_styling);
     if (const auto speed = settings_get_reading_speed(state_store))
     {
         reading_speed::set_units_per_second(*speed);
@@ -476,6 +490,7 @@ int main(int argc, char **argv)
     });
     token_view_styling.subscribe_to_changes([&token_view_styling, &state_store]() {
         // Persist changes
+        library_status::configure(token_view_styling.get_library_status(), token_view_styling.get_clock_format() == ClockFormat::H12);
         settings_set_show_title_bar(state_store, token_view_styling.get_show_title_bar());
         settings_set_progress_reporting(state_store, token_view_styling.get_progress_reporting());
         if (book_layout::active())
@@ -500,6 +515,7 @@ int main(int argc, char **argv)
             settings_set_small_int(state_store, "letter_spacing", token_view_styling.get_letter_spacing());
             settings_set_small_int(state_store, "grid_size", token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "startup", token_view_styling.get_startup());
+            settings_set_small_int(state_store, "library_status", token_view_styling.get_library_status());
             settings_set_small_int(state_store, "low_battery", token_view_styling.get_low_battery_warning() ? 1 : 0);
             BookGrid::set_density(token_view_styling.get_grid_size());
             settings_set_small_int(state_store, "word_spacing", token_view_styling.get_word_spacing());
@@ -569,6 +585,9 @@ int main(int argc, char **argv)
             view_stack.push(std::make_shared<FontPreviewView>(sys_styling));
         });
     }
+    settings_view->set_row_action(SettingsView::BUTTONS_ROW, [&view_stack, &sys_styling]() {
+        open_button_actions_menu(view_stack, sys_styling);
+    });
     settings_view->set_controls_action([&view_stack, &sys_styling]() {
         view_stack.push(std::make_shared<DefinitionView>(
             "Controls",

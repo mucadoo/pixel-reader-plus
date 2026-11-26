@@ -272,6 +272,16 @@ void settings_set_dictionary(StateStore &state_store, const std::string &name)
     state_store.set_setting("dictionary", name);
 }
 
+std::optional<std::string> settings_get_custom_colors(const StateStore &state_store)
+{
+    return state_store.get_setting("custom_colors");
+}
+
+void settings_set_custom_colors(StateStore &state_store, const std::string &colors)
+{
+    state_store.set_setting("custom_colors", colors);
+}
+
 std::optional<std::string> settings_get_night_theme(const StateStore &state_store)
 {
     return state_store.get_setting("night_theme");

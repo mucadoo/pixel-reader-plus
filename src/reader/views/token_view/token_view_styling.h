@@ -137,6 +137,15 @@ public:
     bool get_bold_text() const;
     void set_bold_text(bool bold);
 
+    // Per-book typography: ligatures, and keeping a lone line of a paragraph off the top or bottom of a
+    // page (page mode). And the language of the book when the epub names the wrong one ("" follows it).
+    bool get_ligatures() const;
+    void set_ligatures(bool on);
+    bool get_widow_control() const;
+    void set_widow_control(bool on);
+    const std::string &get_book_language() const;
+    void set_book_language(const std::string &name);
+
     // Break long words at the end of a line
     bool get_hyphenate() const;
     void set_hyphenate(bool hyphenate);

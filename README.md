@@ -58,7 +58,7 @@ A book you have opened has a progress bar along the bottom of its cover. In ever
 | D-pad left / right | List: move half a screen. Grid: move one cover. |
 | L1 / R1 | Move half a screen in the list, or a full screen of covers in the grid. Settings can move this to L2 / R2. |
 | A | Open the book or folder. |
-| Y | The options of the selected entry: properties, favorite, finished, hide finished, search, rename, delete. |
+| Y | The options of the selected entry: properties, favorite, finished, hide finished, **Show** (switches which books the folder lists: all, not opened, in progress, favorites, finished), search, rename, delete. |
 | Select | Switch between the list and the grid. |
 | Start | Change the order: name, title, author, series, recent. |
 | X | Settings. |
@@ -149,8 +149,9 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 **Select** opens a small menu over the page. **B** or **Select** closes it.
 
 - **Books with no table of contents.** An epub made of one to four big files and without a table of contents gets one from its headings (h1 to h3). A plain text file gets one from lines that look like chapter titles (`Chapter 3`, `Part II`, `Prologue`, or just a number or Roman numeral alone between blank lines), and a long text without any is cut into **Part 1**, **Part 2** and so on, about 30 000 letters each.
-- **Chapters** is the book's table of contents, opened on the chapter you are reading. A mark stays on that chapter while you move. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. Each row says how it stands: **Read** for the chapters behind you, the percent done and the time left for the one you are in, and the reading time of the ones ahead (from your own reading speed). When chapters sit inside others (parts and chapters), **X** folds the list down to the top level and unfolds it again. A book with no table of contents does not show this row. There is no separate next-chapter button.
-- **Search in book** asks for a word or phrase and lists the places (see Word lookup). It keeps your last eight searches as rows to pick again, and has the **Whole words** and **Match case** switches.
+- **Chapters** is the book's table of contents (**Y** types a few letters and lists only the chapters with them in the name), opened on the chapter you are reading. A mark stays on that chapter while you move. Up and down move, **A** jumps to the chapter, **B** or **Select** closes the list. Each row says how it stands: **Read** for the chapters behind you, the percent done and the time left for the one you are in, and the reading time of the ones ahead (from your own reading speed). When chapters sit inside others (parts and chapters), **X** folds the list down to the top level and unfolds it again. A book with no table of contents does not show this row. There is no separate next-chapter button.
+- **Book language** (in the book menu) picks the language for hyphenation and lookups for this book when the epub names the wrong one or none; **Follow the book** returns to what the book says. It is kept for each book.
+- **Search in book** asks for a word or phrase and lists the places (see Word lookup). Once you choose a place, the search stays open: the words are marked on the page, the bar shows `Match 3 / 17` before the chapter title, and the shoulder pair that normally jumps between chapters steps to the next and previous match instead (round the ends). The book menu then also has **Next match**, **Previous match** and **Clear search**, which gives the shoulders back to the chapters. It keeps your last eight searches as rows to pick again, and has the **Whole words** and **Match case** switches.
 - **Screen dim** in the book menu cycles the Screen dim setting (Off, Dim, Dimmer, Dimmest) without leaving the book. The device's own brightness chords work in the reader too.
 - **Add bookmark** saves the place under the name of its chapter. A page that holds a bookmark has a small corner mark at its top right. **Bookmarks** lists them with their place as a percent, **A** goes there, **X** deletes one. They are saved with the book.
 - **Next mark** and **Previous mark** go to the next or previous bookmark or highlight in book order, from where you are. They appear when the book has any, and say so when there is none further on.
@@ -171,7 +172,9 @@ The cover, a title-page portrait, and photo inserts are ordinary pictures in the
 
 Press **X**. The book stays behind the menu. Each row has the name on the left and the choice on the right. Up and down move. Left and right change the choice. **B** closes settings. The choices are saved.
 
-- **Theme.** The menu shows Spruce, Night, Light, Sepia, and Vampire. Spruce is the dark theme with cream text.
+- **Custom colors.** Opens a list with **Background**, **Text** and **Highlight**: **A** steps each through a palette of 22 colors, and **Preset** applies Solarized light, Solarized dark, Paper, Amber terminal, Green terminal or Blue night in turn. Any change switches to the theme called **Custom**, which is also one of the Theme choices, and the colors are kept. The other colors follow: the quiet text is a blend of text and background, and the text on the highlight is black or white, whichever reads better.
+- **Typography.** For each book: **Ligatures** draws ff, fi, fl, ffi and ffl as one letter when the font has it (off by default; search and lookup still see the plain letters), and **Widows and orphans** (page mode) moves a page break up a line so a page does not end on the first line of a paragraph or leave just its last line for the next page. A heavier text is **Bold text**; a lighter weight is not possible with the font library the reader uses.
+- **Theme.** The menu shows Spruce, Night, Light, Sepia, Vampire and Custom. Spruce is the dark theme with cream text.
 - **Font size.** Body text, from 18 to 40. Titles scale with it.
 - **Font.** The fonts shipped in `resources/fonts`, including DejaVu Sans, DejaVu Serif, and Merriweather. Merriweather uses its bold file for bold text. The other fonts use a synthetic bold.
 - **Shoulders.** `L1 / R1` uses L1 and R1 to turn pages. `L2 / R2` uses L2 and R2 instead.

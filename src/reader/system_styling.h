@@ -47,6 +47,8 @@ public:
     // Color theme definition
     void set_color_theme(const std::string &color_theme);
     const std::string &get_color_theme() const;
+    // Takes the theme's colors again, for when the colors of the custom theme changed.
+    void reload_color_theme();
     const ColorTheme &get_loaded_color_theme() const;
 
     // shoulder keymap

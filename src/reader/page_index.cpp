@@ -37,6 +37,15 @@ bool token_is_blank(const DocToken &token)
 
 } // namespace
 
+void PageIndex::set_widow_control(bool on)
+{
+    if (widow_control != on)
+    {
+        widow_control = on;
+        cached_page_size = 0;
+    }
+}
+
 bool PageIndex::matches(const std::string &want) const
 {
     return key == want && (running || complete);
@@ -138,12 +147,18 @@ bool PageIndex::pump(TokenLineScroller &scroller, int budget)
                 size_t need = laid.size() + 1;
                 group = static_cast<uint16_t>(std::min(need, static_cast<size_t>(65535)));
             }
+            const bool paragraph = group == 0 && token->type != TokenType::Image && laid.size() > 1;
             for (size_t i = 0; i < laid.size(); ++i)
             {
                 Slot slot;
                 slot.address = laid[i];
                 slot.hard_break = hard && i == 0;
                 slot.group = i == 0 ? group : 0;
+                if (paragraph)
+                {
+                    slot.para_lines = static_cast<uint16_t>(std::min<size_t>(laid.size(), 65535));
+                    slot.para_index = static_cast<uint16_t>(std::min<size_t>(i, 65535));
+                }
                 slots.push_back(slot);
             }
             pending_break = false;
@@ -272,6 +287,19 @@ void PageIndex::ensure_pages(int page_size) const
             }
             ++i;
             ++used;
+        }
+        // Widow and orphan control: do not end the page on the first line of a paragraph, and do not
+        // leave only the last line of one for the next page. The break moves up a line.
+        if (widow_control && i < n && used == page_size && i - page_starts.back() > 2)
+        {
+            const Slot &last = slots[i - 1];
+            const Slot &next = slots[i];
+            const bool orphan = last.para_lines > 1 && last.para_index == 0;
+            const bool widow = next.para_lines > 1 && next.para_index + 1 == next.para_lines;
+            if (orphan || widow)
+            {
+                --i;
+            }
         }
     }
 }

@@ -354,6 +354,25 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // The colors of the custom theme, three RRGGBB codes
+    if (const auto colors = settings_get_custom_colors(state_store); colors && colors->size() == 20)
+    {
+        const auto read = [&](size_t at, SDL_Color &out) {
+            unsigned int value = 0;
+            if (std::sscanf(colors->c_str() + at, "%6x", &value) != 1)
+            {
+                return false;
+            }
+            out = {static_cast<Uint8>(value >> 16), static_cast<Uint8>((value >> 8) & 0xFF), static_cast<Uint8>(value & 0xFF), 0};
+            return true;
+        };
+        SDL_Color background, text, highlight;
+        if (read(0, background) && read(7, text) && read(14, highlight))
+        {
+            set_custom_theme(background, text, highlight);
+        }
+    }
+
     // System styling
     SystemStyling sys_styling(
         init_font_name,
@@ -368,6 +387,15 @@ int main(int argc, char **argv)
         if (!applying_night_theme)
         {
             settings_set_color_theme(state_store, sys_styling.get_color_theme());
+        }
+        if (custom_theme_chosen())
+        {
+            SDL_Color background, text, highlight;
+            get_custom_theme(background, text, highlight);
+            char colors[24];
+            std::snprintf(colors, sizeof(colors), "%02X%02X%02X,%02X%02X%02X,%02X%02X%02X",
+                background.r, background.g, background.b, text.r, text.g, text.b, highlight.r, highlight.g, highlight.b);
+            settings_set_custom_colors(state_store, colors);
         }
         settings_set_font_name(state_store, sys_styling.get_font_name());
         settings_set_font_size(state_store, sys_styling.get_font_size());
@@ -504,6 +532,12 @@ int main(int argc, char **argv)
     );
     settings_view->set_row_action(SettingsView::TWEAKS_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
         open_style_tweaks_menu(view_stack, sys_styling, token_view_styling);
+    });
+    settings_view->set_row_action(SettingsView::TYPOGRAPHY_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
+        open_typography_menu(view_stack, sys_styling, token_view_styling);
+    });
+    settings_view->set_row_action(SettingsView::CUSTOM_COLORS_ROW, [&view_stack, &sys_styling]() {
+        open_custom_colors_menu(view_stack, sys_styling);
     });
     settings_view->set_row_action(SettingsView::PROFILES_ROW, [&view_stack, &sys_styling, &token_view_styling]() {
         open_layout_profiles_menu(view_stack, sys_styling, token_view_styling);

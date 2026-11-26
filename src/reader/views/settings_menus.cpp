@@ -3,6 +3,7 @@
 #include "./selection_menu.h"
 #include "./text_input_view.h"
 #include "filetypes/epub/book_style.h"
+#include "reader/color_theme_def.h"
 #include "reader/layout_profiles.h"
 #include "reader/system_styling.h"
 #include "reader/view_stack.h"
@@ -51,7 +52,196 @@ std::vector<std::string> tweak_details(int mask)
     return details;
 }
 
+struct NamedColor
+{
+    const char *name;
+    SDL_Color color;
+};
+
+const NamedColor PALETTE[] = {
+    {"Black", {0, 0, 0, 0}},
+    {"Charcoal", {40, 40, 40, 0}},
+    {"Dark gray", {80, 80, 80, 0}},
+    {"Gray", {128, 128, 128, 0}},
+    {"Light gray", {200, 200, 200, 0}},
+    {"White", {255, 255, 255, 0}},
+    {"Cream", {250, 240, 220, 0}},
+    {"Paper", {238, 228, 200, 0}},
+    {"Warm text", {235, 219, 178, 0}},
+    {"Dark brown", {45, 32, 20, 0}},
+    {"Navy", {16, 24, 48, 0}},
+    {"Deep teal", {0, 43, 54, 0}},
+    {"Dark green", {18, 40, 28, 0}},
+    {"Red", {192, 0, 0, 0}},
+    {"Orange", {230, 130, 40, 0}},
+    {"Amber", {255, 176, 0, 0}},
+    {"Yellow", {255, 224, 120, 0}},
+    {"Green", {90, 170, 90, 0}},
+    {"Teal", {38, 160, 150, 0}},
+    {"Blue", {70, 130, 200, 0}},
+    {"Purple", {150, 38, 200, 0}},
+    {"Pink", {240, 150, 190, 0}},
+};
+constexpr int PALETTE_COUNT = static_cast<int>(sizeof(PALETTE) / sizeof(PALETTE[0]));
+
+struct ColorPreset
+{
+    const char *name;
+    SDL_Color background;
+    SDL_Color text;
+    SDL_Color highlight;
+};
+
+const ColorPreset PRESETS[] = {
+    {"Solarized light", {253, 246, 227, 0}, {88, 110, 117, 0}, {38, 139, 210, 0}},
+    {"Solarized dark", {0, 43, 54, 0}, {147, 161, 161, 0}, {181, 137, 0, 0}},
+    {"Paper", {238, 228, 200, 0}, {45, 32, 20, 0}, {163, 81, 200, 0}},
+    {"Amber terminal", {0, 0, 0, 0}, {255, 176, 0, 0}, {255, 176, 0, 0}},
+    {"Green terminal", {0, 0, 0, 0}, {90, 220, 90, 0}, {90, 220, 90, 0}},
+    {"Blue night", {16, 24, 48, 0}, {200, 215, 240, 0}, {70, 130, 200, 0}},
+};
+constexpr int PRESET_COUNT = static_cast<int>(sizeof(PRESETS) / sizeof(PRESETS[0]));
+
+bool same_color(SDL_Color a, SDL_Color b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+int palette_index(SDL_Color color)
+{
+    for (int i = 0; i < PALETTE_COUNT; ++i)
+    {
+        if (same_color(PALETTE[i].color, color))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+std::string color_name(SDL_Color color)
+{
+    const int index = palette_index(color);
+    if (index >= 0)
+    {
+        return PALETTE[index].name;
+    }
+    char text[16];
+    snprintf(text, sizeof(text), "#%02X%02X%02X", color.r, color.g, color.b);
+    return text;
+}
+
+void show_custom_colors(SystemStyling &system, SDL_Color background, SDL_Color text, SDL_Color highlight)
+{
+    set_custom_theme(background, text, highlight);
+    if (system.get_color_theme() == "custom")
+    {
+        system.reload_color_theme();
+    }
+    else
+    {
+        system.set_color_theme("custom");
+    }
+}
+
+std::vector<std::string> custom_color_details()
+{
+    SDL_Color background, text, highlight;
+    get_custom_theme(background, text, highlight);
+    return {color_name(background), color_name(text), color_name(highlight), "Next"};
+}
+
 } // namespace
+
+void open_custom_colors_menu(ViewStack &stack, SystemStyling &system)
+{
+    if (!custom_theme_chosen())
+    {
+        // Start from the colors in use, so what you see is what you change.
+        const ColorTheme &now = system.get_loaded_color_theme();
+        set_custom_theme(now.background, now.main_text, now.highlight_background);
+    }
+    auto menu = std::make_shared<SelectionMenu>(
+        std::vector<std::string> {"Background", "Text", "Highlight", "Preset"},
+        system
+    );
+    menu->set_details(custom_color_details());
+    menu->set_title("Custom colors");
+    menu->set_compact(true);
+    menu->set_hints({"A  Next color", "B  Close"});
+    std::weak_ptr<SelectionMenu> weak = menu;
+    auto next_preset = std::make_shared<int>(0);
+    menu->set_on_selection([weak, &system, next_preset](uint32_t index) {
+        SDL_Color background, text, highlight;
+        get_custom_theme(background, text, highlight);
+        if (index < 3)
+        {
+            SDL_Color &chosen = index == 0 ? background : (index == 1 ? text : highlight);
+            const int at = palette_index(chosen);
+            chosen = PALETTE[(at + 1) % PALETTE_COUNT].color;
+        }
+        else if (index == 3)
+        {
+            const ColorPreset &preset = PRESETS[*next_preset % PRESET_COUNT];
+            background = preset.background;
+            text = preset.text;
+            highlight = preset.highlight;
+            *next_preset = (*next_preset + 1) % PRESET_COUNT;
+        }
+        show_custom_colors(system, background, text, highlight);
+        if (auto self = weak.lock())
+        {
+            auto details = custom_color_details();
+            if (index == 3)
+            {
+                details[3] = std::string(PRESETS[(*next_preset + PRESET_COUNT - 1) % PRESET_COUNT].name);
+            }
+            self->set_details(details);
+        }
+    });
+    stack.push(menu);
+}
+
+namespace
+{
+
+std::vector<std::string> typography_details(const TokenViewStyling &styling)
+{
+    return {
+        styling.get_ligatures() ? "On" : "Off",
+        styling.get_widow_control() ? "On" : "Off",
+    };
+}
+
+} // namespace
+
+void open_typography_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling)
+{
+    auto menu = std::make_shared<SelectionMenu>(
+        std::vector<std::string> {"Ligatures (fi, fl, ff)", "Widows and orphans (page mode)"},
+        system
+    );
+    menu->set_details(typography_details(styling));
+    menu->set_title("Typography (for this book)");
+    menu->set_compact(true);
+    menu->set_hints({"A  Switch", "B  Close"});
+    std::weak_ptr<SelectionMenu> weak = menu;
+    menu->set_on_selection([weak, &styling](uint32_t index) {
+        if (index == 0)
+        {
+            styling.set_ligatures(!styling.get_ligatures());
+        }
+        else if (index == 1)
+        {
+            styling.set_widow_control(!styling.get_widow_control());
+        }
+        if (auto self = weak.lock())
+        {
+            self->set_details(typography_details(styling));
+        }
+    });
+    stack.push(menu);
+}
 
 void open_style_tweaks_menu(ViewStack &stack, SystemStyling &system, TokenViewStyling &styling)
 {

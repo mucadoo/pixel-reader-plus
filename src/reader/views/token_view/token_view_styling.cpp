@@ -43,6 +43,9 @@ struct TokenViewStylingState
     int night_from = 21;
     int night_until = 7;
     bool bold_text = false;
+    bool ligatures = false;
+    bool widow_control = false;
+    std::string book_language;
     int auto_exit_minutes = 0;
 
     uint32_t next_subscriber_id = 1;
@@ -562,6 +565,48 @@ void TokenViewStyling::set_paragraph_gap(bool gap)
     if (state->paragraph_gap != gap)
     {
         state->paragraph_gap = gap;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_ligatures() const
+{
+    return state->ligatures;
+}
+
+void TokenViewStyling::set_ligatures(bool on)
+{
+    if (state->ligatures != on)
+    {
+        state->ligatures = on;
+        notify_subscribers();
+    }
+}
+
+bool TokenViewStyling::get_widow_control() const
+{
+    return state->widow_control;
+}
+
+void TokenViewStyling::set_widow_control(bool on)
+{
+    if (state->widow_control != on)
+    {
+        state->widow_control = on;
+        notify_subscribers();
+    }
+}
+
+const std::string &TokenViewStyling::get_book_language() const
+{
+    return state->book_language;
+}
+
+void TokenViewStyling::set_book_language(const std::string &name)
+{
+    if (state->book_language != name)
+    {
+        state->book_language = name;
         notify_subscribers();
     }
 }

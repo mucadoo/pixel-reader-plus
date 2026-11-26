@@ -102,6 +102,12 @@ void SystemStyling::set_color_theme(const std::string &color_theme)
     }
 }
 
+void SystemStyling::reload_color_theme()
+{
+    state->loaded_color_theme = ::get_color_theme(state->color_theme);
+    notify_subscribers(ChangeId::COLOR_THEME);
+}
+
 const std::string &SystemStyling::get_color_theme() const
 {
     return state->color_theme;

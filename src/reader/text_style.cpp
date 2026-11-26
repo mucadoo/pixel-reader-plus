@@ -232,8 +232,83 @@ bool needs_fallback(TTF_Font *font, const char *text, uint32_t len)
     return false;
 }
 
+bool g_ligatures = false;
+
+bool has_ligature_pair(const char *s, uint32_t len)
+{
+    for (uint32_t i = 0; i + 1 < len; ++i)
+    {
+        if (s[i] == 'f' && (s[i + 1] == 'f' || s[i + 1] == 'i' || s[i + 1] == 'l'))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The text with ff, fi, fl, ffi and ffl turned into the single letters a font keeps for them, for
+// the ones this font has.
+std::string with_ligatures(TTF_Font *font, const char *s, uint32_t len)
+{
+    std::string out;
+    out.reserve(len);
+    for (uint32_t i = 0; i < len; ++i)
+    {
+        if (s[i] == 'f' && i + 1 < len)
+        {
+            if (s[i + 1] == 'f')
+            {
+                if (i + 2 < len && s[i + 2] == 'i' && font_has_glyph(font, 0xFB03))
+                {
+                    out += "\xEF\xAC\x83";
+                    i += 2;
+                    continue;
+                }
+                if (i + 2 < len && s[i + 2] == 'l' && font_has_glyph(font, 0xFB04))
+                {
+                    out += "\xEF\xAC\x84";
+                    i += 2;
+                    continue;
+                }
+                if (font_has_glyph(font, 0xFB00))
+                {
+                    out += "\xEF\xAC\x80";
+                    i += 1;
+                    continue;
+                }
+            }
+            else if (s[i + 1] == 'i' && font_has_glyph(font, 0xFB01))
+            {
+                out += "\xEF\xAC\x81";
+                i += 1;
+                continue;
+            }
+            else if (s[i + 1] == 'l' && font_has_glyph(font, 0xFB02))
+            {
+                out += "\xEF\xAC\x82";
+                i += 1;
+                continue;
+            }
+        }
+        out.push_back(s[i]);
+    }
+    return out;
+}
+
+int size_plain_raw(TTF_Font *font, const char *s, uint32_t len);
+
 // The width of the text, each letter in the font that draws it. s need not end at len.
 int size_plain(TTF_Font *font, const char *s, uint32_t len)
+{
+    if (g_ligatures && has_ligature_pair(s, len))
+    {
+        const std::string joined = with_ligatures(font, s, len);
+        return size_plain_raw(font, joined.c_str(), static_cast<uint32_t>(joined.size()));
+    }
+    return size_plain_raw(font, s, len);
+}
+
+int size_plain_raw(TTF_Font *font, const char *s, uint32_t len)
 {
     int w = 0;
     int h = 0;
@@ -342,6 +417,11 @@ int measure_text(TTF_Font *font, const char *text, uint32_t len)
     return font ? size_plain(font, text, len) : 0;
 }
 
+void set_ligatures(bool on)
+{
+    g_ligatures = on;
+}
+
 void set_letter_spacing(int pixels)
 {
     g_letter_spacing = std::max(0, pixels);
@@ -393,8 +473,15 @@ void clear_glyph_cache()
     g_glyphs.clear();
 }
 
-SDL_Surface *render_text_shaded(TTF_Font *font, const char *text, SDL_Color fg, SDL_Color bg)
+SDL_Surface *render_text_shaded(TTF_Font *font, const char *text_in, SDL_Color fg, SDL_Color bg)
 {
+    std::string joined;
+    const char *text = text_in;
+    if (g_ligatures && font && text_in && has_ligature_pair(text_in, static_cast<uint32_t>(std::strlen(text_in))))
+    {
+        joined = with_ligatures(font, text_in, static_cast<uint32_t>(std::strlen(text_in)));
+        text = joined.c_str();
+    }
     if (!font || !text || !*text || (g_letter_spacing <= 0 && !needs_fallback(font, text, static_cast<uint32_t>(std::strlen(text)))))
     {
         return TTF_RenderUTF8_Shaded(font, text ? text : "", fg, bg);

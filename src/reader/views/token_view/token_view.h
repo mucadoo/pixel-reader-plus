@@ -37,6 +37,9 @@ public:
     void on_keypress(SDLKey key) override;
     void on_keyheld(SDLKey key, uint32_t held_time_ms) override;
 
+    // Marks the words of a search on the page, and puts the note (such as "Match 3 / 17") before the
+    // chapter title in the bar. An empty query and note clear them.
+    void set_search_marks(const std::string &query, const std::string &note);
     // The printed page number to show in the bar in place of the counted one. Empty for none.
     void set_page_label(const std::string &label);
     // Where the bookmarks are, for the corner mark on a page that holds one.

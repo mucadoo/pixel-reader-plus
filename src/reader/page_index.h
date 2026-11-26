@@ -23,6 +23,9 @@ class PageIndex
         uint16_t group = 0;
         bool hard_break = false;
         bool blank = false;
+        // For the lines of a paragraph of text: which line this is and how many it has. 0 for others.
+        uint16_t para_lines = 0;
+        uint16_t para_index = 0;
     };
 
     std::shared_ptr<TokenIter> it;
@@ -35,12 +38,16 @@ class PageIndex
     uint32_t last_chapter = 0;
     bool pending_break = false;
 
+    bool widow_control = false;
     mutable int cached_page_size = 0;
     mutable std::vector<int> page_starts;
 
     void ensure_pages(int page_size) const;
 
 public:
+    // With this on, a page does not end on the first line of a paragraph or leave only its last line
+    // for the next page.
+    void set_widow_control(bool on);
     bool matches(const std::string &key) const;
     bool ready_for(const std::string &key) const;
     void start(std::shared_ptr<TokenIter> it, std::optional<DocAddr> end, std::string key);

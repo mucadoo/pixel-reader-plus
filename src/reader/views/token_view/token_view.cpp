@@ -58,6 +58,8 @@ struct TokenViewState
     int first_line_indent = 0;
     bool paragraph_gap = true;
     bool bold_text = false;
+    bool ligatures = false;
+    bool widow_control = false;
     int word_spacing = 1;   // level of the word spacing setting
     int letter_spacing = 0; // level of the letter spacing setting
     int left_margin;    // pixels left empty at the left of the text
@@ -99,6 +101,8 @@ struct TokenViewState
 
     std::filesystem::path highlights_path;
     std::vector<Highlight> highlights;
+    std::vector<std::string> match_terms; // words of the last search, marked on the page
+    std::string search_note;               // "Match 3 / 17", shown with the chapter title
     // Every word laid out on a page so far, by address, so a highlight can keep its text.
     std::map<DocAddr, std::string> seen_words;
     bool selecting = false;
@@ -304,6 +308,10 @@ struct TokenViewState
         set_word_spacing(word_spacing_pixels(word_spacing));
         letter_spacing = token_view_styling.get_letter_spacing();
         set_letter_spacing(letter_spacing_pixels(letter_spacing));
+        ligatures = token_view_styling.get_ligatures();
+        set_ligatures(ligatures);
+        widow_control = token_view_styling.get_widow_control();
+        page_index.set_widow_control(widow_control);
     }
 
     // Whether words are split now: the setting is on and the language has patterns.
@@ -366,6 +374,20 @@ struct TokenViewState
             set_letter_spacing(letter_spacing_pixels(letter_spacing));
             clear_glyph_cache();
             line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (token_view_styling.get_ligatures() != ligatures)
+        {
+            ligatures = token_view_styling.get_ligatures();
+            set_ligatures(ligatures);
+            clear_glyph_cache();
+            line_scroller.reset_buffer();
+            needs_render = true;
+        }
+        if (token_view_styling.get_widow_control() != widow_control)
+        {
+            widow_control = token_view_styling.get_widow_control();
+            page_index.set_widow_control(widow_control);
             needs_render = true;
         }
         if (pictures != picture_mode)
@@ -432,13 +454,29 @@ static int read_battery_percent()
 }
 
 // The text of one slot of the bar under the text. Empty when there is nothing to show.
+static bool matches_search(const TokenViewState &state, const LayoutWord &word)
+{
+    if (state.match_terms.empty() || word.lookup.empty())
+    {
+        return false;
+    }
+    for (const std::string &term : state.match_terms)
+    {
+        if (word.lookup.find(term) != std::string::npos)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 static std::string bar_text(const TokenViewState &state, BarItem item)
 {
     char text[64];
     switch (item)
     {
         case BarItem::ChapterTitle:
-            return state.title;
+            return state.search_note.empty() ? state.title : state.search_note + "  " + state.title;
         case BarItem::BookTitle:
             return state.book_title;
         case BarItem::Progress:
@@ -691,7 +729,11 @@ static void draw_text_line_body(
         DocAddr range_begin = state.anchor_begin < state.selected_begin ? state.anchor_begin : state.selected_begin;
         DocAddr range_end = state.anchor_end > state.focus_end ? state.anchor_end : state.focus_end;
         bool selected = state.selecting && state.has_selection && word.begin >= range_begin && word.begin < range_end;
-        const int marker_index = highlight_marker_at(state.highlights, word.begin);
+        int marker_index = highlight_marker_at(state.highlights, word.begin);
+        if (marker_index < 0 && matches_search(state, word))
+        {
+            marker_index = 0;
+        }
         if (!selected && marker_index < 0)
         {
             continue;
@@ -740,7 +782,11 @@ static void draw_text_line_body(
             {
                 return theme.highlight_background;
             }
-            const int marker_index = highlight_marker_at(state.highlights, word.begin);
+            int marker_index = highlight_marker_at(state.highlights, word.begin);
+            if (marker_index < 0 && matches_search(state, word))
+            {
+                marker_index = 0;
+            }
             if (marker_index >= 0)
             {
                 bg = marker_color(marker_index);
@@ -1622,6 +1668,33 @@ void TokenView::set_bar_extras(int chapter_index, int chapter_count, int chapter
     }
 }
 
+void TokenView::set_search_marks(const std::string &query, const std::string &note)
+{
+    std::vector<std::string> terms;
+    std::string word;
+    for (char c : lookup_lowercase(query) + " ")
+    {
+        if (c == ' ')
+        {
+            if (!word.empty())
+            {
+                terms.push_back(word);
+                word.clear();
+            }
+        }
+        else
+        {
+            word.push_back(c);
+        }
+    }
+    if (terms != state->match_terms || note != state->search_note)
+    {
+        state->match_terms = std::move(terms);
+        state->search_note = note;
+        state->needs_render = true;
+    }
+}
+
 void TokenView::set_page_label(const std::string &label)
 {
     if (label != state->title_label)
@@ -1670,7 +1743,7 @@ static std::string page_index_key(TokenViewState &state, bool chapter)
     key += std::to_string(state.left_margin) + "," + std::to_string(state.right_margin) + "," + std::to_string(state.top_margin) + "," + std::to_string(state.bottom_margin) + "," + std::to_string(state.spacing_extra);
     key += book_fonts::key();
     key += state.hyphenating ? ",hy:" + state.hyphenation_language : ",nohy";
-    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "");
+    key += (book_styles_enabled() ? std::string() : std::string(",css0")) + ",ws" + std::to_string(state.word_spacing) + ",ls" + std::to_string(state.letter_spacing) + ",pic" + std::to_string(state.picture_mode) + ",ind" + std::to_string(state.first_line_indent) + (state.paragraph_gap ? ",gap" : ",nogap") + (state.bold_text ? ",bd" : "") + (state.ligatures ? ",lig" : "");
     key.push_back('\n');
     if (!chapter)
     {

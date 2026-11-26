@@ -26,6 +26,9 @@ void set_font_fallbacks(TTF_Font *primary, std::vector<TTF_Font *> fallbacks);
 // The width of the text in pixels, with fallback fonts for the letters the font lacks. Letter spacing is not added.
 int measure_text(TTF_Font *font, const char *text, uint32_t len);
 
+// Draw ff, fi, fl, ffi and ffl as one letter when the font has it. Applies to later layouts and drawing.
+void set_ligatures(bool on);
+
 // Extra pixels added after every letter (0 for none). Applies to later layouts and drawing.
 void set_letter_spacing(int pixels);
 

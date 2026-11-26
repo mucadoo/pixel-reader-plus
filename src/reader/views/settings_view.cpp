@@ -65,6 +65,7 @@ const char *theme_display_name(const std::string &name)
     if (name == "light_contrast") return "Light";
     if (name == "light_sepia") return "Sepia";
     if (name == "vampire") return "Vampire";
+    if (name == "custom") return "Custom";
     return nullptr;
 }
 
@@ -199,6 +200,8 @@ bool SettingsView::render(SDL_Surface *dest_surface, bool force_render)
         {"Book grid", grid_size_label(token_view_styling.get_grid_size()), true, sys_font},
         {"Style tweaks", style_tweaks_label(token_view_styling.get_tweaks()), false, sys_font},
         {"Layout profiles", "Open", false, sys_font},
+        {"Custom colors", "Open", false, sys_font},
+        {"Typography", std::string(token_view_styling.get_ligatures() ? "Ligatures" : "Plain") + (token_view_styling.get_widow_control() ? ", widows" : ""), false, sys_font},
         {"Controls", "Open", false, sys_font},
     };
 

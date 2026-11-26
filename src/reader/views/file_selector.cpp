@@ -61,6 +61,7 @@ struct FSState
     size_t pinned_count = 0; // rows after the way up that are not part of the folder: Continue and favorites
     std::map<std::string, std::string> pinned_prefix; // name of a pinned row to the text put in front of it
     bool hide_finished = false;
+    int filter = 0; // which books the folder lists: 0 all, 1 not opened, 2 in progress, 3 favorites, 4 finished
     // What folders without a choice of their own use, and the folder the view was last set up for.
     BrowserSort global_sort = BrowserSort::Name;
     bool global_grid = false;
@@ -221,6 +222,31 @@ std::vector<std::string> hints_for(const FSState *s, bool way_up)
     }
     hints.push_back("Menu  Quit");
     return hints;
+}
+
+const char *filter_label(int filter)
+{
+    switch (filter)
+    {
+        case 1: return "not opened";
+        case 2: return "in progress";
+        case 3: return "favorites";
+        case 4: return "finished";
+        default: return "";
+    }
+}
+
+// Whether a book is listed under the filter that is on.
+bool passes_filter(int filter, const LibraryLog::Entry *log)
+{
+    switch (filter)
+    {
+        case 1: return !log;
+        case 2: return log && !log->finished() && log->percent > 0;
+        case 3: return log && log->favorite;
+        case 4: return log && log->finished();
+        default: return true;
+    }
 }
 
 bool has_way_up(const FSState *s)
@@ -503,7 +529,10 @@ void refresh_path_entries(FSState *s)
             s->path_entries.push_back(entry);
         } else if (file_type_is_supported(entry.name)) {
             const LibraryLog::Entry *log = library_log().get(s->path / entry.name);
-            if (s->hide_finished && log && log->finished() && !log->favorite) {
+            if (s->hide_finished && s->filter != 4 && log && log->finished() && !log->favorite) {
+                continue;
+            }
+            if (!passes_filter(s->filter, log)) {
                 continue;
             }
             s->path_entries.push_back(entry);
@@ -606,10 +635,14 @@ void rebuild_views(FSState *s)
     {
         folder += std::string("  (") + browser_sort_suffix(s->sort) + ")";
     }
+    if (!s->search_active && s->filter != 0)
+    {
+        folder += std::string("  [") + filter_label(s->filter) + "]";
+    }
     const auto hints = hints_for(s, has_way_up(s));
     const std::string empty_message = has_items
         ? ""
-        : (s->search_active ? (s->collection.empty() ? "No book matches" : "This collection has no books") : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
+        : (!s->search_active && s->filter != 0 ? std::string("No book here is ") + filter_label(s->filter) + "\nY, Show: switches the books shown" : s->search_active ? (s->collection.empty() ? "No book matches" : "This collection has no books") : "No books in this folder\nAdd .epub or .txt files to Roms/EBOOKS");
 
     s->menu.set_title(folder);
     s->menu.set_entries(menu_entries);
@@ -2150,7 +2183,7 @@ void open_options(FSState *s)
     const std::filesystem::path book = s->path / entry.name;
     const LibraryLog::Entry *log = library_log().get(book);
 
-    enum class Act { Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView };
+    enum class Act { Filter, Properties, Favorite, Status, LibraryTools, HideFinished, Search, ClearSearch, Rename, Delete, History, Collections, AddToCollection, RemoveFromCollection, DeleteCollection, Mark, CopyBooks, MoveBooks, DeleteBooks, ClearMarks, Paste, NewFolder, ResetView };
     std::vector<Act> acts = {Act::Properties};
     std::vector<std::string> names = {"Properties"};
     if (!entry.is_dir)
@@ -2162,6 +2195,11 @@ void open_options(FSState *s)
     }
     acts.push_back(Act::HideFinished);
     names.push_back(s->hide_finished ? "Show finished books" : "Hide finished books");
+    if (!s->search_active)
+    {
+        acts.push_back(Act::Filter);
+        names.push_back(s->filter == 0 ? std::string("Show: all books") : std::string("Show: ") + filter_label(s->filter) + " only");
+    }
     if (!s->search_active && folder_prefs::get(s->prefs_for))
     {
         acts.push_back(Act::ResetView);
@@ -2384,6 +2422,11 @@ void open_options(FSState *s)
             case Act::ResetView:
                 folder_prefs::forget(s->prefs_for);
                 s->prefs_for.clear();
+                refresh_keeping_cursor(s);
+                break;
+            case Act::Filter:
+                // All books, then not opened, in progress, favorites and finished, and round again.
+                s->filter = (s->filter + 1) % 5;
                 refresh_keeping_cursor(s);
                 break;
             case Act::HideFinished:

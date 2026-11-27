@@ -97,13 +97,28 @@ BrowseLimits find_browse_limits(const std::optional<std::filesystem::path> &last
 {
     std::error_code ec;
     std::filesystem::path card;
-    for (const char *candidate : {"/mnt/SDCARD", "/mnt/sdcard"})
+    // READER_CARD names the storage root on a device that keeps it somewhere else.
+    std::vector<std::string> roots;
+    if (const char *env_card = std::getenv("READER_CARD"))
     {
-        if (std::filesystem::is_directory(candidate, ec))
+        roots.push_back(env_card);
+    }
+    roots.push_back("/mnt/SDCARD");
+    roots.push_back("/mnt/sdcard");
+    for (const std::string &candidate : roots)
+    {
+        if (!candidate.empty() && std::filesystem::is_directory(candidate, ec))
         {
             card = candidate;
             break;
         }
+    }
+
+    // READER_BOOKS names the folder to start in when there is nothing to resume.
+    std::filesystem::path env_books;
+    if (const char *env = std::getenv("READER_BOOKS"))
+    {
+        env_books = env;
     }
 
     if (card.empty())
@@ -117,7 +132,11 @@ BrowseLimits find_browse_limits(const std::optional<std::filesystem::path> &last
     }
 
     std::filesystem::path books = card / "Roms" / "EBOOKS";
-    if (!std::filesystem::is_directory(books, ec))
+    if (!env_books.empty() && std::filesystem::is_directory(env_books, ec))
+    {
+        books = env_books;
+    }
+    else if (!std::filesystem::is_directory(books, ec))
     {
         books = card;
     }
@@ -363,6 +382,26 @@ int main(int argc, char **argv)
 {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+
+    // The fonts, dictionaries and settings are found next to the program. A launcher that starts it from
+    // another folder would not see them, so go to the folder of the program when they are not here.
+    {
+        std::error_code ec;
+        if (!std::filesystem::is_directory("resources", ec))
+        {
+            char path[4096];
+            const ssize_t length = readlink("/proc/self/exe", path, sizeof(path) - 1);
+            if (length > 0)
+            {
+                path[length] = '\0';
+                const std::filesystem::path folder = std::filesystem::path(path).parent_path();
+                if (std::filesystem::is_directory(folder / "resources", ec) && chdir(folder.c_str()) != 0)
+                {
+                    std::cout << "Could not change to " << folder << std::endl;
+                }
+            }
+        }
+    }
 
     if (char* env_screen_width = SDL_getenv("SCREEN_WIDTH")) {
         int new_width = atoi(env_screen_width);

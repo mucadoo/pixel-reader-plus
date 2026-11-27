@@ -1,6 +1,6 @@
 # Pixel Reader Plus
 
-An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel Reader](https://github.com/ealang/pixel-reader). It opens epub, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
+An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel Reader](https://github.com/ealang/pixel-reader). It opens epub, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, Portuguese, Spanish, Italian, German, or Russian dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
 ## Put a book on the card
 
@@ -31,7 +31,7 @@ These books work with everything else: bookmarks, highlights, the dictionary, se
 The Flip build is installed by [spruce-patch](https://github.com/mucadoo/spruce-patch). On Windows, with the spruce card plugged in, run that installer's `install.bat` and choose **E-Reader**. It copies:
 
 - `App/PixelReader/reader`
-- `App/PixelReader/resources/dictionary/english.txt`, `french.txt`, and `portuguese.txt`
+- `App/PixelReader/resources/dictionary/english.txt`, `french.txt`, `portuguese.txt`, `spanish.txt`, `italian.txt`, `german.txt`, and `russian.txt`
 - `App/PixelReader/resources/hyphenation/english.txt`, `french.txt`, and `portuguese.txt`, with their notice
 - the WordNet notice and the Wiktionary notice next to those dictionaries
 
@@ -45,7 +45,7 @@ The program is GPL. See `LICENSE`. It is based on [Pixel Reader](https://github.
 
 The English dictionary in `resources/dictionary/english.txt` is generated from WordNet 3.1. Princeton's notice is in `resources/dictionary/LICENSE.txt`.
 
-The French and Portuguese dictionaries are generated from Wiktionary data extracted by [Kaikki](https://kaikki.org) (wiktextract). Wiktionary text is available under CC BY-SA 4.0 and the GFDL. The notice is in `resources/dictionary/LICENSE-wiktionary.txt`.
+The French, Portuguese, Spanish, Italian, German and Russian dictionaries are generated from Wiktionary data extracted by [Kaikki](https://kaikki.org) (wiktextract). Wiktionary text is available under CC BY-SA 4.0 and the GFDL. The notice is in `resources/dictionary/LICENSE-wiktionary.txt`.
 
 The hyphenation patterns in `resources/hyphenation` are from the [TeX hyph-utf8](https://github.com/hyphenation/tex-hyphen) project, under their own licenses (the English ones are permissive, French is MIT, Portuguese is BSD 3-clause). The notices are in `resources/hyphenation/LICENSE-hyphenation.txt`.
 

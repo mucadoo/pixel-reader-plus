@@ -311,6 +311,11 @@ Language language_for(const std::string &dictionary_name)
     {
         return Language::Portuguese;
     }
+    if (name.find("spanish") != std::string::npos || name.find("italian") != std::string::npos
+        || name.find("german") != std::string::npos || name.find("russian") != std::string::npos)
+    {
+        return Language::Other;
+    }
     return Language::English;
 }
 
@@ -321,6 +326,7 @@ std::vector<std::string> base_forms(const std::string &word, Language language)
     {
         case Language::French: french(collector); break;
         case Language::Portuguese: portuguese(collector); break;
+        case Language::Other: break;
         default: english(collector); break;
     }
     return collector.out;

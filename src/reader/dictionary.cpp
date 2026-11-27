@@ -54,6 +54,25 @@ std::string fold_key(const std::string &word)
             lower[i + 1] = static_cast<char>(0x93);
             ++i;
         }
+        else if (lead == 0xD0 && next >= 0x80 && next <= 0xAF)
+        {
+            // Cyrillic capitals (U+0400 to U+042F) to lowercase.
+            if (next <= 0x8F)
+            {
+                lower[i] = static_cast<char>(0xD1);
+                lower[i + 1] = static_cast<char>(next + 0x10);
+            }
+            else if (next <= 0x9F)
+            {
+                lower[i + 1] = static_cast<char>(next + 0x20);
+            }
+            else
+            {
+                lower[i] = static_cast<char>(0xD1);
+                lower[i + 1] = static_cast<char>(next - 0x20);
+            }
+            ++i;
+        }
         else if (lead >= 0xC2)
         {
             ++i;
@@ -116,6 +135,22 @@ std::string dictionary_name_for_language(const std::string &language)
     if (code == "fr" || code == "fra" || code == "fre")
     {
         return "french";
+    }
+    if (code == "es" || code == "spa")
+    {
+        return "spanish";
+    }
+    if (code == "it" || code == "ita")
+    {
+        return "italian";
+    }
+    if (code == "de" || code == "deu" || code == "ger")
+    {
+        return "german";
+    }
+    if (code == "ru" || code == "rus")
+    {
+        return "russian";
     }
     return "english";
 }
@@ -318,7 +353,8 @@ void Dictionary::ensure_loaded(const std::function<void(int)> &progress)
     ok = done > 0 && !lines.empty();
 
     // Dictionaries that came with the reader are sorted. One of your own may not be.
-    if (ok && name != "english" && name != "french" && name != "portuguese")
+    if (ok && name != "english" && name != "french" && name != "portuguese" && name != "spanish" && name != "italian"
+        && name != "german" && name != "russian")
     {
         const auto key_end = [this](uint32_t start) {
             size_t tab = data.find('\t', start);

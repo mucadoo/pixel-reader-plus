@@ -573,8 +573,8 @@ SDL_Surface *render_text_shaded(TTF_Font *font, const char *text_in, SDL_Color f
     return out;
 }
 
-// Lowercase for dictionary lookup: ASCII, and the accented capitals of the
-// Latin-1 block (such as the E in Ecole) that French and Portuguese use.
+// Lowercase for dictionary lookup: ASCII, the accented capitals of the
+// Latin-1 block (such as the E in Ecole) that the Romance languages and German use, and Cyrillic.
 std::string lookup_lowercase(const std::string &word)
 {
     std::string lower = to_lower(word);
@@ -590,6 +590,25 @@ std::string lookup_lowercase(const std::string &word)
         else if (lead == 0xC5 && next == 0x92)
         {
             lower[i + 1] = static_cast<char>(0x93); // OE ligature
+            ++i;
+        }
+        else if (lead == 0xD0 && next >= 0x80 && next <= 0xAF)
+        {
+            // Cyrillic capitals (U+0400 to U+042F), such as the first letter of a Russian sentence.
+            if (next <= 0x8F)
+            {
+                lower[i] = static_cast<char>(0xD1);
+                lower[i + 1] = static_cast<char>(next + 0x10);
+            }
+            else if (next <= 0x9F)
+            {
+                lower[i + 1] = static_cast<char>(next + 0x20);
+            }
+            else
+            {
+                lower[i] = static_cast<char>(0xD1);
+                lower[i + 1] = static_cast<char>(next - 0x20);
+            }
             ++i;
         }
         else if (lead >= 0xC2)

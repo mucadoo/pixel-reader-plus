@@ -14,7 +14,8 @@ enum class Language
 {
     English,
     French,
-    Portuguese
+    Portuguese,
+    Other // a dictionary with its own entries for inflected forms, so no endings are cut
 };
 Language language_for(const std::string &dictionary_name);
 

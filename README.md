@@ -2,8 +2,6 @@
 
 An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel Reader](https://github.com/ealang/pixel-reader). It opens epub, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
-On spruceOS the app is **E-Reader**. This build replaces the stock Pixel Reader binary. Your books, reading position, and highlights stay on the card.
-
 ## Put a book on the card
 
 Copy `.epub`, `.md` or `.txt` files to `Roms/EBOOKS` on the SD card. Open **E-Reader**, pick the folder if it is not already there, and press **A** on the book.

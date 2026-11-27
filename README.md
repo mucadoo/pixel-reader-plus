@@ -4,7 +4,7 @@ An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel R
 
 ## Put a book on the card
 
-Copy `.epub`, `.md` or `.txt` files to `Roms/EBOOKS` on the SD card. Open **E-Reader**, pick the folder if it is not already there, and press **A** on the book.
+Copy `.epub`, `.md` or `.txt` files to a folder on the storage card, such as `Roms/EBOOKS`. Open the reader, pick the folder if it is not already there, and press **A** on the book. The book list starts in `Roms/EBOOKS` when the card has it, and `READER_BOOKS` can name another folder (see [Building and other devices](docs/building.md)).
 
 The reader remembers the folder and the position in the book. The next time you open that book, it returns to the same place.
 
@@ -23,21 +23,13 @@ These books work with everything else: bookmarks, highlights, the dictionary, se
 - [Reading, lookups and highlights](docs/reading.md): turning pages, selecting a word, the dictionaries, highlights, how the text is laid out, pictures.
 - [The book menu](docs/book-menu.md): everything the Select button opens while you read.
 - [Settings](docs/settings.md): every setting, row by row.
+- [Install](docs/install.md): the files, starting the reader, and the spruceOS installer.
 - [What is saved](docs/saved-data.md): where your places, marks and settings live on the card.
 - [Building and other devices](docs/building.md): building the program and trying it on a device other than the Flip.
 
-## Install on spruce
+## Install
 
-The Flip build is installed by [spruce-patch](https://github.com/mucadoo/spruce-patch). On Windows, with the spruce card plugged in, run that installer's `install.bat` and choose **E-Reader**. It copies:
-
-- `App/PixelReader/reader`
-- `App/PixelReader/resources/dictionary/english.txt`, `french.txt`, `portuguese.txt`, `spanish.txt`, `italian.txt`, `german.txt`, and `russian.txt`
-- `App/PixelReader/resources/hyphenation/english.txt`, `french.txt`, and `portuguese.txt`, with their notice
-- the WordNet notice and the Wiktionary notice next to those dictionaries
-
-Quit E-Reader if it is open, eject the card, and open E-Reader again. The new reader is used the next time the app starts. A spruce reinstall puts the stock reader back. Run the installer again and choose E-Reader to restore this one.
-
-The stock reader that was on the card the first time is kept in the installer's backup folder (`spruce-patch-backup-<date>` in your user profile).
+Put the `reader` program and its `resources` folder (fonts, dictionaries, hyphenation) together in one folder on the device, and start `reader` from your launcher. [Install](docs/install.md) has the steps, the files, and the installer for spruceOS.
 
 ## Credits and licenses
 

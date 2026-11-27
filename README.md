@@ -1,6 +1,6 @@
 # Pixel Reader Plus
 
-An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel Reader](https://github.com/ealang/pixel-reader). It is tested on the Miyoo Flip with spruceOS, and it is a plain 64-bit ARM Linux program that may run on other handhelds (see [Building and other devices](docs/building.md), none tried). It opens epub, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
+An ebook reader for handhelds with a small screen and a D-pad, built on [Pixel Reader](https://github.com/ealang/pixel-reader). It opens epub, Markdown and text books, follows the book's own type sizes, shows pictures, and can look a word up in an offline English, French, or Portuguese dictionary, highlight it, bookmark places, search the book, keep a word list and reading stats, hyphenate, remember favorites and finished books, and show footnotes.
 
 On spruceOS the app is **E-Reader**. This build replaces the stock Pixel Reader binary. Your books, reading position, and highlights stay on the card.
 
